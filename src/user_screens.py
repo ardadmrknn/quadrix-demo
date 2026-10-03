@@ -21,6 +21,8 @@ from localization import t, get_language
 from back_button import draw_back_button as _draw_shared_back_button
 from steam_leaderboards import SteamLeaderboardService
 from ui_scaling import get_projected_effective_scale, get_scale, scale_px
+from ui_text_layout import wrap_text_limited
+from game_over_surfaces import get_render_safe_rect
 
 _AVATAR_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
 _USER_SCREEN_REFERENCE_SIZE = (1600.0, 900.0)
@@ -2570,77 +2572,188 @@ class UserManagementScreen:
         self._back_hover = bool(rect.collidepoint(live_pos))
 
     def _draw_confirm_delete(self):
-        """Silme onayı çiz - Modern overlay tasarım"""
+        """Silme onayı çiz - Modern overlay tasarım
+
+        P1-11 (Quadrix_Tum_Ekranlar_Olcekleme_Denetim_Raporu): onay kutusu
+        render güvenli alanına (safe rect) P0-2 düzeniyle yerleşir — boyut
+        tavanı clamp'ten ÖNCE (Rect.clamp küçültmez); geometry çözülemezse
+        tam ekran fallback (clamp no-op). Kullanıcı adı içeren satır, ikinci
+        satır ve uyarı metni kutu iç genişliğine sarılır
+        (wrap_text_limited → kontrollü ASCII '...'; uzun kullanıcı adı
+        eskiden kutudan taşıyordu). Overlay yüzeyi (w, h) anahtarlı
+        önbellekten üretilir — kare-başı SRCALPHA tahsisi kaldırıldı
+        (FAZ A6 deseni). Buton/kutu rect'leri containment testleri için
+        ``_confirm_delete_rects`` altına kaydedilir. Metin blokları ölçüm
+        tabanlı akar; kutu yüksekliği içerik bütçesinden üretilir (taban
+        s(280)), safe rect tavanına takılırsa öncelik sırasıyla uyarı →
+        ikinci satır kontrollü düşürülür (msg1 ve butonlar daima çizilir).
+        """
         self._apply_responsive_metrics()
         s = self._s
         width, height = self.screen.get_size()
-        
-        # Yarı saydam koyu overlay
-        overlay = pygame.Surface((width, height), pygame.SRCALPHA).convert_alpha()
-        overlay.fill((5, 10, 20, 220))
+
+        # Yarı saydam koyu overlay — (w, h) anahtarlı önbellek.
+        overlay_cache = getattr(self, '_confirm_overlay_cache', None)
+        if overlay_cache is None:
+            overlay_cache = {}
+            self._confirm_overlay_cache = overlay_cache
+        overlay_key = ('overlay', int(width), int(height))
+        overlay = overlay_cache.get(overlay_key)
+        if overlay is None:
+            overlay = pygame.Surface((width, height), pygame.SRCALPHA).convert_alpha()
+            overlay.fill((5, 10, 20, 220))
+            overlay_cache[overlay_key] = overlay
+            while len(overlay_cache) > 8:
+                overlay_cache.pop(next(iter(overlay_cache)), None)
         self.screen.blit(overlay, (0, 0))
-        
-        # Onay kutusu - daha büyük ve merkezi
+
+        # Onay kutusu - daha büyük ve merkezi.
+        # P1-11: kutu genişliği eski formülle (min(s(600), w-s(80)));
+        # YÜKSEKLİĞİ içerik bütçesinden (eski sabit s(280), 36'lık fontta
+        # msg satırlarını üst üste bindiriyordu — ölçüm-tabanlı akış bunu
+        # düzeltir; taban s(280) korunur, içerik yetmezse kutu safe rect
+        # tavanına kadar büyür). Boyut tavanı safe rect'ten, clamp sonrasında.
         box_width = min(s(600), width - s(80))
-        box_height = min(s(280), height - s(120))
-        box_rect = pygame.Rect(width // 2 - box_width // 2, height // 2 - box_height // 2, box_width, box_height)
-        
-        # Gölge
-        shadow_rect = box_rect.inflate(s(10), s(10))
-        pygame.draw.rect(self.screen, (0, 0, 0), shadow_rect, border_radius=s(20))
-        
-        # Ana kutu
-        pygame.draw.rect(self.screen, (40, 50, 70), box_rect, border_radius=s(20))
-        pygame.draw.rect(self.screen, (255, 100, 100), box_rect, s(4), border_radius=s(20))
-        
-        # Uyarı ikonu
-        warning_rect = pygame.Rect(0, 0, s(80), s(80))
-        warning_rect.center = (width // 2, box_rect.top + s(60))
-        pygame.draw.circle(self.screen, (255, 200, 100), warning_rect.center, s(32))
-        pygame.draw.circle(self.screen, (60, 30, 20), warning_rect.center, s(32), s(4))
-        
-        # Başlık
-        title_surf = self.font_normal.render(t('user_will_delete'), True, (255, 150, 150))
-        title_rect = title_surf.get_rect(center=(width // 2, box_rect.top + s(120)))
-        self.screen.blit(title_surf, title_rect)
-        
-        # Mesajlar
+        safe_rect = get_render_safe_rect(self.screen)
+        bounds = safe_rect if safe_rect is not None else pygame.Rect(0, 0, int(width), int(height))
+        box_width = max(s(200), min(box_width, bounds.width - 2 * s(16)))
+
+        pad_x = s(24)
+        inner_w = max(s(40), box_width - 2 * pad_x)
+
+        # Metinler önce ölçülür (wrap_text_limited LRU; plan aşamasında
+        # Surface tahsisi yok).
         msg1 = t('user_delete_confirm_line1', username=self.confirm_username)
         msg2 = t('user_delete_confirm_line2')
-        
-        msg1_surf = self.font_normal.render(msg1, True, WHITE)
-        msg2_surf = self.font_normal.render(msg2, True, WHITE)
-        
-        self.screen.blit(msg1_surf, msg1_surf.get_rect(center=(width // 2, box_rect.top + s(160))))
-        self.screen.blit(msg2_surf, msg2_surf.get_rect(center=(width // 2, box_rect.top + s(190))))
-        
-        # Uyarı metni
-        warning_surf = self.font_small.render(t('user_delete_warning'), True, (255, 200, 100))
-        warning_rect = warning_surf.get_rect(center=(width // 2, box_rect.bottom - s(70)))
-        self.screen.blit(warning_surf, warning_rect)
-        
-        # Butonlar
-        button_y = box_rect.bottom - s(40)
+        msg1_lines = list(wrap_text_limited(msg1, self.font_normal, inner_w, max_lines=2).lines)
+        msg2_lines = list(wrap_text_limited(msg2, self.font_normal, inner_w, max_lines=2).lines)
+        warn_lines = list(wrap_text_limited(
+            t('user_delete_warning'), self.font_small, inner_w, max_lines=2).lines)
+
+        title_h = self.font_normal.get_height()
+        msg_line_h = self.font_normal.get_height() + s(3)
+        warn_line_h = self.font_small.get_height() + s(2)
+        msg1_h = len(msg1_lines) * msg_line_h
+        msg2_h = len(msg2_lines) * msg_line_h
+        warn_h = len(warn_lines) * warn_line_h
         button_width = s(120)
         button_height = s(35)
         gap = s(30)
-        
-        # Hayır butonu (sol)
-        no_button = pygame.Rect(width // 2 - button_width - gap // 2, button_y - button_height // 2, button_width, button_height)
+        buttons_stacked = (2 * button_width + gap) > inner_w
+        button_block_h = 2 * button_height + gap if buttons_stacked else button_height
+
+        content_h = (
+            s(20) + s(80) + s(9) + title_h + s(12) + msg1_h + s(6) + msg2_h
+            + s(10) + warn_h + s(8) + button_block_h + s(23)
+        )
+        box_height = min(max(s(280), content_h), bounds.height - 2 * s(16))
+        box_rect = pygame.Rect(width // 2 - box_width // 2, height // 2 - box_height // 2, box_width, box_height)
+        box_rect = box_rect.clamp(bounds)
+        cx = box_rect.centerx
+
+        # Buton geometrisi ÖNCE çözülür (eski çapa: kutu tabanından s(40)
+        # merkez; yan yana sığmazlarsa P1-8 dar-alan guard'ıyla istiflenir)
+        # — böylece metin akışı buton bloğunun ÜSTÜNDE kalan bütçeye
+        # (content_limit) yazılır; taşan satır kontrollü düşürülür
+        # (öncelik: msg1 > msg2 > uyarı; butonlar daima çizilir).
+        button_y = box_rect.bottom - s(40)
+        if buttons_stacked:
+            no_button = pygame.Rect(
+                cx - button_width // 2,
+                button_y - button_block_h // 2,
+                button_width, button_height)
+            yes_button = pygame.Rect(
+                cx - button_width // 2,
+                no_button.bottom + gap,
+                button_width, button_height)
+        else:
+            no_button = pygame.Rect(cx - button_width - gap // 2, button_y - button_height // 2, button_width, button_height)
+            yes_button = pygame.Rect(cx + gap // 2, button_y - button_height // 2, button_width, button_height)
+        content_limit = min(no_button.top, yes_button.top) - s(8)
+
+        # Gölge
+        shadow_rect = box_rect.inflate(s(10), s(10))
+        pygame.draw.rect(self.screen, (0, 0, 0), shadow_rect, border_radius=s(20))
+
+        # Ana kutu
+        pygame.draw.rect(self.screen, (40, 50, 70), box_rect, border_radius=s(20))
+        pygame.draw.rect(self.screen, (255, 100, 100), box_rect, s(4), border_radius=s(20))
+
+        # Uyarı ikonu (eski çapa: kutu tepesinden s(60) merkez).
+        icon_rect = pygame.Rect(0, 0, s(80), s(80))
+        icon_rect.center = (cx, box_rect.top + s(60))
+        pygame.draw.circle(self.screen, (255, 200, 100), icon_rect.center, s(32))
+        pygame.draw.circle(self.screen, (60, 30, 20), icon_rect.center, s(32), s(4))
+
+        # Başlık
+        title_surf = self.font_normal.render(t('user_will_delete'), True, (255, 150, 150))
+        title_rect = title_surf.get_rect(midtop=(cx, box_rect.top + s(109)))
+        self.screen.blit(title_surf, title_rect)
+
+        # Mesajlar — sarılmış satırlar akışla (P1-11: uzun kullanıcı adı
+        # eskiden tek satırda kutudan taşıyordu; artık wrap + '...').
+        # content_limit: buton bloğuna binen satır çizilmez (kaydedilmez).
+        msg1_rects = []
+        y_cursor = title_rect.bottom + s(12)
+        for line in msg1_lines:
+            if y_cursor + title_h > content_limit:
+                break
+            line_surf = self.font_normal.render(line, True, WHITE)
+            line_rect = line_surf.get_rect(midtop=(cx, y_cursor))
+            self.screen.blit(line_surf, line_rect)
+            msg1_rects.append(line_rect)
+            y_cursor = line_rect.bottom + s(3)
+
+        msg2_rects = []
+        y_cursor += s(3)
+        for line in msg2_lines:
+            if y_cursor + title_h > content_limit:
+                break
+            line_surf = self.font_normal.render(line, True, WHITE)
+            line_rect = line_surf.get_rect(midtop=(cx, y_cursor))
+            self.screen.blit(line_surf, line_rect)
+            msg2_rects.append(line_rect)
+            y_cursor = line_rect.bottom + s(3)
+
+        # Uyarı metni — butonların üstünde; kalan bütçe yetmezse satırlar
+        # kontrollü düşürülür (öncelik en düşük).
+        warning_rects = []
+        y_cursor += s(7)
+        for line in warn_lines:
+            if y_cursor + (warn_line_h - s(2)) > content_limit:
+                break
+            warn_surf = self.font_small.render(line, True, (255, 200, 100))
+            warn_rect = warn_surf.get_rect(midtop=(cx, y_cursor))
+            self.screen.blit(warn_surf, warn_rect)
+            warning_rects.append(warn_rect)
+            y_cursor = warn_rect.bottom + s(2)
+
+        # Butonlar
+        # Hayır butonu (sol/üst)
         pygame.draw.rect(self.screen, (100, 200, 100), no_button, border_radius=s(10))
         pygame.draw.rect(self.screen, (150, 255, 150), no_button, s(2), border_radius=s(10))
-        
         no_text = self.font_normal.render(t('user_no'), True, WHITE)
         self.screen.blit(no_text, no_text.get_rect(center=no_button.center))
-        
-        # Evet butonu (sağ)
-        yes_button = pygame.Rect(width // 2 + gap // 2, button_y - button_height // 2, button_width, button_height)
+
+        # Evet butonu (sağ/alt)
         pygame.draw.rect(self.screen, (200, 100, 100), yes_button, border_radius=s(10))
         pygame.draw.rect(self.screen, (255, 150, 150), yes_button, s(2), border_radius=s(10))
-        
         yes_text = self.font_normal.render(t('user_yes'), True, WHITE)
         self.screen.blit(yes_text, yes_text.get_rect(center=yes_button.center))
-    
+
+        # P1-11: gerçek blit rect'leri containment testleri için kaydedilir.
+        self._confirm_delete_rects = {
+            'box': box_rect,
+            'bounds': bounds,
+            'buttons_stacked': buttons_stacked,
+            'no_button': no_button,
+            'yes_button': yes_button,
+            'title': title_rect,
+            'msg1_lines': msg1_rects,
+            'msg2_lines': msg2_rects,
+            'warning_lines': warning_rects,
+        }
+
     def _draw_view_profile(self):
         """Profil görüntüleme ekranını çiz - Geliştirilmiş tasarım"""
         self._apply_responsive_metrics()
@@ -2719,22 +2832,69 @@ class UserManagementScreen:
         
         # İçerik başlangıç y konumu
         content_y = card_y + banner_height + avatar_size // 2 + s(30)
-        
-        # Kullanıcı adı - daha büyük ve stilize
-        name_surf = self.font_title.render(self.edit_username, True, WHITE)
+
+        # Kullanıcı adı - daha büyük ve stilize.
+        # P1-11: ada kart genişliği bütçesi (render_fit_text LRU → kısa
+        # adlarda çıktı birebir; uzun adlarda font küçülür). render_fit_text
+        # min_size tabanında TAM METNİ döndürebildiğinden taban fontta da
+        # sığmayan adlar ASCII '...' ile kısaltılır (sonuç (metin, bütçe)
+        # anahtarlı örnek önbelleğinden — kare-başı trim döngüsü yok).
+        name_text = str(self.edit_username)
+        name_budget = max(s(60), card_width - s(80))
+        name_min_size = max(14, self.font_small_size)
+        trim_cache = getattr(self, '_profile_name_trim_cache', None)
+        if trim_cache is None:
+            trim_cache = {}
+            self._profile_name_trim_cache = trim_cache
+        trim_key = (name_text, name_budget, self.font_title_size, name_min_size)
+        name_eff_text = trim_cache.get(trim_key)
+        if name_eff_text is None:
+            name_surf = retro_style.render_fit_text(
+                name_text, WHITE, name_budget, self.font_title_size,
+                bold=True, min_size=name_min_size)
+            if name_surf.get_width() <= name_budget:
+                name_eff_text = name_text
+            else:
+                name_font = retro_style.get_fitting_font(
+                    name_text, self.font_title_size, name_budget,
+                    bold=True, min_size=name_min_size)
+                trimmed = name_text
+                while trimmed and name_font.size(trimmed + '...')[0] > name_budget:
+                    trimmed = trimmed[:-1]
+                name_eff_text = (trimmed + '...') if trimmed else '...'
+            trim_cache[trim_key] = name_eff_text
+            while len(trim_cache) > 8:
+                trim_cache.pop(next(iter(trim_cache)), None)
+        name_surf = retro_style.render_fit_text(
+            name_eff_text, WHITE, name_budget, self.font_title_size,
+            bold=True, min_size=name_min_size)
         name_rect = name_surf.get_rect(center=(width // 2, content_y))
         self.screen.blit(name_surf, name_rect)
-        
-        # Bio - italik efekti ve quote marks
+
+        # Bio - italik efekti ve quote marks.
+        # P1-11: bio kutu genişliğine sarılır (eski kod uzun biyografiyi
+        # tek satırda karttan taşıyordu); boş-bio mesajı aynen kalır.
         bio = user_data.get('bio', '')
+        bio_rects = []
         if bio:
             bio_text = f'"{bio}"'
-            bio_surf = self.font_normal.render(bio_text, True, (225, 235, 250))
+            bio_lines = list(wrap_text_limited(
+                bio_text, self.font_normal, max(s(60), card_width - s(80)),
+                max_lines=2).lines)
+            bio_line_h = self.font_normal.get_height() + 2
+            bio_block_h = len(bio_lines) * bio_line_h
+            bio_y = content_y + s(50) - bio_block_h // 2
+            for bi, bio_line in enumerate(bio_lines):
+                bio_surf = self.font_normal.render(bio_line, True, (225, 235, 250))
+                bio_rect = bio_surf.get_rect(midtop=(width // 2, bio_y + bi * bio_line_h))
+                self.screen.blit(bio_surf, bio_rect)
+                bio_rects.append(bio_rect)
         else:
             bio_text = t('user_no_bio')
             bio_surf = self.font_small.render(bio_text, True, (120, 120, 140))
-        bio_rect = bio_surf.get_rect(center=(width // 2, content_y + s(50)))
-        self.screen.blit(bio_surf, bio_rect)
+            bio_rect = bio_surf.get_rect(center=(width // 2, content_y + s(50)))
+            self.screen.blit(bio_surf, bio_rect)
+            bio_rects.append(bio_rect)
         
         # Favori mod badge
         fav_mode = user_data.get('favorite_mode', t('mode_label_classic'))
@@ -2764,32 +2924,59 @@ class UserManagementScreen:
         stat_card_width = s(280)
         stat_card_height = s(75)
         gap = s(15)
-        cols = 3
-        
+
+        # P1-11 (Quadrix_Tum_Ekranlar_Olcekleme_Denetim_Raporu): kolon sayısı
+        # sabit 3 yerine kullanilabilir genişlikten türetilir (3 -> 2 -> 1
+        # merdiveni — dar pencerelerde grid kart dışına taşıyordu). Bütçe eski
+        # düzenin görsel çapasıyla uyumlu: sol kenar payi s(30), sağda flush
+        # (eski 3 kolonlu düzen kartın sağ kenarına tam oturuyordu —
+        # baseline'da kolon sayısı degismez). Tek kolon bile sığmazsa kart
+        # genişliği bütçeye büzülür (okunabilirlik tabanı s(120)).
+        stat_grid_x = card_x + s(30)
+        stat_avail_w = max(s(60), card_x + card_width - stat_grid_x)
+        cols = 1
+        for cand_cols in (3, 2, 1):
+            if cand_cols * stat_card_width + (cand_cols - 1) * gap <= stat_avail_w:
+                cols = cand_cols
+                break
+        else:
+            stat_card_width = max(s(120), min(stat_card_width, stat_avail_w))
+        stat_rows_total = (len(main_stats) + cols - 1) // cols
+
+        stat_rects_drawn = []
         for i, (label, value) in enumerate(main_stats):
             row = i // cols
             col = i % cols
-            
-            x = card_x + s(30) + col * (stat_card_width + gap)
+
+            x = stat_grid_x + col * (stat_card_width + gap)
             y = stats_y + row * (stat_card_height + gap)
-            
+
+            # Dikey içerik guard'ı (P1-11): kartın alt bütçesini aşan satır
+            # çizilmez (eski kod aşırı kısa pencerelerde kartın altından
+            # tasiyordu); mod bölümü GERÇEK satır sayısına bağlanır.
+            if y + stat_card_height > card_rect.bottom - s(4):
+                stat_rows_total = min(stat_rows_total, row)
+                break
+
             # Stat kartı
             stat_rect = pygame.Rect(x, y, stat_card_width, stat_card_height)
             pygame.draw.rect(self.screen, (35, 45, 70), stat_rect, border_radius=s(12))
             pygame.draw.rect(self.screen, (60, 80, 130), stat_rect, s(2), border_radius=s(12))
-            
+
             # Label ve Value
             label_surf = self.font_small.render(label, True, (150, 160, 180))
             value_surf = self.font_normal.render(str(value), True, WHITE)
-            
+
             label_rect = label_surf.get_rect(topleft=(x + s(18), y + s(12)))
             value_rect = value_surf.get_rect(topleft=(x + s(18), y + s(38)))
-            
+
             self.screen.blit(label_surf, label_rect)
             self.screen.blit(value_surf, value_rect)
-        
+            stat_rects_drawn.append(stat_rect)
+
         # Mod bazlı istatistikler bölümü
-        mode_section_y = stats_y + 2 * (stat_card_height + gap) + s(30)
+        # P1-11: sabit '2 satır' varsayımı yerine çizilen satır sayısı.
+        mode_section_y = stats_y + stat_rows_total * (stat_card_height + gap) + s(30)
         
         # Başlık
         mode_title_surf = self.font_normal.render(t('user_mode_stats'), True, (235, 240, 250))
@@ -2813,40 +3000,70 @@ class UserManagementScreen:
         if modes_to_show:
             mode_card_width = s(200)
             mode_card_height = s(60)
-            max_modes_per_row = 4
-            
+
+            # P1-11: satır başına mod sayısı da genişlikten türetilir
+            # (4 -> 3 -> 2 -> 1); tek kart sığmazsa kart genişliği büzülür.
+            max_modes_per_row = 1
+            for cand_modes in (4, 3, 2, 1):
+                if cand_modes * mode_card_width + (cand_modes - 1) * gap <= stat_avail_w:
+                    max_modes_per_row = cand_modes
+                    break
+            else:
+                mode_card_width = max(s(90), min(mode_card_width, stat_avail_w))
+
+            mode_rects_drawn = []
             for i, (mode, stats) in enumerate(modes_to_show[:8]):  # Max 8 mod
                 row = i // max_modes_per_row
                 col = i % max_modes_per_row
-                
-                x = card_x + s(30) + col * (mode_card_width + gap)
+
+                x = stat_grid_x + col * (mode_card_width + gap)
                 y = mode_cards_y + row * (mode_card_height + gap)
-                
+
+                # Dikey içerik guard'ı: kart alt bütçesi.
+                if y + mode_card_height > card_rect.bottom - s(4):
+                    break
+
                 # Mod kartı
                 mode_rect = pygame.Rect(x, y, mode_card_width, mode_card_height)
                 pygame.draw.rect(self.screen, (40, 50, 80), mode_rect, border_radius=s(10))
                 pygame.draw.rect(self.screen, (80, 100, 150), mode_rect, s(2), border_radius=s(10))
-                
+
                 # Mod adı
                 mode_name = mode.upper()
                 mode_name_surf = self.font_small.render(mode_name, True, (200, 220, 255))
                 mode_name_rect = mode_name_surf.get_rect(midtop=(x + mode_card_width // 2, y + s(8)))
                 self.screen.blit(mode_name_surf, mode_name_rect)
-                
+
                 # Mod stat
                 if mode == 'pvp':
                     stat_text = f"{stats.get('wins', 0)}K / {stats.get('losses', 0)}M"
                 else:
                     stat_text = t('user_mode_games', games=stats.get('games', 0))
-                
+
                 stat_surf = self.font_small.render(stat_text, True, WHITE)
                 stat_rect = stat_surf.get_rect(midbottom=(x + mode_card_width // 2, y + mode_card_height - s(8)))
                 self.screen.blit(stat_surf, stat_rect)
+                mode_rects_drawn.append(mode_rect)
         else:
+            mode_rects_drawn = []
             # Henüz oyun oynamamış
             no_games = self.font_small.render(t('user_no_games'), True, (100, 100, 120))
             no_games_rect = no_games.get_rect(center=(width // 2, mode_cards_y + s(30)))
             self.screen.blit(no_games, no_games_rect)
+
+        # P1-11: gerçek blit rect'leri containment testleri için kaydedilir.
+        self._view_profile_rects = {
+            'card': card_rect,
+            'name': name_rect,
+            'bio_lines': bio_rects,
+            'stat_cols': cols,
+            'stat_avail_w': int(stat_avail_w),
+            'stat_card_width': int(stat_card_width),
+            'stat_rows_drawn': len(stat_rects_drawn),
+            'stat_rects': stat_rects_drawn,
+            'mode_cols': max_modes_per_row if modes_to_show else 0,
+            'mode_rects': mode_rects_drawn,
+        }
         
         # Mesaj gösterimi
         if self.message:
