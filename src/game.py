@@ -2231,7 +2231,11 @@ class Game:
         scale = min(active_width / DEFAULT_WINDOW_WIDTH,
                    active_height / DEFAULT_WINDOW_HEIGHT)
         scale *= self._display_pixel_ratio()
-        self.font_large = UIFonts.get(int(FONT_SIZE_LARGE * scale))
+        # DUZ-010: font_large'ın oluşturulduğu ham int boyut da saklanır —
+        # combo popup board genişliğine sığdırma yürüyüşü UIFonts cache'inde
+        # aynı aile/boyut zincirinde kalır (id(font) tabanlı anahtar değil).
+        self._font_large_size = int(FONT_SIZE_LARGE * scale)
+        self.font_large = UIFonts.get(self._font_large_size)
         self.font_medium = UIFonts.get(int(FONT_SIZE_MEDIUM * scale))
         self.font_small = UIFonts.get(int(FONT_SIZE_SMALL * scale))
         # Fontlar yeniden boyutlandığında text_cache'i temizle: render_text anahtarı
@@ -5796,19 +5800,40 @@ class Game:
 
             msg_cx = board_x + shake_x + board_w // 2
             msg_cy = board_y + shake_y + board_h // 3
-            msg_font = self.font_large
+            # DUZ-010: metin tahta genişliğine sığdırılır (font ailesi korunur)
+            # ve mesaj başına BİR kez render edilip cache'lenir — kare başına
+            # font render tahsisi kalkar; render edilen yüzeyler bu popup'a
+            # ait kopyalar olduğu için alpha fade paylaşımlı font cache'ini
+            # (CJK HybridFont) kirletmez. Metnin board'dan yatay taşıp dar
+            # pencerede sağ HUD paneline girmesi böylece kapanır.
+            cache_key = (msg, getattr(self, '_font_large_size', FONT_SIZE_LARGE), board_w)
+            cache = getattr(self, '_combo_popup_cache', None)
+            if cache is None or cache[0] != cache_key:
+                max_text_w = max(cell_size, board_w - 2 * cell_size)
+                msg_font = self.font_large
+                if msg_font.size(msg)[0] > max_text_w:
+                    fit_size = cache_key[1]
+                    while fit_size > 10 and UIFonts.get(fit_size).size(msg)[0] > max_text_w:
+                        fit_size -= 2
+                    msg_font = UIFonts.get(max(10, fit_size))
+                shadow = msg_font.render(msg, True, COMBO_POPUP_SHADOW_COLOR).copy()
+                txt = msg_font.render(msg, True, get_combo_popup_color(msg)).copy()
+                cache = (cache_key, shadow, txt)
+                self._combo_popup_cache = cache
+            _, shadow, txt = cache
 
-            shadow = msg_font.render(msg, True, COMBO_POPUP_SHADOW_COLOR)
-            if alpha < 255:
-                shadow.set_alpha(alpha)
+            shadow.set_alpha(alpha)
+            txt.set_alpha(alpha)
+            txt_rect = txt.get_rect(center=(msg_cx, msg_cy))
             self.screen.blit(shadow, shadow.get_rect(center=(msg_cx + 2, msg_cy + 2)))
-
-            txt = msg_font.render(msg, True, get_combo_popup_color(msg))
-            if alpha < 255:
-                txt.set_alpha(alpha)
-            self.screen.blit(txt, txt.get_rect(center=(msg_cx, msg_cy)))
+            self.screen.blit(txt, txt_rect)
+            # DUZ-010: containment/hitbox testleri için güncel rect kaydı.
+            self._combo_popup_rect = txt_rect
         
-        # Havai fişek milestone mesajı - Modern UI teması (Yukarıda, skor bazlı renkler)
+        # Havai fişek milestone mesajı - Modern UI teması (board çapa ölçekli, skor bazlı renkler)
+        # DUZ-010: panel rect her kare güncellenir; firework kapalıyken None'a
+        # düşer ki toast yerleşimi bayat rect kullanmasın.
+        self._milestone_panel_rect = None
         if self.firework_active and self.firework_time > 0:
             # Animasyon hesaplamaları
             frames_left = int(self.firework_time)
@@ -5847,17 +5872,58 @@ class Game:
                 milestone_color = (255, 215, 0)  # Altın
                 milestone_msg = f"{k_value}K - Efsanevi!"
             
-            panel_width = 280
-            panel_height = 90
-            
+            # DUZ-010: panel boyutu board (cell) çapasıyla ölçeklenir, konum
+            # board merkezine hizalanır. Sabit piksel yerleşim (ekran-merkez
+            # 280x90, y=50) kalktı: panel önce board'un üstüne sığarsa oraya
+            # (özgün 'YUKARIDA' niyeti), sığmazsa tahta altı şeride,
+            # sıkışık ekranda orantılı küçültülerek yerleşir ve aktif alan
+            # içine clamp'lenir — ≤1080p'de spawn satırlarını örten eski
+            # ekran-merkez çakışması kapanır.
+            cell_size = self.get_cell_size()
+            board_w = self.board_width * cell_size
+            board_h = self.board_height * cell_size
+            board_x, board_y = self.get_board_offset()
+            board_bottom = board_y + board_h
+            active_width, active_height = self._active_ui_size()
+            bounds = pygame.Rect(0, 0, active_width, active_height)
+
+            milestone_scale = max(0.7, min(2.0, cell_size / 32.0))
+            panel_width = int(280 * milestone_scale)
+            panel_height = int(90 * milestone_scale)
+            gap = max(6, cell_size // 4)
+            margin = 8
+            # Pulse (±%3) taraf seçimini titretmesin: karar maks. pulse
+            # yüksekliğiyle verilir; animasyonlu panel taban konuma ortalanır.
+            fit_height = int(panel_height * 1.05)
+            avail_above = board_y - gap - bounds.top - margin
+            avail_below = bounds.bottom - margin - board_bottom - gap
+            if fit_height <= avail_above:
+                panel_y = board_y - gap - panel_height
+            elif fit_height <= avail_below:
+                panel_y = board_bottom + gap
+            else:
+                # Sıkışık ekran: iki taraftan geniş olana orantılı sığdır.
+                fit_avail = max(avail_above, avail_below)
+                fit_scale = max(0.05, float(fit_avail) / float(panel_height))
+                panel_width = max(1, int(panel_width * fit_scale))
+                panel_height = max(1, int(panel_height * fit_scale))
+                if avail_below >= avail_above:
+                    panel_y = board_bottom + gap
+                else:
+                    panel_y = board_y - gap - panel_height
+
             # Animasyonlu panel boyutu
             animated_w = int(panel_width * scale_factor)
             animated_h = int(panel_height * scale_factor)
-            active_width, _ = self._active_ui_size()
-            animated_x = (active_width - animated_w) // 2
-            animated_y = 50  # YUKARIDA - daha üstte
-            
-            panel_rect = pygame.Rect(animated_x, animated_y, animated_w, animated_h)
+            panel_rect = pygame.Rect(0, 0, animated_w, animated_h)
+            panel_rect.center = (
+                board_x + board_w // 2,
+                panel_y + panel_height // 2,
+            )
+            panel_rect = clamp_rect_in_parent(panel_rect, bounds)
+            # DUZ-010: hitbox/containment testleri ve toast şerit yerleşimi
+            # için güncel panel rect kaydı.
+            self._milestone_panel_rect = panel_rect
             
             # Dış glow efekti - milestone renginde
             glow_alpha = int(80 + 60 * pulse)
@@ -6748,7 +6814,66 @@ class Game:
             pass  # Debug output removed
         
         current_time = pygame.time.get_ticks()
-        y_offset = 18
+
+        # DUZ-010: bildirim kutuları tahta altı şeride yerleşir (board
+        # merkezli, aktif alan içine clamp'li). Sağ üst köşedeki eski sabit
+        # yerleşim dar ekranlarda yan HUD panelini — 2./3. kutu itibarıyla
+        # NEXT#2 ve HOLD kutularını — örtüyordu. Ölçek yalnız küçültür;
+        # şeride sığmayan bildirimler sıraya girer (yaşlanmaz, ilk çizimde
+        # zamanları sıfırlanır ve tam 5 s gösterilir).
+        cell_size = self.get_cell_size()
+        board_w = self.board_width * cell_size
+        board_h = self.board_height * cell_size
+        board_x, board_y = self.get_board_offset()
+        board_bottom = board_y + board_h
+        active_width, active_height = self._active_ui_size()
+        bounds = pygame.Rect(0, 0, active_width, active_height)
+
+        # HUD paneli board altına ~10-13px sarkar (layout panel_bottom_margin):
+        # şerit panelin alt kenarından başlar, Hold/Next kutularına değmez.
+        hud_rect = self._get_right_hud_panel_metrics(board_x, board_y, board_w, board_h)['rect']
+        strip_gap = 8
+        strip_margin = 8
+        strip_top = max(board_bottom, hud_rect.bottom) + strip_gap
+        strip_bottom = bounds.bottom - strip_margin
+        strip_avail = strip_bottom - strip_top
+
+        base_w, base_h = 392, 104
+        if strip_avail <= 0:
+            notif_scale = 1.0
+        else:
+            notif_scale = max(0.55, min(1.0, strip_avail / float(base_h)))
+        box_width = max(120, int(base_w * notif_scale))
+        box_height = max(24, int(base_h * notif_scale))
+        if strip_avail > 0:
+            box_height = min(box_height, strip_avail)
+        slot_gap = max(6, int(12 * notif_scale))
+        slot_height = box_height + slot_gap
+
+        # Board merkezli x; aktif alana clamp.
+        box_x = board_x + (board_w - box_width) // 2
+        box_x = max(bounds.left + strip_margin,
+                    min(box_x, bounds.right - strip_margin - box_width))
+
+        # Milestone paneli şeridi kullanıyorsa (sıkışık ekranlarda tahta altı
+        # yerleşim) onun altından başla; kutu boyutu değişmez, sıradakiler
+        # yer açılana dek bekler.
+        milestone_rect = getattr(self, '_milestone_panel_rect', None)
+        slot_top = strip_top
+        milestone_blocks = False
+        if milestone_rect is not None and milestone_rect.bottom > strip_top:
+            slot_top = milestone_rect.bottom + strip_gap
+            milestone_blocks = True
+
+        free_strip = strip_bottom - slot_top
+        max_slots = int(free_strip // slot_height)
+        if strip_avail <= 0:
+            max_slots = 0
+        elif not milestone_blocks:
+            max_slots = max(1, max_slots)
+
+        self._achievement_toast_rects = []  # DUZ-010: hitbox/containment kaydı
+        drawn_slots = 0
 
         def _ease_out_cubic(v: float) -> float:
             v = max(0.0, min(1.0, float(v)))
@@ -6760,9 +6885,13 @@ class Game:
             if cached is not None:
                 return cached
 
+            # DUZ-010: sanat BAZ boyutta (392x104) 2x supersample olarak
+            # üretilir ve hedef boyuta smoothscale edilir — küçültülmüş
+            # kutularda yıldız, şerit ve çerçeve iç ofsetleri orantılı kalır.
             scale = 2  # supersample for smoother edges/lines
-            hi_w = width * scale
-            hi_h = height * scale
+            base_w, base_h = 392, 104
+            hi_w = base_w * scale
+            hi_h = base_h * scale
             radius = 16 * scale
 
             base_hi = pygame.Surface((hi_w, hi_h), pygame.SRCALPHA)
@@ -6797,9 +6926,10 @@ class Game:
 
             panel = pygame.transform.smoothscale(base_hi, (width, height))
 
-            # Gölge yüzeyi de cache'le
+            # Gölge yüzeyi de cache'le (radius hedef genişlikle orantılı)
             shadow = pygame.Surface((width, height), pygame.SRCALPHA)
-            pygame.draw.rect(shadow, (0, 0, 0, 92), shadow.get_rect(), border_radius=16)
+            shadow_radius = max(4, int(16 * int(width) / base_w))
+            pygame.draw.rect(shadow, (0, 0, 0, 92), shadow.get_rect(), border_radius=shadow_radius)
 
             result = (panel, shadow)
             self._achievement_notif_surface_cache[cache_key] = result
@@ -6819,29 +6949,32 @@ class Game:
             return (trimmed.rstrip() + suffix) if trimmed else suffix
 
         for notification in self.achievement_notifications[:]:
+            # DUZ-010 sıra disiplini: slot yoksa bildirim yaşlanmaz; yer
+            # açılınca ilk çizimde zamanı sıfırlanır ve tam süresi gösterilir.
+            if drawn_slots >= max_slots:
+                continue
+
             elapsed = current_time - notification['time']
-            
+            if not notification.get('shown', False):
+                notification['shown'] = True
+                notification['time'] = current_time
+                elapsed = 0
+
             # 5 saniye sonra yavaşça kaybolsun
             if elapsed > 5000:
                 notification['alpha'] -= 6
                 if notification['alpha'] <= 0:
                     self.achievement_notifications.remove(notification)
                     continue
-            
+
             achievement = notification['achievement']
-            
-            # Bildirim kutusu
-            box_width = 392
-            box_height = 104
-            active_width, _ = self._active_ui_size()
-            box_x = active_width - box_width - 20
-            box_y = y_offset
+            box_y = slot_top + drawn_slots * slot_height
 
             # Yumuşak giriş animasyonu (ilk 300ms)
             entry_ms = 300.0
             entry_t = min(1.0, max(0.0, elapsed / entry_ms))
             eased = _ease_out_cubic(entry_t)
-            slide_px = int((1.0 - eased) * 24)
+            slide_px = int((1.0 - eased) * 24 * notif_scale)
             draw_x = box_x + slide_px
 
             gold = UIColors.NEON_GOLD
@@ -6858,7 +6991,7 @@ class Game:
             # Başarıma özgü renkli PNG ikon (varsa) yıldızın üzerine çizilir.
             ach_id = str(achievement.get('id', ''))
             if ach_id:
-                icon_box = 54
+                icon_box = max(24, int(54 * notif_scale))
                 cache_key = (ach_id, icon_box)
                 icon_surf = self._achievement_notif_icon_cache.get(cache_key)
                 if icon_surf is None:
@@ -6872,33 +7005,44 @@ class Game:
                         icon_surf = False
                     self._achievement_notif_icon_cache[cache_key] = icon_surf
                 if icon_surf:
-                    icon_rect = icon_surf.get_rect(center=(41, box_height // 2))
+                    icon_rect = icon_surf.get_rect(
+                        center=(max(20, int(41 * notif_scale)), box_height // 2))
                     notif.blit(icon_surf, icon_rect)
 
-            # Metinler (tema renkleri)
-            content_x = 82
-            content_w = box_width - content_x - 16
+            # Metinler (tema renkleri) — DUZ-010: ofsetler ve taban font
+            # boyutları kutu ölçeğiyle orantılı.
+            content_x = max(40, int(82 * notif_scale))
+            content_w = box_width - content_x - max(8, int(16 * notif_scale))
 
             title = t('achievement_unlocked')
-            title_font = retro_style.get_fitting_font(title, base_size=20, max_width=content_w, bold=True, min_size=12)
+            title_font = retro_style.get_fitting_font(
+                title, base_size=max(12, int(20 * notif_scale)),
+                max_width=content_w, bold=True, min_size=9)
             title_surf = title_font.render(title, True, gold)
-            notif.blit(title_surf, (content_x, 10))
+            notif.blit(title_surf, (content_x, max(6, int(10 * notif_scale))))
 
             name = str(achievement.get('name', ''))
-            name_font = retro_style.get_fitting_font(name, base_size=19, max_width=content_w, bold=True, min_size=12)
+            name_font = retro_style.get_fitting_font(
+                name, base_size=max(11, int(19 * notif_scale)),
+                max_width=content_w, bold=True, min_size=9)
             name_surf = name_font.render(_ellipsis(name, name_font, content_w), True, retro_style.text_primary)
-            notif.blit(name_surf, (content_x, 38))
+            notif.blit(name_surf, (content_x, max(20, int(38 * notif_scale))))
 
             desc = str(achievement.get('description', ''))
-            desc_font = retro_style.get_fitting_font(desc, base_size=15, max_width=content_w, bold=False, min_size=10)
+            desc_font = retro_style.get_fitting_font(
+                desc, base_size=max(9, int(15 * notif_scale)),
+                max_width=content_w, bold=False, min_size=8)
             desc_text = _ellipsis(desc, desc_font, content_w)
             desc_surf = desc_font.render(desc_text, True, retro_style.text_secondary)
-            notif.blit(desc_surf, (content_x, 68))
+            notif.blit(desc_surf, (content_x, max(36, int(68 * notif_scale))))
 
             notif.set_alpha(notification['alpha'])
             self.screen.blit(notif, (draw_x, box_y))
-            
-            y_offset += box_height + 12
+
+            # DUZ-010: güncel toast rect kaydı (containment/hitbox testleri).
+            self._achievement_toast_rects.append(
+                pygame.Rect(draw_x, box_y, box_width, box_height))
+            drawn_slots += 1
     
     def can_restart(self) -> bool:
         return True
