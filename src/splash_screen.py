@@ -10,6 +10,8 @@ from platform_utils import pump_startup_focus_warmup, resolve_frame_rate_cap
 from retro_style import retro_style
 from localization import t
 from background_effects import get_shared_falling_blocks_layer
+from game_over_surfaces import get_render_safe_rect
+from ui_text_layout import wrap_text_limited
 
 # macOS detection
 _IS_MACOS = sys.platform == 'darwin'
@@ -105,6 +107,15 @@ class SplashScreen:
         self._custom_prompt = prompt_text
         self.clock = pygame.time.Clock()
         self.last_frame: pygame.Surface | None = None
+
+        # P1-10 (Quadrix_Tum_Ekranlar_Olcekleme_Denetim_Raporu): başlık
+        # fontu (w, h) anahtarlı, prompt satır yüzeyleri (metin, font_h,
+        # bütçe) anahtarlı önbellek — kare-başı Surface tahsisi yasağı
+        # (CLAUDE.md); v2 desen paritesi.
+        self._prompt_lines_cache_key = None
+        self._prompt_lines_cache = None
+        self._neon_title_font_key = None
+        self._neon_title_font = None
 
         # Windows PrintScreen / focus-loss recovery state
         self._display_was_inactive = False
@@ -455,13 +466,31 @@ class SplashScreen:
         self.screen.blit(grid_surf, (0, 0))
     
     def _draw_neon_title(self, w, h, alpha, now):
-        """Neon efektli QUADRIX başlığı"""
-        title_font = retro_style.get_font(80)
-        
+        """Neon efektli QUADRIX başlığı (P1-10: genişlik bütçeli font).
+
+        Eski kod sabit ``get_font(80)`` kullanıyordu; dar pencerede/küçük
+        sanal tuvalde neon yüzeyi (glow padding dahil) ekranı taşabiliyordu.
+        Font artık ``get_fitting_font`` ile bütçeye küçülür — ölçüm
+        ``font.size()`` metriği üzerinden (Surface tahsisi yok; fontlar
+        retro_style LRU'sundan). 1366x768 ve üstünde taban 80 kalır
+        (baseline korunur; testle pinlenir). Glow/alpha animasyonu aynen
+        korunur: NeonText.render her kare rainbow glow rengiyle üretilir
+        (animasyonun kendisi — önbelleklenmez).
+        """
+        # P1-10: NeonText glow_amount=4 → kenar başına 16px glow padding;
+        # tam yüzey bütçesi = w*0.92 (kenar payı) - 2*16.
+        title_key = (int(w), int(h))
+        if self._neon_title_font_key != title_key or self._neon_title_font is None:
+            budget = max(24, int(w * 0.92) - 2 * 16)
+            self._neon_title_font = retro_style.get_fitting_font(
+                'QUADRIX', 80, budget, bold=True, min_size=24)
+            self._neon_title_font_key = title_key
+        title_font = self._neon_title_font
+
         # Rainbow color cycle
         hue = (now / 20) % 360
         color = self._hsv_to_rgb(hue, 0.8, 1.0)
-        
+
         # Glow efekti
         title_surf = NeonText.render('QUADRIX', title_font, (255, 255, 255), color, glow_amount=4)
         title_surf.set_alpha(alpha)
@@ -494,41 +523,86 @@ class SplashScreen:
         return (255, 255, 255)
     
     def _draw_animated_prompt(self, w, h, now, fade_out):
-        """Animasyonlu 'devam etmek için herhangi bir tuşa bas' prompt'u"""
+        """Animasyonlu 'devam etmek için herhangi bir tuşa bas' prompt'u
+
+        P1-10 (Quadrix_Tum_Ekranlar_Olcekleme_Denetim_Raporu): prompt artık
+        alt güvenli bandın (RenderGeometry safe rect; yoksa tam ekran —
+        mevcut davranış) genişlik bütçesine sarılır: ``wrap_text_limited``
+        (en fazla 2 satır) + kontrollü ASCII '...' (emoji/sembol yasağı —
+        CLAUDE.md). Beyaz metin satır yüzeyleri (metin, font_h, bütçe)
+        anahtarlı önbellekten gelir (kare-başı render yasağı). Glow ve
+        panel/ok animasyonları mevcut davranışla aynı (renk her kare
+        değiştiğinden glow/panel/ok yüzeyleri animasyon üretimidir).
+        Tek satırlık senaryoda yerleşim eski düzenle piksel-birebir
+        korunur (metin merkezi h*0.88, panel = metin + 80x + 36y).
+        """
         prompt_font = retro_style.get_font(22, bold=False)
         prompt_text = self._get_prompt_text()
-        
+
+        # P1-10: alt güvenli bant — safe rect varsa onun bantları, yoksa
+        # tam ekran (geriye dönük uyumlu).
+        safe_rect = get_render_safe_rect(self.screen)
+        if safe_rect is not None and safe_rect.width > 0 and safe_rect.height > 0:
+            band_left, band_right = int(safe_rect.left), int(safe_rect.right)
+            band_bottom = int(safe_rect.bottom)
+        else:
+            band_left, band_right = 0, int(w)
+            band_bottom = int(h)
+
+        # Yatay bütçe: panel + iki yandaki animasyonlu oklar (60px) bant
+        # içinde kalır; panel iç dolgusu 80px (mevcut düzen).
+        usable_w = max(120, (band_right - band_left) - 2 * 60)
+        text_max_w = max(40, usable_w - 80)
+
+        # Sarılmış satırların beyaz yüzeyleri — anahtar bazlı önbellek.
+        lines_key = (prompt_text, prompt_font.get_height(), text_max_w)
+        if self._prompt_lines_cache_key == lines_key and self._prompt_lines_cache is not None:
+            line_texts, line_surfs = self._prompt_lines_cache
+        else:
+            wrapped = wrap_text_limited(prompt_text, prompt_font, text_max_w, max_lines=2)
+            line_texts = list(wrapped.lines)
+            line_surfs = [prompt_font.render(line, True, (255, 255, 255))
+                          for line in line_texts]
+            self._prompt_lines_cache_key = lines_key
+            self._prompt_lines_cache = (line_texts, line_surfs)
+
         # Yanıp sönen efekt
         blink = 0.6 + 0.4 * math.sin(now / 300.0)
         text_alpha = int(255 * blink) if not fade_out else int(255 * (1 - blink))
-        
+
         # Rainbow border animasyonu
         hue = (now / 15) % 360
         border_color = self._hsv_to_rgb(hue, 0.7, 1.0)
-        
-        # Belirli bir tuşa bağlı olmayan generic prompt - düz metin render yeterli.
-        text_surf = prompt_font.render(prompt_text, True, (255, 255, 255))
-        text_rect = text_surf.get_rect(center=(w // 2, int(h * 0.88)))
-        
-        # Panel
-        panel_w = text_rect.width + 80
-        panel_h = text_rect.height + 36
-        panel_rect = pygame.Rect((w - panel_w) // 2, text_rect.y - 18, panel_w, panel_h)
+
+        # Panel: satır bloğu + mevcut dolgu (80x/36y). Tek satırda çıktı
+        # eski düzenle birebir (satır bloğu merkezi h*0.88'de ortalanır).
+        total_h = sum(s.get_height() for s in line_surfs)
+        panel_w = max(s.get_width() for s in line_surfs) + 80
+        panel_h = total_h + 36
+        center_x = (band_left + band_right) // 2
+        center_y = int(h * 0.88)
+        y_first = center_y - total_h // 2
+        panel_x = (band_right - band_left - panel_w) // 2 + band_left
+        panel_y = y_first - 18
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        # P1-10: alt bant sınırı — panel alt kenarı safe rect altını aşmaz.
+        if panel_rect.bottom > band_bottom - 6:
+            panel_rect.bottom = band_bottom - 6
         panel_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
-        
+
         # Gradient fill
         for i in range(panel_h):
             ratio = i / panel_h
             alpha_val = int(160 + 40 * ratio)
             pygame.draw.line(panel_surf, (15, 20, 40, alpha_val), (0, i), (panel_w, i))
-        
+
         # Animated border
         pygame.draw.rect(panel_surf, (*border_color, 200), panel_surf.get_rect(), 3, border_radius=18)
-        
+
         # Inner glow
         inner_rect = panel_surf.get_rect().inflate(-8, -8)
         pygame.draw.rect(panel_surf, (*border_color, 50), inner_rect, 2, border_radius=14)
-        
+
         # Dekoratif köşe ışıkları
         corner_size = 8
         corners = [(corner_size, corner_size), (panel_w - corner_size, corner_size),
@@ -536,31 +610,37 @@ class SplashScreen:
         for cx, cy in corners:
             pygame.draw.circle(panel_surf, (*border_color, 180), (cx, cy), 4)
             pygame.draw.circle(panel_surf, (255, 255, 255, 100), (cx, cy), 2)
-        
+
         self.screen.blit(panel_surf, panel_rect.topleft)
-        
-        # Text with glow
-        text_glow = prompt_font.render(prompt_text, True, border_color)
-        text_glow.set_alpha(text_alpha // 2)
-        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            self.screen.blit(text_glow, (text_rect.x + dx, text_rect.y + dy))
-        
-        text_surf.set_alpha(text_alpha)
-        self.screen.blit(text_surf, text_rect)
-        
+
+        # Satırlar: glow (animasyonlu renk, kare başına render — mevcut
+        # desen) + beyaz metin (önbellekten). Satırlar panel içinde üstten
+        # 18px dolguyla, blok merkezi h*0.88'e göre yerleşir.
+        line_y = panel_rect.top + 18
+        for line_text, line_surf in zip(line_texts, line_surfs):
+            line_rect = line_surf.get_rect(centerx=center_x, top=line_y)
+            text_glow = prompt_font.render(line_text, True, border_color)
+            text_glow.set_alpha(text_alpha // 2)
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                self.screen.blit(text_glow, (line_rect.x + dx, line_rect.y + dy))
+
+            line_surf.set_alpha(text_alpha)
+            self.screen.blit(line_surf, line_rect)
+            line_y += line_surf.get_height()
+
         # Animated arrows
         arrow_offset = int(10 * math.sin(now / 200.0))
         arrow_alpha = int(180 + 75 * math.sin(now / 250.0))
-        
+
         # Sol ok
         left_arrow = pygame.Surface((20, 20), pygame.SRCALPHA)
-        pygame.draw.polygon(left_arrow, (*border_color, arrow_alpha), 
+        pygame.draw.polygon(left_arrow, (*border_color, arrow_alpha),
                           [(15, 2), (5, 10), (15, 18)])
         self.screen.blit(left_arrow, (panel_rect.left - 30 - arrow_offset, panel_rect.centery - 10))
-        
+
         # Sağ ok
         right_arrow = pygame.Surface((20, 20), pygame.SRCALPHA)
-        pygame.draw.polygon(right_arrow, (*border_color, arrow_alpha), 
+        pygame.draw.polygon(right_arrow, (*border_color, arrow_alpha),
                           [(5, 2), (15, 10), (5, 18)])
         self.screen.blit(right_arrow, (panel_rect.right + 10 + arrow_offset, panel_rect.centery - 10))
     
