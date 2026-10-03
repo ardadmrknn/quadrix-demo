@@ -29,7 +29,15 @@ def main_functions():
 @pytest.mark.parametrize('steam_ready,bridge_ready,key', [(False, True, 'Steam'), (True, False, 'köprü')])
 def test_launch_guard_rejects_missing_dependency(main_functions, monkeypatch, steam_ready, bridge_ready, key):
     monkeypatch.setitem(sys.modules, 'steam_integration', types.SimpleNamespace(is_available=lambda: steam_ready))
-    monkeypatch.setitem(sys.modules, 'steam_networking', types.SimpleNamespace(SteamNetworking=lambda: types.SimpleNamespace(available=bridge_ready)))
+    # DUZ-012: _online_pvp_launch_status fonksiyon başında sınıflandırma
+    # sabitlerini ve log yardımcısını da import eder — stub bunları taşır.
+    monkeypatch.setitem(sys.modules, 'steam_networking', types.SimpleNamespace(
+        SteamNetworking=lambda: types.SimpleNamespace(available=bridge_ready),
+        ONLINE_PVP_ERR_BRIDGE_IMPORT_FAILED='bridge_import_failed',
+        ONLINE_PVP_ERR_STEAM_CLIENT_OFFLINE='steam_client_offline',
+        ONLINE_PVP_ERR_STEAM_SDK_MISSING='steam_sdk_missing',
+        log_online_pvp_event=lambda *a, **k: None,
+    ))
     ok, message = main_functions['_online_pvp_launch_status']()
     assert not ok
     assert key in message
