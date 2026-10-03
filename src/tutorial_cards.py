@@ -20,13 +20,26 @@ _REAL_CARD_LIBRARY: Dict[str, Dict[str, Any]] | None = None
 _REAL_GET_CARD_TITLE = None
 _REAL_GET_CARD_DESCRIPTION = None
 _REAL_CARD_TYPE_LABEL_KEY = None
+# P0-4: gerçek katalog yüklemesi başarısız olursa yeniden deneme bütçesi.
+# Tek seferlik kirli bir import penceresi (test stub'ları vb.) tüm süreci
+# fallback'e mahkum etmemeli; ama gerçekten bozuk bir bağımlılıkta her
+# çağrıda import denemek de pahalı — üst sınırla denge kurulur.
+_REAL_CARD_HELPERS_MAX_ATTEMPTS = 3
+_real_card_helpers_attempts = 0
 
 
 def _ensure_real_card_helpers() -> None:
-    global _REAL_CARD_LIBRARY, _REAL_GET_CARD_TITLE, _REAL_GET_CARD_DESCRIPTION, _REAL_CARD_TYPE_LABEL_KEY
+    global _REAL_CARD_LIBRARY, _REAL_GET_CARD_TITLE, _REAL_GET_CARD_DESCRIPTION
+    global _REAL_CARD_TYPE_LABEL_KEY, _real_card_helpers_attempts
     if _REAL_CARD_LIBRARY is not None:
         return
+    if _real_card_helpers_attempts >= _REAL_CARD_HELPERS_MAX_ATTEMPTS:
+        # Deneme bütçesi tükendi: kalıcı fallback (eski davranış).
+        return
 
+    _real_card_helpers_attempts += 1
+    # 'işlemde' sentinel'i: kurulum sırasında iç içe çağrı gelirse erken
+    # dönmesi için önden boş kütüphane yazılır (özyineleme koruması).
     _REAL_CARD_LIBRARY = {}
     try:
         try:
@@ -61,7 +74,11 @@ def _ensure_real_card_helpers() -> None:
         _REAL_GET_CARD_DESCRIPTION = get_card_description
         _REAL_CARD_TYPE_LABEL_KEY = _card_type_label_key
     except Exception:
-        _REAL_CARD_LIBRARY = {}
+        # P0-4: başarısızlık KALICI memoize edilmez. Eski davranışta {}'ye
+        # düşüp bir daha asla denenmiyordu; tek seferlik kirli pencere tüm
+        # sonraki çağrıları tutorial fallback değerlerine mahkum ediyordu.
+        # None kalır → bir sonraki çağrı yeniden dener.
+        _REAL_CARD_LIBRARY = None
         _REAL_GET_CARD_TITLE = None
         _REAL_GET_CARD_DESCRIPTION = None
         _REAL_CARD_TYPE_LABEL_KEY = None
