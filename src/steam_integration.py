@@ -1031,12 +1031,14 @@ def init() -> bool:
             try:
                 dll.SteamAPI_ISteamUserStats_RequestCurrentStats.restype = ctypes.c_bool
                 dll.SteamAPI_ISteamUserStats_RequestCurrentStats.argtypes = [ctypes.c_void_p]
-                result = dll.SteamAPI_ISteamUserStats_RequestCurrentStats(_isteam_user_stats)
+                with _pump_lock:
+                    result = dll.SteamAPI_ISteamUserStats_RequestCurrentStats(_isteam_user_stats)
                 # Kısa süre pump yap ki stats gelsin
                 for _ in range(10):
                     time.sleep(0.05)
                     try:
-                        dll.SteamAPI_RunCallbacks()
+                        with _pump_lock:
+                            dll.SteamAPI_RunCallbacks()
                     except Exception:
                         pass
                 print(f"[Steam] RequestCurrentStats gönderildi: {result}")
@@ -1399,25 +1401,33 @@ def unlock_steam_achievement(api_name: str) -> bool:
         api_name: Steamworks konsolunda tanımlı API Name (ör. 'ACH_FIRST_GAME').
 
     Returns:
-        True → başarıyla set edildi ve store edildi.
+        True → SetAchievement ve StoreStats isteği kabul edildi; sunucu onayı değildir.
         False → Steam müsait değil veya hata oluştu.
     """
     if not is_available() or not _isteam_user_stats or not _dll:
         return False
     try:
         name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
-        ok = _dll.SteamAPI_ISteamUserStats_SetAchievement(_isteam_user_stats, name_bytes)
-        if ok:
-            _dll.SteamAPI_ISteamUserStats_StoreStats(_isteam_user_stats)
-            print(f"[Steam] Achievement unlocked: {api_name}")
-        return bool(ok)
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return False
+            set_ok = bool(dll.SteamAPI_ISteamUserStats_SetAchievement(user_stats, name_bytes))
+            if not set_ok:
+                return False
+            store_ok = bool(dll.SteamAPI_ISteamUserStats_StoreStats(user_stats))
+        if store_ok:
+            print(f"[Steam] Achievement kayıt isteği kabul edildi: {api_name}")
+        else:
+            print(f"[Steam] Achievement StoreStats başarısız: {api_name}")
+        return store_ok
     except Exception as e:
         print(f"[Steam] Achievement unlock hatası ({api_name}): {e}")
         return False
 
 
 def is_steam_achievement_unlocked(api_name: str) -> bool | None:
-    """Steam'de başarımın açılmış olup olmadığını sorgula.
+    """Steam SDK önbelleğindeki başarım durumunu sorgula; sunucu kayıt onayı değildir.
 
     Returns:
         True/False → durum, None → sorgulanamadı.
@@ -1427,9 +1437,13 @@ def is_steam_achievement_unlocked(api_name: str) -> bool | None:
     try:
         name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
         unlocked = ctypes.c_bool(False)
-        ok = _dll.SteamAPI_ISteamUserStats_GetAchievement(
-            _isteam_user_stats, name_bytes, ctypes.byref(unlocked)
-        )
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return None
+            ok = dll.SteamAPI_ISteamUserStats_GetAchievement(
+                user_stats, name_bytes, ctypes.byref(unlocked)
+            )
         return bool(unlocked.value) if ok else None
     except Exception as e:
         print(f"[Steam] Achievement get hatası ({api_name}): {e}")
@@ -1437,37 +1451,68 @@ def is_steam_achievement_unlocked(api_name: str) -> bool | None:
 
 
 def sync_all_achievements(unlocked_ids: dict[str, str], id_map: dict[str, str]) -> int:
-    """Oyundaki tüm açılmış başarımları Steam'e toplu senkronla.
+    """Yerelde açılmış başarımları idempotent olarak yeniden gönder.
+
+    GetAchievement, SetAchievement sonrası henüz StoreStats başarılı olmadan da
+    True dönebilir. Bu yüzden SDK önbelleği bir yeniden gönderimi engellemez.
 
     Args:
         unlocked_ids: {achievement_id: unlock_date} — oyun içi açılmış başarımlar.
         id_map: {achievement_id: steam_api_name} — oyun ID → Steam API Name eşlemesi.
 
     Returns:
-        Yeni senkronlanan başarım sayısı.
+        Yeni SetAchievement + StoreStats isteği kabul edilen başarım sayısı.
+        SDK önbelleğinde açık olanlar sayılmaz; sonuç sunucu onayı değildir.
     """
     if not is_available() or not _isteam_user_stats or not _dll:
         return 0
     count = 0
-    for ach_id, steam_name in id_map.items():
-        if ach_id in unlocked_ids:
-            # Zaten Steam'de açık mı kontrol et
-            already = is_steam_achievement_unlocked(steam_name)
-            if already is True:
-                continue
-            try:
+    store_needed = False
+    try:
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return 0
+            for ach_id, steam_name in id_map.items():
+                if ach_id not in unlocked_ids:
+                    continue
                 name_bytes = steam_name.encode('utf-8') if isinstance(steam_name, str) else steam_name
-                ok = _dll.SteamAPI_ISteamUserStats_SetAchievement(_isteam_user_stats, name_bytes)
+                try:
+                    achieved = ctypes.c_bool(False)
+                    get_ok = bool(dll.SteamAPI_ISteamUserStats_GetAchievement(
+                        user_stats, name_bytes, ctypes.byref(achieved)
+                    ))
+                    if get_ok and achieved.value:
+                        # Önbellekte açık görünen başarım için de idempotent
+                        # SetAchievement gönder: SDK'nin dirty-bayrak iç
+                        # davranışına güvenmeden yeniden gönderim garantisi.
+                        # SayılMAZ (count yalnız yeni işaretlenenleri sayar).
+                        try:
+                            dll.SteamAPI_ISteamUserStats_SetAchievement(user_stats, name_bytes)
+                        except Exception:
+                            pass
+                        store_needed = True
+                        continue
+                except Exception:
+                    pass
+                try:
+                    ok = bool(dll.SteamAPI_ISteamUserStats_SetAchievement(user_stats, name_bytes))
+                except Exception:
+                    ok = False
                 if ok:
                     count += 1
-            except Exception:
-                pass
+                    store_needed = True
+            if not store_needed:
+                return 0
+            stored = bool(dll.SteamAPI_ISteamUserStats_StoreStats(user_stats))
+    except Exception as exc:
+        print(f"[Steam] Başarım senkronizasyonu hatası: {exc}")
+        return 0
+    if not stored:
+        print("[Steam] Başarım StoreStats başarısız; yeniden denenecek.")
+        return 0
     if count > 0:
-        try:
-            _dll.SteamAPI_ISteamUserStats_StoreStats(_isteam_user_stats)
-            print(f"[Steam] {count} başarım senkronlandı.")
-        except Exception:
-            pass
+        print(f"[Steam] {count} başarım için kayıt isteği kabul edildi.")
     return count
 
 
@@ -1477,11 +1522,17 @@ def clear_steam_achievement(api_name: str) -> bool:
         return False
     try:
         name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
-        ok = _dll.SteamAPI_ISteamUserStats_ClearAchievement(_isteam_user_stats, name_bytes)
-        if ok:
-            _dll.SteamAPI_ISteamUserStats_StoreStats(_isteam_user_stats)
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return False
+            ok = bool(dll.SteamAPI_ISteamUserStats_ClearAchievement(user_stats, name_bytes))
+            if not ok:
+                return False
+            stored = bool(dll.SteamAPI_ISteamUserStats_StoreStats(user_stats))
+        if stored:
             print(f"[Steam] Achievement cleared: {api_name}")
-        return bool(ok)
+        return stored
     except Exception as e:
         print(f"[Steam] Achievement clear hatası ({api_name}): {e}")
         return False
@@ -1505,11 +1556,15 @@ def indicate_achievement_progress(api_name: str, current: int, target: int) -> b
         return False
     try:
         name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
-        ok = _dll.SteamAPI_ISteamUserStats_IndicateAchievementProgress(
-            _isteam_user_stats, name_bytes,
-            ctypes.c_uint32(max(0, current)),
-            ctypes.c_uint32(max(1, target)),
-        )
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return False
+            ok = dll.SteamAPI_ISteamUserStats_IndicateAchievementProgress(
+                user_stats, name_bytes,
+                ctypes.c_uint32(max(0, current)),
+                ctypes.c_uint32(max(1, target)),
+            )
         return bool(ok)
     except Exception as e:
         print(f"[Steam] IndicateAchievementProgress hatası ({api_name}): {e}")
@@ -1554,9 +1609,13 @@ def set_steam_stat_int(api_name: str, value: int) -> bool:
         return False
     try:
         name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
-        ok = _dll.SteamAPI_ISteamUserStats_SetStatInt32(
-            _isteam_user_stats, name_bytes, ctypes.c_int32(value)
-        )
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return False
+            ok = dll.SteamAPI_ISteamUserStats_SetStatInt32(
+                user_stats, name_bytes, ctypes.c_int32(value)
+            )
         return bool(ok)
     except Exception as e:
         print(f"[Steam] SetStat INT hatası ({api_name}): {e}")
@@ -1574,9 +1633,13 @@ def set_steam_stat_float(api_name: str, value: float) -> bool:
         return False
     try:
         name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
-        ok = _dll.SteamAPI_ISteamUserStats_SetStatFloat(
-            _isteam_user_stats, name_bytes, ctypes.c_float(value)
-        )
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return False
+            ok = dll.SteamAPI_ISteamUserStats_SetStatFloat(
+                user_stats, name_bytes, ctypes.c_float(value)
+            )
         return bool(ok)
     except Exception as e:
         print(f"[Steam] SetStat FLOAT hatası ({api_name}): {e}")
@@ -1594,9 +1657,13 @@ def get_steam_stat_int(api_name: str) -> int | None:
     try:
         name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
         data = ctypes.c_int32(0)
-        ok = _dll.SteamAPI_ISteamUserStats_GetStatInt32(
-            _isteam_user_stats, name_bytes, ctypes.byref(data)
-        )
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return None
+            ok = dll.SteamAPI_ISteamUserStats_GetStatInt32(
+                user_stats, name_bytes, ctypes.byref(data)
+            )
         if ok:
             return data.value
         return None
@@ -1615,9 +1682,13 @@ def get_steam_stat_float(api_name: str) -> float | None:
     try:
         name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
         data = ctypes.c_float(0.0)
-        ok = _dll.SteamAPI_ISteamUserStats_GetStatFloat(
-            _isteam_user_stats, name_bytes, ctypes.byref(data)
-        )
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return None
+            ok = dll.SteamAPI_ISteamUserStats_GetStatFloat(
+                user_stats, name_bytes, ctypes.byref(data)
+            )
         if ok:
             return data.value
         return None
@@ -1634,7 +1705,11 @@ def store_steam_stats() -> bool:
     if not is_available() or not _isteam_user_stats or not _dll:
         return False
     try:
-        ok = _dll.SteamAPI_ISteamUserStats_StoreStats(_isteam_user_stats)
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return False
+            ok = dll.SteamAPI_ISteamUserStats_StoreStats(user_stats)
         return bool(ok)
     except Exception as e:
         print(f"[Steam] StoreStats hatası: {e}")
@@ -1644,31 +1719,56 @@ def store_steam_stats() -> bool:
 def sync_stats_to_steam(stats: dict) -> int:
     """Oyun istatistiklerini Steam'e toplu senkronla.
 
+    Tüm stat set'i tek _pump_lock alımında gönderilir: bu zincir satır
+    temizleme sıcak yolunda (game.py update_stats -> achievements
+    sync_stats_to_steam) ana thread'den çalıştığından, alım-başına kilit
+    deseni pump thread'inin RunCallbacks tutuşuyla 17+1 kez çekişir;
+    tek alım (sync_all_achievements deseni) bu pencereyi 1'e indirir.
+
     Args:
         stats: Oyun içi istatistikler dict'i (AchievementManager.stats).
 
     Returns:
-        Güncellenen stat sayısı.
+        StoreStats isteği kabul edilen stat sayısı; sunucu onayı değildir.
     """
     if not is_available() or not _isteam_user_stats or not _dll:
         return 0
     count = 0
-    for game_key, (steam_name, stat_type) in STEAM_STAT_MAP.items():
-        value = stats.get(game_key)
-        if value is None:
-            continue
-        try:
-            if stat_type == 'float':
-                ok = set_steam_stat_float(steam_name, float(value))
-            else:
-                ok = set_steam_stat_int(steam_name, int(value))
-            if ok:
-                count += 1
-        except Exception:
-            pass
+    store_needed = False
+    stored = False
+    try:
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return 0
+            for game_key, (steam_name, stat_type) in STEAM_STAT_MAP.items():
+                value = stats.get(game_key)
+                if value is None:
+                    continue
+                try:
+                    name_bytes = steam_name.encode('utf-8') if isinstance(steam_name, str) else steam_name
+                    if stat_type == 'float':
+                        ok = bool(dll.SteamAPI_ISteamUserStats_SetStatFloat(
+                            user_stats, name_bytes, ctypes.c_float(float(value))))
+                    else:
+                        ok = bool(dll.SteamAPI_ISteamUserStats_SetStatInt32(
+                            user_stats, name_bytes, ctypes.c_int32(int(value))))
+                except Exception:
+                    ok = False
+                if ok:
+                    count += 1
+                    store_needed = True
+            if not store_needed:
+                return 0
+            stored = bool(dll.SteamAPI_ISteamUserStats_StoreStats(user_stats))
+    except Exception as exc:
+        print(f"[Steam] İstatistik senkronizasyonu hatası: {exc}")
+        return 0
+    if not stored:
+        print("[Steam] İstatistik StoreStats başarısız; yeniden denenecek.")
+        return 0
     if count > 0:
-        store_steam_stats()
-        print(f"[Steam] {count} istatistik senkronlandı.")
+        print(f"[Steam] {count} istatistik için kayıt isteği kabul edildi.")
     return count
 
 
@@ -1686,12 +1786,17 @@ def reset_all_steam_stats(achievements_too: bool = False) -> bool:
     if not is_available() or not _isteam_user_stats or not _dll:
         return False
     try:
-        ok = _dll.SteamAPI_ISteamUserStats_ResetAllStats(
-            _isteam_user_stats, ctypes.c_bool(achievements_too)
-        )
+        with _pump_lock:
+            dll, user_stats = _dll, _isteam_user_stats
+            if not is_available() or should_cancel_background_work() or not user_stats or dll is None:
+                return False
+            ok = dll.SteamAPI_ISteamUserStats_ResetAllStats(
+                user_stats, ctypes.c_bool(achievements_too)
+            )
+            if ok:
+                # Sıfırlamadan sonra stats'ı yeniden al
+                dll.SteamAPI_ISteamUserStats_RequestCurrentStats(user_stats)
         if ok:
-            # Sıfırlamadan sonra stats'ı yeniden al
-            _dll.SteamAPI_ISteamUserStats_RequestCurrentStats(_isteam_user_stats)
             print(f"[Steam] Tüm istatistikler sıfırlandı (achievements_too={achievements_too})")
         return bool(ok)
     except Exception as e:
