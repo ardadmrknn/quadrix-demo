@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 import sys
 import pygame
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from pathlib import Path
 
 # CoopGame'i import et (src root'tan bağımsız çalışabilir)
@@ -26,14 +26,38 @@ try:
     from retro_style import retro_style
     from ui_theme import UIFonts, UIColors
     from game_over_surfaces import get_solid_alpha_surface
+    from ui_text_layout import wrap_text_limited, ellipsize_text
+    from text_cache import measure_text_width
 except ImportError:
     from src.localization import t
     from src.retro_style import retro_style
     from src.ui_theme import UIFonts, UIColors
     from src.game_over_surfaces import get_solid_alpha_surface
+    from src.ui_text_layout import wrap_text_limited, ellipsize_text
+    from src.text_cache import measure_text_width
 
 from .coop_level_data import get_coop_level, CoopLevelConfig, TOTAL_COOP_LEVELS
 from .coop_objectives import create_coop_objective
+
+
+def _fit_or_ellipsize(text: str, color, max_width: int, base_size: int,
+                      bold: bool = True, min_size: int = 10) -> pygame.Surface:
+    """render_fit_text + son çare ellipsis (P1-6 taşma sırası: shrink → '...').
+
+    render_fit_text fontu yalnız min_size'e kadar küçültür; tabanda bile
+    sığmayan metin yüzeyi bütçeyi aşabilir. Bu yardımcı o durumda
+    ellipsize_text ile ASCII '...' kısaltması uygular (emoji/sembol yasağı —
+    CLAUDE.md). Her iki adım da retro_style LRU önbelleklerinden geçer.
+    """
+    surf = retro_style.render_fit_text(
+        str(text), color, max_width, base_size, bold=bold, min_size=min_size)
+    if surf.get_width() > max_width:
+        font = retro_style.get_fitting_font(
+            str(text), base_size, max_width, bold=bold, min_size=min_size)
+        short = ellipsize_text(str(text), font, max_width)
+        surf = retro_style.render_fit_text(
+            short, color, max_width, base_size, bold=bold, min_size=min_size)
+    return surf
 
 
 class CoopCampaignMode(CoopGame):
@@ -99,6 +123,14 @@ class CoopCampaignMode(CoopGame):
 
         # Event listener kaydet
         self._event_listeners.append(self._on_game_event)
+
+        # P1-6/P0-2 (ölçekleme denetim raporu): ölçüm/assert rect kayıtları ve
+        # sonuç ekranı yüzey önbelleği (FAZ A6 — kare-başı tahsis yasağı).
+        self._coop_objectives_rects: Optional[Dict[str, Any]] = None
+        self._level_complete_rects: Optional[Dict[str, Any]] = None
+        self._level_failed_rects: Optional[Dict[str, Any]] = None
+        self._coop_result_geometry_cache: Optional[Tuple] = None
+        self._coop_result_surface_cache: Dict[Tuple, pygame.Surface] = {}
 
     # ------------------------------------------------------------------
     # Event listener
@@ -318,8 +350,113 @@ class CoopCampaignMode(CoopGame):
 
         pygame.display.flip()
 
+    # ------------------------------------------------------------------
+    # P1-6/P0-2 (ölçekleme denetim raporu) ortak yardımcıları
+    # ------------------------------------------------------------------
+
+    def _coop_result_safe_rect(self) -> pygame.Rect:
+        """Sonuç modalları için render güvenli alanı (P0-2).
+
+        campaign_ui._get_modal_geometry deseni: geometri kuşak başına bir kez
+        çözülür (get_presentation_info dict/Rect tahsisi kare başına
+        tekrarlanmaz). Geometri çözülemezse (dummy driver/test) tam ekran
+        fallback — clamp o durumda no-op olur. Testler bu önbelleği doğrudan
+        yazarak güvenli alan senaryosu (ör. HDR marjları) simüle eder.
+        """
+        try:
+            from platform_utils import get_geometry_generation
+            generation = get_geometry_generation()
+        except Exception:
+            generation = -1
+        cache = getattr(self, '_coop_result_geometry_cache', None)
+        if cache is not None and cache[0] == generation:
+            return cache[1]
+
+        safe_rect = None
+        try:
+            from platform_utils import get_render_geometry
+            geometry = get_render_geometry(self.screen)
+            sx0, sy0, sw, sh = geometry.safe_rect
+            if sw > 0 and sh > 0:
+                safe_rect = pygame.Rect(sx0, sy0, sw, sh)
+        except Exception:
+            safe_rect = None
+        if safe_rect is None:
+            safe_rect = pygame.Rect(0, 0, self.window_width, self.window_height)
+
+        self._coop_result_geometry_cache = (generation, safe_rect)
+        return safe_rect
+
+    def _coop_result_overlay(self, variant: str) -> pygame.Surface:
+        """Gradient overlay'i (w, h, variant) anahtarlı cache'ten üret (FAZ A6).
+
+        Eski kod her karede Surface((w, h)) tahsis edip h satırlık fill
+        döngüsü çalıştırıyordu; sonuç ekranı aktifken bu her kare
+        tekrarlanıyordu. Renk/alfa değerleri eski çıktıyla birebir aynı.
+        """
+        size = (int(self.window_width), int(self.window_height))
+        cache = self.__dict__.setdefault('_coop_result_surface_cache', {})
+        key = ('overlay', variant, size)
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+
+        w, h = size
+        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
+        if variant == 'failed':
+            base_rgb, base_alpha, span = (20, 5, 8), int(200 * 0.75), 35
+        else:
+            base_rgb, base_alpha, span = (5, 8, 18), int(200 * 0.8), 40
+        for row in range(h):
+            ratio = row / max(1, h)
+            alpha = int(base_alpha + span * ratio)
+            overlay.fill((*base_rgb, min(255, alpha)), (0, row, w, 1))
+        self._coop_result_cache_insert(cache, key, overlay)
+        return overlay
+
+    def _coop_result_glow(self, variant: str, size: Tuple[int, int]) -> pygame.Surface:
+        """Sonuç paneli glow yüzeyini (variant, size) anahtarlı cache'ten üret.
+
+        FAZ A6: kare-başı SRCALPHA Surface tahsisini önbelleğe indirer.
+        """
+        cache = self.__dict__.setdefault('_coop_result_surface_cache', {})
+        key = ('glow', variant, (int(size[0]), int(size[1])))
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+
+        glow_surf = pygame.Surface((max(1, int(size[0])), max(1, int(size[1]))), pygame.SRCALPHA)
+        if variant == 'failed':
+            pygame.draw.rect(glow_surf, (160, 25, 40, 20), glow_surf.get_rect(), border_radius=16)
+        else:
+            pygame.draw.rect(glow_surf, (*retro_style.primary[:3], 25), glow_surf.get_rect(), border_radius=16)
+        self._coop_result_cache_insert(cache, key, glow_surf)
+        return glow_surf
+
+    @staticmethod
+    def _coop_result_cache_insert(cache: Dict[Tuple, pygame.Surface],
+                                  key: Tuple, surface: pygame.Surface) -> None:
+        """Sonuç yüzey önbelleğine sınırlı giriş (pencere resize taşmasına karşı).
+
+        Tam-ekran overlay'ler (w*h*4 bayt) pencere boyutu değiştikçe yeni
+        anahtar üretir; 8 girişin üzerinde en eski (ilk eklenen) tahliye
+        edilir — dict ekleme sırası korunur.
+        """
+        cache[key] = surface
+        while len(cache) > 8:
+            oldest = next(iter(cache))
+            cache.pop(oldest, None)
+
     def _draw_objectives_hud(self) -> None:
-        """Board'un üstünde görev ilerleme paneli (glass panel)."""
+        """Board'un üstünde görev ilerleme paneli (glass panel).
+
+        P1-6 (ölçekleme denetim raporu): açıklamalar artık ölç-önce
+        planlanır — sar (wrap_text_limited) → kontrollü ellipsis; satır
+        yüksekliği gerçek satır sayısından, panel yüksekliği içerikten
+        türetilir ve dikeyde safe rect'e tavanlanır. Kısa metinlerde çıktı
+        eski tek-satır düzeniyle aynıdır. Rect'ler test bütçe sözleşmesi
+        için _coop_objectives_rects'e kaydedilir.
+        """
         ui = self._ui_scale()
 
         lang = 'tr'
@@ -331,20 +468,53 @@ class CoopCampaignMode(CoopGame):
 
         s = lambda v, minimum=1: max(minimum, int(v * ui))
 
-        # Panel boyutu hesapla
-        obj_count = len(self.objectives)
-        line_h = s(18)
-        panel_h = s(28) + obj_count * (line_h + s(8)) + s(10)
+        # Fontlar önce çözülür — ölçüm (measure_text_width LRU) ve sarma
+        # aynı font nesneleri üzerinden yapılır.
+        obj_font = retro_style.get_font(s(13, minimum=9))
+        prog_font = retro_style.get_font(s(11, minimum=8))
+        desc_line_h = obj_font.get_height() + 1
+        bar_h = s(5, minimum=3)
+        row_gap = s(8)
+        header_h = s(26)
+
+        # Panel genişliği board offset'inden (mevcut davranış korunur).
         panel_w = min(s(320), max(s(200), self.board_offset_x - s(20)))
         panel_x = max(s(8), self.board_offset_x - panel_w - s(12))
         panel_y = self.board_offset_y
+
+        bar_x = panel_x + s(26)
+        bar_w = max(s(40), panel_w - s(34))
+
+        # Dikey bütçe: satır limiti ladder'ı (3→2→1 satır) — kısa metinler
+        # tek satırda kalır, uzun lokalizasyonlar sarma ile yerleşir.
+        safe = self._coop_result_safe_rect()
+        avail_h = max(header_h + s(20), safe.bottom - s(2) - panel_y)
+
+        for max_lines in (3, 2, 1):
+            rows = []
+            for obj in self.objectives:
+                prog_text = obj.get_progress_text()
+                prog_w = measure_text_width(prog_font, prog_text)
+                # İlerleme metni ilk satırın sağında: sarma bütçesi ondan artar.
+                desc_w = max(s(60), bar_w - prog_w - s(8))
+                wrapped = wrap_text_limited(
+                    str(obj.get_description(lang)), obj_font, desc_w, max_lines=max_lines)
+                row_h = len(wrapped.lines) * desc_line_h + s(2) + bar_h
+                rows.append({
+                    'obj': obj, 'lines': wrapped.lines, 'prog_text': prog_text,
+                    'prog_w': prog_w, 'row_h': row_h,
+                })
+            panel_h = header_h + s(8) + sum(r['row_h'] for r in rows) \
+                + row_gap * max(0, len(rows) - 1) + s(6)
+            if panel_h <= avail_h:
+                break
+        panel_h = min(panel_h, avail_h)
 
         panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=175,
                                       border_color=(*retro_style.primary[:3], 100))
 
         # Level başlık bandı
-        header_h = s(26)
         header_rect = pygame.Rect(panel_x + 2, panel_y + 2, panel_w - 4, header_h)
         # FAZ A6: kare-başı HUD bandı tahsisi solid LRU'ya iner.
         header_surf = get_solid_alpha_surface(header_rect.size, (*UIColors.BG_MEDIUM, 190))
@@ -353,23 +523,30 @@ class CoopCampaignMode(CoopGame):
                          (header_rect.x, header_rect.bottom),
                          (header_rect.right, header_rect.bottom))
 
+        # P1-6: başlık panel iç genişliğine fitted (render_fit_text LRU) +
+        # son çare ASCII ellipsis.
         level_name = self.level_config.name.get(lang, self.level_config.name.get('en', ''))
-        title_font = retro_style.get_font(s(14, minimum=10), bold=True)
         title_text = f"L{self.current_level_num}: {level_name}"
-        title_surf = title_font.render(title_text, True, retro_style.primary)
-        self.screen.blit(title_surf, (panel_x + s(8), panel_y + s(5)))
+        title_surf = _fit_or_ellipsize(
+            title_text, tuple(retro_style.primary[:3]), max(24, panel_w - s(16)),
+            s(14, minimum=10), bold=True, min_size=s(10, minimum=8))
+        title_rect = title_surf.get_rect(topleft=(panel_x + s(8), panel_y + s(5)))
+        self.screen.blit(title_surf, title_rect.topleft)
 
         # Görev satırları
         y = panel_y + header_h + s(8)
-        obj_font = retro_style.get_font(s(13, minimum=9))
-        prog_font = retro_style.get_font(s(11, minimum=8))
+        row_records = []
 
-        for obj in self.objectives:
-            completed = obj.completed
+        for row in rows:
+            completed = row['obj'].completed
+            row_top = y
+            n_lines = len(row['lines'])
+            desc_rects = []
+
             # İkon dairesi
             icon_r = s(7, minimum=5)
             icon_cx = panel_x + s(14)
-            icon_cy = y + line_h // 2
+            icon_cy = row_top + desc_line_h // 2
             if completed:
                 pygame.draw.circle(self.screen, (12, 120, 70), (icon_cx, icon_cy), icon_r)
                 pygame.draw.circle(self.screen, (40, 255, 155), (icon_cx, icon_cy), icon_r, 1)
@@ -384,182 +561,261 @@ class CoopCampaignMode(CoopGame):
                 pygame.draw.circle(self.screen, UIColors.BG_MEDIUM, (icon_cx, icon_cy), icon_r)
                 pygame.draw.circle(self.screen, retro_style.text_muted, (icon_cx, icon_cy), icon_r, 1)
 
-            # Açıklama
+            # Açıklama — P1-6: sarılmış satırlar (wrap → kontrollü ellipsis).
             desc_color = (40, 255, 155) if completed else retro_style.text_secondary
-            desc = obj.get_description(lang)
-            desc_surf = obj_font.render(desc, True, desc_color)
-            self.screen.blit(desc_surf, (panel_x + s(26), y))
+            for li, line in enumerate(row['lines']):
+                line_surf = obj_font.render(line, True, desc_color)
+                line_rect = line_surf.get_rect(topleft=(bar_x, row_top + li * desc_line_h))
+                self.screen.blit(line_surf, line_rect.topleft)
+                desc_rects.append(line_rect)
 
             # İlerleme barı
-            bar_y = y + line_h - s(2)
-            bar_w = panel_w - s(34)
-            bar_h = s(5, minimum=3)
-            bar_rect = pygame.Rect(panel_x + s(26), bar_y, bar_w, bar_h)
+            bar_y = row_top + n_lines * desc_line_h + s(2)
+            bar_rect = pygame.Rect(bar_x, bar_y, bar_w, bar_h)
             pygame.draw.rect(self.screen, (30, 35, 55), bar_rect, border_radius=s(2))
-            ratio = min(1.0, obj.get_progress_ratio()) if hasattr(obj, 'get_progress_ratio') else (1.0 if completed else 0.0)
+            ratio = min(1.0, row['obj'].get_progress_ratio()) if hasattr(row['obj'], 'get_progress_ratio') else (1.0 if completed else 0.0)
             if ratio > 0:
                 fill_color = (0, 255, 150) if completed else UIColors.NEON_CYAN
                 fill_rect = pygame.Rect(bar_rect.x, bar_rect.y, max(1, int(bar_rect.width * ratio)), bar_rect.height)
                 pygame.draw.rect(self.screen, fill_color, fill_rect, border_radius=s(2))
 
-            # İlerleme metni
-            prog_text = obj.get_progress_text()
-            prog_surf = prog_font.render(prog_text, True, retro_style.text_muted)
-            self.screen.blit(prog_surf, (panel_x + panel_w - prog_surf.get_width() - s(8), y + 1))
+            # İlerleme metni (ilk satırın sağında — sarma bütçesi bunu hesaba kattı)
+            prog_surf = prog_font.render(row['prog_text'], True, retro_style.text_muted)
+            prog_rect = prog_surf.get_rect(right=panel_x + panel_w - s(8), top=row_top + 1)
+            self.screen.blit(prog_surf, prog_rect.topleft)
 
-            y += line_h + s(8)
+            row_records.append({
+                'row_rect': pygame.Rect(panel_x + s(12), row_top, panel_w - s(24), row['row_h']),
+                'desc_rects': desc_rects,
+                'bar_rect': bar_rect,
+                'prog_rect': prog_rect,
+            })
+
+            y += row['row_h'] + row_gap
+
+        self._coop_objectives_rects = {
+            'panel': panel_rect,
+            'header': header_rect,
+            'title': title_rect,
+            'rows': row_records,
+        }
 
     def _draw_level_complete(self) -> None:
-        """Level tamamlandı overlay'i — glassmorphism + neon."""
+        """Level tamamlandı overlay'i — glassmorphism + neon.
+
+        P0-2 (ölçekleme denetim raporu): panel önce safe rect boyutlarına
+        tavanlanır (Rect.clamp küçültmez), sonra safe rect'İN içine
+        clamp'lenir; türev rect'ler clamp SONRASI panel_rect'ten üretilir.
+        Başlık render_fit_text (LRU) + tek-surface set_alpha glow modülasyonu
+        (kare-başı ikinci font.render kalkar — FAZ A6). Stat kolonları
+        ölçülü sığar; katkı/ipucu sarma-fit ile panel içinde kalır. Rect'ler
+        _level_complete_rects'e kaydedilir (test bütçe sözleşmesi).
+        """
         w, h = self.window_width, self.window_height
         ui = self._ui_scale()
         s = lambda v, minimum=1: max(minimum, int(v * ui))
 
-        # Gradient overlay (koyu lacivert)
-        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
-        for row in range(h):
-            ratio = row / max(1, h)
-            alpha = int(200 * 0.8 + 40 * ratio)
-            overlay.fill((5, 8, 18, min(255, alpha)), (0, row, w, 1))
-        self.screen.blit(overlay, (0, 0))
+        # Gradient overlay (koyu lacivert) — FAZ A6: (w,h,variant) cache.
+        self.screen.blit(self._coop_result_overlay('complete'), (0, 0))
 
-        # Panel
-        pw = min(s(460), w - s(120))
-        ph = s(340)
+        # P0-2: güvenli alan + panel boyut tavanı (clamp küçültmediği için
+        # tavan clamp'ten ÖNCE uygulanır).
+        safe = self._coop_result_safe_rect()
+        pw = min(s(460), w - s(120), safe.width)
+        inner_w = max(24, pw - s(32))
+
+        # Metinler önce ölçülür (measure-first) — dikey bütçe bunlara bağlı.
+        title = t('coop_level_complete', default='LEVEL TAMAMLANDI!')
+        title_color = tuple(retro_style.primary[:3])
+        title_surf = _fit_or_ellipsize(
+            title, title_color, max(24, inner_w - s(16)),
+            s(36, minimum=20), bold=True, min_size=s(20, minimum=12))
+
+        contrib_txt = f"P1 %{self.p1_contribution_pct}  —  P2 %{self.p2_contribution_pct}"
+        contrib_font = retro_style.get_font(s(14, minimum=10))
+        contrib_h = contrib_font.get_height() + s(4)
+
+        hint = t('coop_press_continue', default='Press any key to continue')
+        hint_font = retro_style.get_font(s(15, minimum=10))
+        hint_wrapped = wrap_text_limited(hint, hint_font, max(24, inner_w - s(8)), max_lines=2)
+        hint_line_h = hint_font.get_height() + 2
+        hint_h = len(hint_wrapped.lines) * hint_line_h
+
+        # P0-2: dikey bütçe — kuantalı küçültme ladder'ı (FAZ A6 deseni);
+        # tabanlar okunabilirliği korur. Hiçbir basamak sığmazsa son basamak
+        # + aşağıdaki sıkıştırma + safe-height tavanı geçerli kalır.
+        for shrink in (1.0, 0.88, 0.76, 0.64, 0.52):
+            header_h = max(s(36), int(56 * ui * shrink))
+            star_size = max(s(24), int(40 * ui * shrink))
+            star_gap = max(s(6), int(10 * ui * shrink))
+            stat_h = max(s(48), int(70 * ui * shrink))
+            gap = max(s(6), int(16 * ui * shrink))
+            ph = (s(2) + header_h + gap + star_size + gap + stat_h + gap
+                  + contrib_h + gap + hint_h + s(12))
+            if ph <= safe.height:
+                break
+
+        # Başlık bandı fitted başlıktan alçak olmasın (dikey merkez hizası
+        # taşmasın) — toplam yeniden toplanır.
+        header_h = max(header_h, title_surf.get_height() + s(10))
+        # Son çare sıkıştırma: toplam safe height'ı aşarsa hint tek satıra
+        # iner (wrap max_lines=1); katkı satırı çizim aşamasında düşürülür.
+        total_h = (s(2) + header_h + gap + star_size + gap + stat_h + gap
+                   + contrib_h + gap + hint_h + s(12))
+        if total_h > safe.height and len(hint_wrapped.lines) > 1:
+            hint_wrapped = wrap_text_limited(hint, hint_font, max(24, inner_w - s(8)), max_lines=1)
+            hint_h = len(hint_wrapped.lines) * hint_line_h
+            total_h = (s(2) + header_h + gap + star_size + gap + stat_h + gap
+                       + contrib_h + gap + hint_h + s(12))
+        ph = min(max(total_h, s(200)), safe.height)
+
         pr = pygame.Rect((w - pw) // 2, (h - ph) // 2, pw, ph)
+        # P0-2: clamp YÖNÜ — panel safe rect'İN içine gider.
+        pr = pr.clamp(safe)
+        pw, ph = pr.width, pr.height
 
-        # Glow
+        # Glow — FAZ A6: (variant, size) cache.
         glow_rect = pr.inflate(s(24), s(24))
-        glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(glow_surf, (*retro_style.primary[:3], 25), glow_surf.get_rect(), border_radius=16)
-        self.screen.blit(glow_surf, glow_rect.topleft)
+        self.screen.blit(self._coop_result_glow('complete', glow_rect.size), glow_rect.topleft)
 
         retro_style.draw_glass_panel(self.screen, pr, alpha=200,
                                       border_color=(*retro_style.primary[:3], 160))
         cx = pr.centerx
 
-        # Başlık bandı
-        header_h = s(56)
+        # Başlık bandı — FAZ A6: solid LRU (kare-başı tahsis yok).
         header_rect = pygame.Rect(pr.x + 2, pr.y + 2, pr.width - 4, header_h)
-        header_surf = pygame.Surface(header_rect.size, pygame.SRCALPHA)
-        header_surf.fill((12, 18, 40, 230))
+        header_surf = get_solid_alpha_surface(header_rect.size, (12, 18, 40, 230))
         self.screen.blit(header_surf, header_rect.topleft)
         # Alt çizgi
         pygame.draw.line(self.screen, (*retro_style.primary[:3], 140),
                          (header_rect.x, header_rect.bottom),
                          (header_rect.right, header_rect.bottom))
 
-        # Başlık metin + glow
-        title = t('coop_level_complete', default='LEVEL TAMAMLANDI!')
-        title_font = retro_style.get_font(s(36, minimum=20), bold=True)
-        for offset in (2, 1):
-            glow = title_font.render(title, True, retro_style.primary)
-            glow.set_alpha(22)
-            for dx, dy in ((offset, 0), (-offset, 0), (0, offset), (0, -offset)):
-                self.screen.blit(glow, glow.get_rect(centerx=cx + dx, centery=header_rect.centery + dy))
-        title_surf = title_font.render(title, True, retro_style.primary)
-        self.screen.blit(title_surf, title_surf.get_rect(centerx=cx, centery=header_rect.centery))
+        # Başlık metin + glow — tek surface, set_alpha modülasyonlu blit ve
+        # tam alfa restore (campaign_ui P1-3 deseni).
+        title_rect = title_surf.get_rect(centerx=cx, centery=header_rect.centery)
+        for dx, dy, a in [(-s(2, minimum=0), 0, 26), (s(2, minimum=0), 0, 26),
+                          (0, -s(2, minimum=0), 22), (0, s(2, minimum=0), 22)]:
+            title_surf.set_alpha(a)
+            self.screen.blit(title_surf, (title_rect.x + dx, title_rect.y + dy))
+        title_surf.set_alpha(255)
+        self.screen.blit(title_surf, title_rect.topleft)
 
-        y_cursor = header_rect.bottom + s(16)
+        y_cursor = header_rect.bottom + gap
 
         # Yıldızlar (polygon çizimi)
-        star_size = s(40, minimum=24)
-        star_gap = s(10, minimum=6)
         total_star_w = 3 * star_size + 2 * star_gap
         star_x = cx - total_star_w // 2
-        import math
         for si in range(3):
             color = UIColors.NEON_GOLD if si < self.earned_stars else (60, 70, 90)
             self._draw_star(self.screen,
                             star_x + si * (star_size + star_gap),
                             y_cursor, star_size, color)
-        y_cursor += star_size + s(16)
+        y_cursor += star_size + gap
 
-        # İstatistik kartı
-        stat_h = s(70)
+        # İstatistik kartı — FAZ A6: solid LRU.
         stat_rect = pygame.Rect(pr.x + s(16), y_cursor, pr.width - s(32), stat_h)
-        stat_surf = pygame.Surface(stat_rect.size, pygame.SRCALPHA)
-        stat_surf.fill((8, 12, 28, 220))
+        stat_surf = get_solid_alpha_surface(stat_rect.size, (8, 12, 28, 220))
         self.screen.blit(stat_surf, stat_rect.topleft)
         pygame.draw.rect(self.screen, (*retro_style.primary[:3], 80), stat_rect, 1, border_radius=8)
-
-        label_font = retro_style.get_font(s(14, minimum=10))
-        value_font = retro_style.get_font(s(22, minimum=14), bold=True)
 
         stats = [
             (t('coop_team_score', default='Score'), f"{self.team_score:,}".replace(',', '.')),
             (t('coop_total_lines', default='Lines'), str(self.total_lines_cleared)),
             (t('coop_total_time', default='Time'), self._format_time(self.elapsed_time)),
         ]
-        col_w = stat_rect.width // len(stats)
+        # P1-6: kolonlar ölç-önce — etiket/değer fitted, son çare ellipsis;
+        # dikeyde değer font tabanı stat_h'nin kalan bütçesine tavanlanır
+        # (kolonlar arası yatay/dikey çakışma matematiksel olarak imkânsız).
+        label_color = tuple(retro_style.text_muted[:3])
+        value_color = tuple(retro_style.text_primary[:3])
+        col_w = stat_rect.width // max(1, len(stats))
+        col_records = []
         for i, (label, val) in enumerate(stats):
             col_cx = stat_rect.x + col_w * i + col_w // 2
-            lbl_surf = label_font.render(label, True, retro_style.text_muted)
-            self.screen.blit(lbl_surf, lbl_surf.get_rect(centerx=col_cx, top=stat_rect.y + s(8)))
-            val_surf = value_font.render(val, True, retro_style.text_primary)
-            self.screen.blit(val_surf, val_surf.get_rect(centerx=col_cx, top=stat_rect.y + s(28)))
+            col_max_w = max(24, col_w - s(8))
+            lbl_surf = _fit_or_ellipsize(
+                label, label_color, col_max_w, s(14, minimum=10),
+                bold=False, min_size=s(10, minimum=8))
+            lbl_rect = lbl_surf.get_rect(centerx=col_cx, top=stat_rect.y + s(6))
+            self.screen.blit(lbl_surf, lbl_rect.topleft)
+            # Değer font tabanı: stat_h'nin kalan DİKEY bütçesi — font
+            # YÜKSEKLİĞİ (size değil) bütçeye inene kadar 2'şer küçülür
+            # (kuantalı adım = font_cache dostu).
+            value_budget = stat_h - s(6) - lbl_surf.get_height() - s(2) - s(4)
+            value_base = min(s(22, minimum=12), max(9, value_budget))
+            while value_base > 9 and \
+                    retro_style.get_font(value_base, bold=True).get_height() > value_budget:
+                value_base -= 2
+            val_surf = _fit_or_ellipsize(
+                val, value_color, col_max_w, value_base,
+                bold=True, min_size=s(12, minimum=9))
+            val_rect = val_surf.get_rect(
+                centerx=col_cx, top=lbl_rect.bottom + s(2))
+            self.screen.blit(val_surf, val_rect.topleft)
+            col_records.append({
+                'col_rect': pygame.Rect(stat_rect.x + col_w * i, stat_rect.y, col_w, stat_h),
+                'label_rect': lbl_rect,
+                'value_rect': val_rect,
+            })
 
-        y_cursor += stat_h + s(16)
+        y_cursor += stat_h + gap
 
-        # Katkı barı
-        contrib_txt = f"P1 %{self.p1_contribution_pct}  —  P2 %{self.p2_contribution_pct}"
-        contrib_font = retro_style.get_font(s(14, minimum=10))
-        contrib_surf = contrib_font.render(contrib_txt, True, (0, 255, 150))
-        self.screen.blit(contrib_surf, contrib_surf.get_rect(centerx=cx, top=y_cursor))
+        # Katkı satırı — fitted; hint alanıyla çakışırsa düşürülür (en düşük
+        # öncelikli satır, kademeli küçültmenin son halkası).
+        contrib_rect = None
+        hint_top = pr.bottom - s(12) - hint_h
+        if y_cursor + contrib_h <= hint_top - s(4):
+            contrib_surf = _fit_or_ellipsize(
+                contrib_txt, (0, 255, 150), max(24, inner_w),
+                s(14, minimum=10), bold=False, min_size=s(10, minimum=8))
+            contrib_rect = contrib_surf.get_rect(centerx=cx, top=y_cursor)
+            self.screen.blit(contrib_surf, contrib_rect.topleft)
 
-        # Alt ipucu
-        hint = t('coop_press_continue', default='Press any key to continue')
-        hint_font = retro_style.get_font(s(15, minimum=10))
-        hint_surf = hint_font.render(hint, True, retro_style.text_muted)
-        self.screen.blit(hint_surf, hint_surf.get_rect(centerx=cx, bottom=pr.bottom - s(12)))
+        # Alt ipucu — sarılır (maks 2 satır), alta sabitlenip yukarı büyür.
+        hint_rects = []
+        hint_y = pr.bottom - s(12) - hint_h
+        for li, line in enumerate(hint_wrapped.lines):
+            line_surf = hint_font.render(line, True, retro_style.text_muted)
+            line_rect = line_surf.get_rect(centerx=cx, top=hint_y + li * hint_line_h)
+            self.screen.blit(line_surf, line_rect.topleft)
+            hint_rects.append(line_rect)
+
+        self._level_complete_rects = {
+            'panel': pr,
+            'safe': safe,
+            'title': title_rect,
+            'stats': stat_rect,
+            'stat_cols': col_records,
+            'contrib': contrib_rect,
+            'hint_lines': hint_rects,
+        }
 
     def _draw_level_failed(self) -> None:
-        """Level başarısız overlay'i — kırmızı neon tema."""
+        """Level başarısız overlay'i — kırmızı neon tema.
+
+        P0-2 (ölçekleme denetim raporu): panel safe rect tavanı + clamp;
+        görev satırları sarılır (wrap → ellipsis) ve panel yüksekliği gerçek
+        satır sayısından türetilir. Tamamlandı/başarısız FONT SEMBOLLERİ
+        (tik/çarpı karakterleri) kaldırıldı — CLAUDE.md emoji/sembol yasağı:
+        işaretler pygame.draw.line ile çizilir
+        (_draw_objectives_hud tik idyomu + X için iki çapraz).
+        Rect'ler _level_failed_rects'e kaydedilir.
+        """
         w, h = self.window_width, self.window_height
         ui = self._ui_scale()
         s = lambda v, minimum=1: max(minimum, int(v * ui))
 
-        fail_red = UIColors.NEON_RED  # (255, 50, 80)
+        fail_red = tuple(UIColors.NEON_RED[:3])  # (255, 50, 80)
 
-        # Gradient overlay (kırmızımsı tint)
-        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
-        for row in range(h):
-            ratio = row / max(1, h)
-            alpha = int(200 * 0.75 + 35 * ratio)
-            overlay.fill((20, 5, 8, min(255, alpha)), (0, row, w, 1))
-        self.screen.blit(overlay, (0, 0))
+        # Gradient overlay (kırmızımsı tint) — FAZ A6: (w,h,variant) cache.
+        self.screen.blit(self._coop_result_overlay('failed'), (0, 0))
 
-        # Panel
-        pw = min(s(440), w - s(100))
-        obj_count = len(self.objectives)
-        ph = s(180) + obj_count * s(28)
-        pr = pygame.Rect((w - pw) // 2, (h - ph) // 2, pw, ph)
+        # P0-2: güvenli alan + panel boyut tavanı (clamp küçültmez).
+        safe = self._coop_result_safe_rect()
+        pw = min(s(440), w - s(100), safe.width)
+        inner_w = max(24, pw - s(24))
 
-        # Glow
-        glow_rect = pr.inflate(s(20), s(20))
-        glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(glow_surf, (160, 25, 40, 20), glow_surf.get_rect(), border_radius=16)
-        self.screen.blit(glow_surf, glow_rect.topleft)
-
-        retro_style.draw_glass_panel(self.screen, pr, alpha=210,
-                                      border_color=(*fail_red[:3], 160))
-
-        cx = pr.centerx
-        y_cursor = pr.y + s(18)
-
-        # Başlık + glow
-        title = t('coop_game_over', default='OYUN BİTTİ')
-        title_font = retro_style.get_font(s(40, minimum=24), bold=True)
-        for offset in (2, 1):
-            glow = title_font.render(title, True, fail_red)
-            glow.set_alpha(25)
-            for dx, dy in ((offset, 0), (-offset, 0), (0, offset), (0, -offset)):
-                self.screen.blit(glow, glow.get_rect(centerx=cx + dx, top=y_cursor + dy))
-        title_surf = title_font.render(title, True, fail_red)
-        self.screen.blit(title_surf, title_surf.get_rect(centerx=cx, top=y_cursor))
-        y_cursor += title_surf.get_height() + s(16)
-
-        # Görev ilerleme
         lang = 'tr'
         try:
             from localization import get_language
@@ -568,22 +824,139 @@ class CoopCampaignMode(CoopGame):
             pass
 
         obj_font = retro_style.get_font(s(16, minimum=11))
-        for obj in self.objectives:
-            completed = obj.completed
-            icon = '✓' if completed else '✗'
-            color = (40, 255, 155) if completed else (255, 100, 120)
-            text = f"{icon} {obj.get_description(lang)}  [{obj.get_progress_text()}]"
-            surf = obj_font.render(text, True, color)
-            self.screen.blit(surf, surf.get_rect(centerx=cx, top=y_cursor))
-            y_cursor += s(28)
+        obj_line_h = obj_font.get_height() + 2
+        row_gap = s(8)
 
-        # Alt buton ipuçları
+        # Başlık (fitted) — yükseklik bütçesi için önce ölçülür.
+        title = t('coop_game_over', default='OYUN BİTTİ')
+        title_surf = _fit_or_ellipsize(
+            title, fail_red, max(24, inner_w - s(8)),
+            s(40, minimum=24), bold=True, min_size=s(24, minimum=14))
+        title_h = title_surf.get_height()
+
+        # İkon kolonu: tamamlandı/başarısız işaretleri çizgilerle (font glifi değil).
+        icon_r = s(8, minimum=5)
+        icon_col_w = 2 * icon_r + s(8)
+        text_w = max(s(40), inner_w - icon_col_w)
+
+        # Alt ipucu (measure-first): sarılır, alta sabitlenir.
         hint_font = retro_style.get_font(s(16, minimum=11))
         hint_r = t('coop_press_r_retry', default='R: Retry')
         hint_esc = t('coop_press_esc_menu', default='ESC: Menu')
         hint = f"{hint_r}  |  {hint_esc}"
-        hint_surf = hint_font.render(hint, True, retro_style.text_muted)
-        self.screen.blit(hint_surf, hint_surf.get_rect(centerx=cx, bottom=pr.bottom - s(14)))
+        hint_wrapped = wrap_text_limited(hint, hint_font, max(24, inner_w), max_lines=2)
+        hint_line_h = hint_font.get_height() + 2
+        hint_h = len(hint_wrapped.lines) * hint_line_h
+
+        # P1-6: satır limiti ladder'ı (3→2→1) — panel yüksekliği gerçek
+        # içerikten türetilir; safe height tavanı en son uygulanır.
+        for max_lines in (3, 2, 1):
+            rows = []
+            for obj in self.objectives:
+                text = f"{obj.get_description(lang)}  [{obj.get_progress_text()}]"
+                wrapped = wrap_text_limited(text, obj_font, text_w, max_lines=max_lines)
+                rows.append({'obj': obj, 'lines': wrapped.lines})
+            body_h = sum(len(r['lines']) * obj_line_h + row_gap for r in rows)
+            if rows:
+                body_h -= row_gap
+            ph = (s(18) + title_h + s(16) + body_h + s(10) + hint_h + s(14))
+            if ph <= safe.height:
+                break
+        ph = min(max(ph, s(160)), safe.height)
+
+        pr = pygame.Rect((w - pw) // 2, (h - ph) // 2, pw, ph)
+        # P0-2: clamp YÖNÜ — panel safe rect'İN içine gider.
+        pr = pr.clamp(safe)
+        pw, ph = pr.width, pr.height
+
+        # Glow — FAZ A6: (variant, size) cache.
+        glow_rect = pr.inflate(s(20), s(20))
+        self.screen.blit(self._coop_result_glow('failed', glow_rect.size), glow_rect.topleft)
+
+        retro_style.draw_glass_panel(self.screen, pr, alpha=210,
+                                      border_color=(*fail_red, 160))
+
+        cx = pr.centerx
+        y_cursor = pr.y + s(18)
+
+        # Başlık + glow — tek surface, set_alpha modülasyonlu blit.
+        title_rect = title_surf.get_rect(centerx=cx, top=y_cursor)
+        for dx, dy, a in [(-s(2, minimum=0), 0, 26), (s(2, minimum=0), 0, 26),
+                          (0, -s(2, minimum=0), 22), (0, s(2, minimum=0), 22)]:
+            title_surf.set_alpha(a)
+            self.screen.blit(title_surf, (title_rect.x + dx, title_rect.y + dy))
+        title_surf.set_alpha(255)
+        self.screen.blit(title_surf, title_rect.topleft)
+        y_cursor += title_h + s(16)
+
+        # Görev ilerleme — çizgi işaretleri + sarılmış metin.
+        hint_top = pr.bottom - s(14) - hint_h
+        row_records = []
+        for row in rows:
+            completed = row['obj'].completed
+            color = (40, 255, 155) if completed else (255, 100, 120)
+            n_lines = len(row['lines'])
+            row_h = n_lines * obj_line_h
+            # Kademeli küçültmenin bittiği yerde son çare: kalan satırlar
+            # hint alanına binmesin diye çizilmez (kayıt test için sayılır).
+            if y_cursor + row_h > hint_top - s(2):
+                break
+
+            icon_cx = pr.x + s(12) + icon_col_w // 2
+            icon_cy = y_cursor + obj_line_h // 2
+            if completed:
+                pygame.draw.circle(self.screen, (12, 120, 70), (icon_cx, icon_cy), icon_r)
+                pygame.draw.circle(self.screen, (40, 255, 155), (icon_cx, icon_cy), icon_r, 1)
+                check_pts = [
+                    (icon_cx - icon_r // 2, icon_cy),
+                    (icon_cx - 1, icon_cy + icon_r // 2),
+                    (icon_cx + icon_r // 2, icon_cy - icon_r // 3),
+                ]
+                pygame.draw.lines(self.screen, (220, 255, 230), False, check_pts, max(1, icon_r // 3))
+            else:
+                pygame.draw.circle(self.screen, (40, 10, 18), (icon_cx, icon_cy), icon_r)
+                pygame.draw.circle(self.screen, (255, 100, 120), (icon_cx, icon_cy), icon_r, 1)
+                # X işareti: iki çapraz çizgi (font sembolü değil).
+                d = max(1, icon_r // 2)
+                lw = max(1, icon_r // 3)
+                pygame.draw.line(self.screen, (255, 100, 120),
+                                 (icon_cx - d, icon_cy - d), (icon_cx + d, icon_cy + d), lw)
+                pygame.draw.line(self.screen, (255, 100, 120),
+                                 (icon_cx - d, icon_cy + d), (icon_cx + d, icon_cy - d), lw)
+
+            line_rects = []
+            text_x = pr.x + s(12) + icon_col_w
+            for li, line in enumerate(row['lines']):
+                line_surf = obj_font.render(line, True, color)
+                line_rect = line_surf.get_rect(topleft=(text_x, y_cursor + li * obj_line_h))
+                self.screen.blit(line_surf, line_rect.topleft)
+                line_rects.append(line_rect)
+
+            row_records.append({
+                'row_rect': pygame.Rect(pr.x + s(8), y_cursor, pw - s(16), row_h),
+                'icon_rect': pygame.Rect(icon_cx - icon_r, icon_cy - icon_r, 2 * icon_r, 2 * icon_r),
+                'lines': line_rects,
+                'completed': completed,
+            })
+            y_cursor += row_h + row_gap
+
+        # Alt ipucu — sarılır, alta sabitlenip yukarı büyür.
+        hint_rects = []
+        hint_y = pr.bottom - s(14) - hint_h
+        for li, line in enumerate(hint_wrapped.lines):
+            line_surf = hint_font.render(line, True, retro_style.text_muted)
+            line_rect = line_surf.get_rect(centerx=cx, top=hint_y + li * hint_line_h)
+            self.screen.blit(line_surf, line_rect.topleft)
+            hint_rects.append(line_rect)
+
+        self._level_failed_rects = {
+            'panel': pr,
+            'safe': safe,
+            'title': title_rect,
+            'rows': row_records,
+            'rows_dropped': max(0, len(rows) - len(row_records)),
+            'hint_lines': hint_rects,
+        }
 
     @staticmethod
     def _draw_star(surface, x, y, size, color):
