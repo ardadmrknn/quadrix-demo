@@ -20,6 +20,8 @@ import pygame
 
 from platform_utils import get_mouse_pos, resolve_frame_rate_cap
 from localization import t
+from ui_scaling import scale_px
+from ui_text_layout import ellipsize_text, wrap_text_limited
 
 # ── Tetromino şekilleri ──────────────────────────────────────────────
 _PIECE_SHAPES: Dict[str, List[List[int]]] = {
@@ -89,6 +91,288 @@ def _get_font(size: int, bold: bool = False):
         if bold:
             f.set_bold(True)
         return f
+
+
+# ═════════════════════════════════════════════════════════════════════
+#  DİYALOG ÖLÇEK / CONTAINMENT YARDIMCILARI — P0-4/P1-8
+#  (Quadrix Tüm Ekranlar Ölçekleme Denetim Raporu, 2026-10-03)
+#
+#  Renk seçici ve metin giriş diyalogları daha önce sabit taban ölçüler
+#  (min 520x420 / sabit 230 yükseklik, 130x44 buton, 18 pad) kullanıyordu;
+#  küçük pencerede (ör. 640x360) sabit minimumlar diyalogu EKRANDAN
+#  taşıyordu. Yeni sözleşme:
+#  - Tüm ölçüler ui_scaling effective modal eğrisiyle ölçeklenir
+#    (campaign modallarıyla aynı 1366x768 referansı → 1366x768'de ölçek
+#    1.0, mevcut görünüm birebir korunur; preset duyarlı).
+#  - Diyalog rect'i safe rect'e (yoksa ekran) clamp'li üretilir.
+#  - İçerik sığmıyorsa floor'lar korunarak quantalı küçültme merdiveni
+#    uygulanır (font/ölçü cache disiplini: sınırlı boyut seti).
+#  - Rect'ler çizimden ÖNCE tek kaynaktan üretilir; event/hit-test aynı
+#    Rect'leri kullanır.
+# ═════════════════════════════════════════════════════════════════════
+
+# Campaign modallarıyla aynı referans (campaign_ui._MODAL_SCALE_REFERENCE_SIZE
+# paritesi): 1366x768'de modal ölçek 1.0 → diyalog görünümü korunur.
+_DIALOG_MODAL_REFERENCE_SIZE = (1366.0, 768.0)
+
+# Küçültme merdiveni — quantalı adımlar (üretilen ölçü seti sınırlı kalır).
+_DIALOG_SHRINK_LADDER = (1.0, 0.88, 0.76, 0.64, 0.52)
+
+
+def _dialog_modal_scale(screen: pygame.Surface) -> float:
+    """Diyalog ölçeği — ui_scaling effective modal eğrisi (preset duyarlı)."""
+    try:
+        from ui_scaling import get_effective_modal_scale
+        return float(get_effective_modal_scale(
+            screen,
+            profile="standard",
+            reference_size=_DIALOG_MODAL_REFERENCE_SIZE,
+        ))
+    except Exception:
+        return 1.0
+
+
+def _dialog_safe_bounds(screen: pygame.Surface) -> pygame.Rect:
+    """P0-4: diyalog güvenli alanı — A1 safe rect varsa o, yoksa tam ekran."""
+    try:
+        from game_over_surfaces import get_render_safe_rect
+        safe = get_render_safe_rect(screen)
+        if safe is not None and safe.width > 0 and safe.height > 0:
+            return pygame.Rect(safe)
+    except Exception:
+        pass
+    return screen.get_rect()
+
+
+def _compute_picker_layout(
+    sw: int,
+    sh: int,
+    has_preview: bool,
+    ms: float,
+    bounds: pygame.Rect,
+) -> Dict[str, object]:
+    """Renk seçici diyalog düzeni — ölç-önce, tek rect kaynağı (P0-4/P1-8).
+
+    Bileşen ölçüleri modal ölçeğiyle (ms) ölçeklenir; güvenli alana
+    sığmayan içerik floor'lar korunarak küçültme merdiveniyle daraltılır.
+    Dönen diyalog rect'i daima ``bounds`` içinde kalır — sabit 520x420
+    taban minimumları küçük pencerede diyalogu ekrandan taşıyordu.
+    1366x768 / ms=1.0'da ürettiği ölçüler eski sabit düzenle birebir
+    aynıdır (regresyon testi bu noktayı pin'ler).
+    """
+    def _spx(value: float, minimum: int = 1) -> int:
+        return scale_px(value, ms, minimum=minimum)
+
+    margin = _spx(24, minimum=8)
+    avail_w = max(160, bounds.width - margin * 2)
+    avail_h = max(160, bounds.height - margin * 2)
+
+    for shrink in _DIALOG_SHRINK_LADDER:
+        pad = max(6, _spx(18 * shrink))
+        top_bar = max(24, _spx(52 * shrink))
+        hue_w = max(12, _spx(28 * shrink))
+        preview_w = max(60, _spx(160 * shrink)) if has_preview else 0
+        right_w = max(70, _spx(150 * shrink))
+        preset_h = max(22, _spx(38 * shrink))
+        slider_h = max(16, _spx(30 * shrink))
+        slider_gap = max(4, _spx(10 * shrink))
+        sliders_h = slider_h * 3 + slider_gap * 2
+        btn_h = max(26, _spx(48 * shrink))
+        btn_w = max(56, _spx(130 * shrink))
+        btn_gap_h = max(6, _spx(16 * shrink))
+        cmp_h = max(40, _spx(84 * shrink))
+        hex_gap = max(6, _spx(14 * shrink))
+        hex_h = max(24, _spx(34 * shrink))
+
+        sv_sz = min(_spx(300), int(sw * 0.30), int(sh * 0.42))
+        sv_sz = max(80, int(sv_sz * shrink))
+
+        content_w = (preview_w + sv_sz + hue_w + right_w +
+                     pad * (5 if has_preview else 4))
+        dw = min(content_w, avail_w)
+        # P1-8: buton satırı daima diyalog genişliğine sığar (dar alan guard'ı).
+        if btn_w * 2 + btn_gap_h + pad * 2 > dw:
+            btn_w = max(40, (dw - pad * 2 - btn_gap_h) // 2)
+        content_h = (top_bar + pad + sv_sz + pad +
+                     preset_h + pad + sliders_h + pad + btn_h + pad)
+        if content_w <= avail_w and content_h <= avail_h:
+            break
+
+    dh = min(content_h, avail_h)
+    dx = bounds.left + (bounds.width - dw) // 2
+    dy = bounds.top + (bounds.height - dh) // 2
+    d_rect = pygame.Rect(dx, dy, dw, dh)
+
+    ix = dx + pad
+    iy = dy + top_bar + pad
+
+    if has_preview:
+        prev_rect: Optional[pygame.Rect] = pygame.Rect(ix, iy, preview_w, sv_sz)
+        pk_x = ix + preview_w + pad
+    else:
+        prev_rect = None
+        pk_x = ix
+
+    sv_rect = pygame.Rect(pk_x, iy, sv_sz, sv_sz)
+    hue_x = pk_x + sv_sz + pad
+    hue_rect = pygame.Rect(hue_x, iy, hue_w, sv_sz)
+
+    rp_x = hue_x + hue_w + pad
+    # Sağ kolon kalan diyalog genişliğine iner; dejenere dar ekranda 24 px
+    # taban (normal genişlikte kalan ≡ right_w → görünüm birebir korunur).
+    rp_remaining = dx + dw - pad - rp_x
+    rp_w = rp_remaining if rp_remaining >= 24 else 24
+
+    old_r = pygame.Rect(rp_x, iy, rp_w, cmp_h // 2)
+    new_r = pygame.Rect(rp_x, iy + cmp_h // 2, rp_w, cmp_h // 2)
+    hex_rect = pygame.Rect(rp_x, iy + cmp_h + hex_gap, rp_w, hex_h)
+    rgb_y = hex_rect.bottom + max(6, _spx(12 * shrink))
+
+    preset_y = iy + sv_sz + pad
+    preset_x = pk_x
+    preset_total_w = sv_sz + pad + hue_w
+    n_presets = len(_PRESET_COLORS)
+    swatch_gap = max(2, _spx(5))
+    swatch_sz = min(
+        _spx(30 * shrink, minimum=10),
+        (preset_total_w - (n_presets - 1) * swatch_gap) // n_presets,
+    )
+    swatch_sz = max(8, swatch_sz)
+    preset_row_w = n_presets * swatch_sz + (n_presets - 1) * swatch_gap
+    preset_ox = preset_x + (preset_total_w - preset_row_w) // 2
+
+    preset_rects: List[pygame.Rect] = []
+    for i in range(n_presets):
+        preset_rects.append(pygame.Rect(
+            preset_ox + i * (swatch_sz + swatch_gap),
+            preset_y + 4, swatch_sz, swatch_sz))
+
+    sl_y = preset_y + preset_h + pad
+    sl_w = preset_total_w
+    r_sl = pygame.Rect(pk_x, sl_y, sl_w, slider_h)
+    g_sl = pygame.Rect(pk_x, sl_y + slider_h + slider_gap, sl_w, slider_h)
+    b_sl = pygame.Rect(pk_x, sl_y + (slider_h + slider_gap) * 2, sl_w, slider_h)
+
+    btn_y = dy + dh - btn_h - pad
+    ok_rect = pygame.Rect(dx + dw - pad - btn_w * 2 - btn_gap_h, btn_y, btn_w, btn_h)
+    cancel_rect = pygame.Rect(dx + dw - pad - btn_w, btn_y, btn_w, btn_h)
+
+    return {
+        'ms': float(ms), 'shrink': float(shrink),
+        'dw': dw, 'dh': dh, 'dx': dx, 'dy': dy, 'd_rect': d_rect,
+        'pad': pad, 'top_bar': top_bar,
+        'sv_sz': sv_sz, 'hue_w': hue_w, 'preview_w': preview_w,
+        'right_w': right_w, 'preset_h': preset_h,
+        'slider_h': slider_h, 'slider_gap': slider_gap, 'sliders_h': sliders_h,
+        'btn_h': btn_h, 'btn_w': btn_w, 'btn_gap_h': btn_gap_h,
+        'btn_y': btn_y, 'ok_rect': ok_rect, 'cancel_rect': cancel_rect,
+        'hint_y': btn_y + btn_h + 4,
+        'ix': ix, 'iy': iy, 'pk_x': pk_x, 'hue_x': hue_x,
+        'prev_rect': prev_rect, 'sv_rect': sv_rect, 'hue_rect': hue_rect,
+        'rp_x': rp_x, 'rp_w': rp_w, 'cmp_h': cmp_h,
+        'old_r': old_r, 'new_r': new_r,
+        'hex_rect': hex_rect, 'rgb_y': rgb_y,
+        'preset_y': preset_y, 'preset_x': preset_x,
+        'preset_total_w': preset_total_w, 'swatch_sz': swatch_sz,
+        'swatch_gap': swatch_gap, 'preset_row_w': preset_row_w,
+        'preset_ox': preset_ox, 'preset_rects': preset_rects,
+        'sl_y': sl_y, 'sl_w': sl_w,
+        'r_sl': r_sl, 'g_sl': g_sl, 'b_sl': b_sl,
+    }
+
+
+def _compute_text_input_layout(
+    sw: int,
+    sh: int,
+    ms: float,
+    bounds: pygame.Rect,
+    prompt_wrap_fn=None,
+    prompt_line_h: int = 0,
+) -> Dict[str, object]:
+    """Metin giriş diyalog düzeni — ölç-önce, tek rect kaynağı (P0-4/P1-8).
+
+    Sabit 230 yükseklik / 520 genişlik yerine: genişlik modal ölçekli
+    tabandan güvenli alana clamp'lenir; yükseklik başlık + sarılan prompt
+    + input + buton satırı içerik bütçesinden üretilir. Uzun prompt
+    ``prompt_wrap_fn(max_w, max_lines) -> list[str]`` ile en fazla 2 satıra
+    sarılır; dikey bütçe yetmezse küçültme merdiveni prompt satırlarını
+    kontrollü düşürür. Butonlar yan yana sığmadığında sağ altta dikey
+    stack'e geçer (P1-8: "dar alanda düğmeleri alt alta").
+    """
+    def _spx(value: float, minimum: int = 1) -> int:
+        return scale_px(value, ms, minimum=minimum)
+
+    margin = _spx(24, minimum=8)
+    avail_w = max(140, bounds.width - margin * 2)
+    avail_h = max(120, bounds.height - margin * 2)
+
+    prompt_lines: List[str] = []
+    for shrink in _DIALOG_SHRINK_LADDER:
+        pad = max(6, _spx(18 * shrink))
+        title_gap = max(8, _spx(14 * shrink))
+        sep_gap = max(24, _spx(48 * shrink))
+        prompt_gap = max(30, _spx(60 * shrink))
+        inp_h = max(24, _spx(44 * shrink))
+        inp_gap = max(10, _spx(29 * shrink))
+        btn_h = max(24, _spx(44 * shrink))
+        btn_w = max(64, _spx(130 * shrink))
+        btn_gap_h = max(6, _spx(16 * shrink))
+        prompt_line_gap = max(2, _spx(4 * shrink))
+
+        dw = min(max(_spx(520), btn_w * 2 + btn_gap_h + pad * 2), avail_w)
+        # P1-8: butonlar yan yana sığmıyorsa sağ altta dikey stack.
+        buttons_stacked = (btn_w * 2 + btn_gap_h + pad * 2) > dw
+        if buttons_stacked:
+            btn_row_h = btn_h * 2 + btn_gap_h
+            btn_w = max(40, min(btn_w, dw - pad * 2))
+        else:
+            btn_row_h = btn_h
+
+        # Prompt satır bütçesi: merdiven ilerledikçe kontrollü düşür.
+        max_prompt_lines = 2 if shrink >= 0.76 else (1 if shrink >= 0.52 else 0)
+        prompt_lines = (
+            list(prompt_wrap_fn(dw - pad * 2, max_prompt_lines))
+            if (prompt_wrap_fn is not None and max_prompt_lines > 0) else []
+        )
+        prompt_h = (
+            len(prompt_lines) * (int(prompt_line_h) + prompt_line_gap)
+            - prompt_line_gap
+        ) if prompt_lines else 0
+
+        inp_y_off = max(
+            _spx(95 * shrink),
+            prompt_gap + prompt_h + max(6, _spx(12 * shrink)),
+        )
+        content_h = inp_y_off + inp_h + inp_gap + btn_row_h + pad
+        if content_h <= avail_h:
+            break
+
+    dh = min(content_h, avail_h)
+    dx = bounds.left + (bounds.width - dw) // 2
+    dy = bounds.top + (bounds.height - dh) // 2
+    d_rect = pygame.Rect(dx, dy, dw, dh)
+
+    inp_rect = pygame.Rect(dx + pad, dy + inp_y_off, dw - pad * 2, inp_h)
+    btn_y = dy + dh - btn_row_h - pad
+    if buttons_stacked:
+        ok_rect = pygame.Rect(dx + dw - pad - btn_w, btn_y, btn_w, btn_h)
+        cancel_rect = pygame.Rect(
+            dx + dw - pad - btn_w, btn_y + btn_h + btn_gap_h, btn_w, btn_h)
+    else:
+        ok_rect = pygame.Rect(dx + dw - pad - btn_w * 2 - btn_gap_h, btn_y, btn_w, btn_h)
+        cancel_rect = pygame.Rect(dx + dw - pad - btn_w, btn_y, btn_w, btn_h)
+
+    return {
+        'ms': float(ms), 'shrink': float(shrink),
+        'dw': dw, 'dh': dh, 'dx': dx, 'dy': dy, 'd_rect': d_rect,
+        'pad': pad, 'inp_rect': inp_rect,
+        'ok_rect': ok_rect, 'cancel_rect': cancel_rect,
+        'buttons_stacked': buttons_stacked, 'btn_row_h': btn_row_h,
+        'title_y': dy + title_gap, 'sep_y': dy + sep_gap,
+        'prompt_y': dy + prompt_gap, 'prompt_line_gap': prompt_line_gap,
+        'prompt_lines': prompt_lines,
+        'btn_w': btn_w, 'btn_h': btn_h, 'btn_gap_h': btn_gap_h,
+    }
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -310,84 +594,38 @@ def pygame_color_picker(
     sw, sh = screen.get_size()
     t0 = time.time()
 
-    # ── Layout ──────────────────────────────────────────────────────
+    # ── Layout (P0-4/P1-8: ölçek + safe-rect bağlı, ölç-önce) ──────────
+    # Düzen tek kaynaktan (_compute_picker_layout) üretilir; aşağıdaki
+    # unpack satırları döngü/event kodunun aynı değişken adlarını kullanmasını
+    # korur (minimal blast radius).
     has_preview = bool(piece_name and piece_name in _PIECE_SHAPES)
-    pad = 18
-    top_bar = 52
+    ms = _dialog_modal_scale(screen)
+    bounds = _dialog_safe_bounds(screen)
+    lay = _compute_picker_layout(sw, sh, has_preview, ms, bounds)
 
-    sv_sz = min(300, int(sw * 0.30), int(sh * 0.42))
-    sv_sz = max(140, sv_sz)
-
-    hue_w = 28
-    preview_w = 160 if has_preview else 0
-    right_w = 150
-    preset_h = 38
-    slider_h = 30
-    slider_gap = 10
-    sliders_h = slider_h * 3 + slider_gap * 2
-    btn_h = 48
-
-    content_w = (preview_w + sv_sz + hue_w + right_w +
-                 pad * (5 if has_preview else 4))
-    content_h = (top_bar + pad + sv_sz + pad +
-                 preset_h + pad + sliders_h + pad + btn_h + pad)
-
-    dw = max(min(content_w, int(sw * 0.92)), 520)
-    dh = max(min(content_h, int(sh * 0.90)), 420)
-    dx = (sw - dw) // 2
-    dy = (sh - dh) // 2
-    d_rect = pygame.Rect(dx, dy, dw, dh)
-
-    ix = dx + pad
-    iy = dy + top_bar + pad
-
-    if has_preview:
-        prev_rect = pygame.Rect(ix, iy, preview_w, sv_sz)
-        pk_x = ix + preview_w + pad
-    else:
-        prev_rect = None
-        pk_x = ix
-
-    sv_rect = pygame.Rect(pk_x, iy, sv_sz, sv_sz)
-    hue_x = pk_x + sv_sz + pad
-    hue_rect = pygame.Rect(hue_x, iy, hue_w, sv_sz)
-
-    rp_x = hue_x + hue_w + pad
-    rp_w = max(right_w, dx + dw - pad - rp_x)
-
-    cmp_h = 84
-    old_r = pygame.Rect(rp_x, iy, rp_w, cmp_h // 2)
-    new_r = pygame.Rect(rp_x, iy + cmp_h // 2, rp_w, cmp_h // 2)
-
-    hex_rect = pygame.Rect(rp_x, iy + cmp_h + 14, rp_w, 34)
-    rgb_y = hex_rect.bottom + 12
-
-    preset_y = iy + sv_sz + pad
-    preset_x = pk_x
-    preset_total_w = sv_sz + pad + hue_w
+    pad = lay['pad']; top_bar = lay['top_bar']
+    dw = lay['dw']; dh = lay['dh']; dx = lay['dx']; dy = lay['dy']
+    d_rect = lay['d_rect']
+    sv_sz = lay['sv_sz']; hue_w = lay['hue_w']; preview_w = lay['preview_w']
+    right_w = lay['right_w']; preset_h = lay['preset_h']
+    slider_h = lay['slider_h']; slider_gap = lay['slider_gap']
+    sliders_h = lay['sliders_h']
+    btn_h = lay['btn_h']; btn_w = lay['btn_w']; btn_gap_h = lay['btn_gap_h']
+    btn_y = lay['btn_y']; hint_y = lay['hint_y']
+    ok_rect = lay['ok_rect']; cancel_rect = lay['cancel_rect']
+    ix = lay['ix']; iy = lay['iy']; pk_x = lay['pk_x']; hue_x = lay['hue_x']
+    prev_rect = lay['prev_rect']; sv_rect = lay['sv_rect']; hue_rect = lay['hue_rect']
+    rp_x = lay['rp_x']; rp_w = lay['rp_w']; cmp_h = lay['cmp_h']
+    old_r = lay['old_r']; new_r = lay['new_r']
+    hex_rect = lay['hex_rect']; rgb_y = lay['rgb_y']
+    preset_y = lay['preset_y']; preset_x = lay['preset_x']
+    preset_total_w = lay['preset_total_w']; swatch_sz = lay['swatch_sz']
+    swatch_gap = lay['swatch_gap']; preset_row_w = lay['preset_row_w']
+    preset_ox = lay['preset_ox']; preset_rects = lay['preset_rects']
+    sl_y = lay['sl_y']; sl_w = lay['sl_w']
+    r_sl = lay['r_sl']; g_sl = lay['g_sl']; b_sl = lay['b_sl']
     n_presets = len(_PRESET_COLORS)
-    swatch_sz = min(30, (preset_total_w - (n_presets - 1) * 5) // n_presets)
-    swatch_gap = 5
-    preset_row_w = n_presets * swatch_sz + (n_presets - 1) * swatch_gap
-    preset_ox = preset_x + (preset_total_w - preset_row_w) // 2
-
-    preset_rects: List[pygame.Rect] = []
-    for i in range(n_presets):
-        preset_rects.append(pygame.Rect(
-            preset_ox + i * (swatch_sz + swatch_gap),
-            preset_y + 4, swatch_sz, swatch_sz))
-
-    sl_y = preset_y + preset_h + pad
-    sl_w = preset_total_w
-    r_sl = pygame.Rect(pk_x, sl_y, sl_w, slider_h)
-    g_sl = pygame.Rect(pk_x, sl_y + slider_h + slider_gap, sl_w, slider_h)
-    b_sl = pygame.Rect(pk_x, sl_y + (slider_h + slider_gap) * 2, sl_w, slider_h)
-
-    btn_w = 130
-    btn_gap_h = 16
-    btn_y = dy + dh - btn_h - pad
-    ok_rect = pygame.Rect(dx + dw - pad - btn_w * 2 - btn_gap_h, btn_y, btn_w, btn_h)
-    cancel_rect = pygame.Rect(dx + dw - pad - btn_w, btn_y, btn_w, btn_h)
+    _sp = lambda value, minimum=1: scale_px(value, ms, minimum=minimum)
 
     # ── State ───────────────────────────────────────────────────────
     h, s, v = _rgb_to_hsv(*initial_color)
@@ -468,17 +706,38 @@ def pygame_color_picker(
     def _sval(rect, mx):
         return _clamp((mx - rect.x) / max(1, rect.w))
 
-    # Font'lar — bir kez oluştur
-    font_title = _get_font(28, bold=True)
-    font_piece_name = _get_font(20, bold=True)
-    font_badge = _get_font(14, bold=True)
-    font_hex = _get_font(18, bold=True)
-    font_vals = _get_font(16)
-    font_preset_label = _get_font(13, bold=True)
-    font_slider = _get_font(15, bold=True)
-    font_btn = _get_font(20, bold=True)
-    font_hint = _get_font(13)
-    font_label = _get_font(14, bold=True)
+    # Font'lar — bir kez oluştur (P1-8: modal ölçeğiyle boyutlandır;
+    # tabanlar okunabilirlik için korunur, boyut seti sınırlı kalır → cache)
+    font_title = _get_font(_sp(28, minimum=12), bold=True)
+    font_piece_name = _get_font(_sp(20, minimum=10), bold=True)
+    font_badge = _get_font(_sp(14, minimum=9), bold=True)
+    font_hex = _get_font(_sp(18, minimum=10), bold=True)
+    font_vals = _get_font(_sp(16, minimum=10))
+    font_preset_label = _get_font(_sp(13, minimum=9), bold=True)
+    font_slider = _get_font(_sp(15, minimum=9), bold=True)
+    font_btn = _get_font(_sp(20, minimum=11), bold=True)
+    font_hint = _get_font(_sp(13, minimum=9))
+    font_label = _get_font(_sp(14, minimum=9), bold=True)
+
+    # P1-8: statik metinler döngü dışında bir kez üretilir (kare-başı
+    # render yasağı); başlık diyalog genişliğine ASCII '...' ile sığar.
+    title_fit = ellipsize_text(title, font_title, dw - pad * 2)
+    title_surf = font_title.render(title_fit, True, (0, 240, 255))
+    try:
+        cl = t("color_picker_cancel")
+    except Exception:
+        cl = "İptal"
+    try:
+        from promptfont_support import resolve_nav_hint_label as _nav_hint
+        _confirm_lbl = _nav_hint('ENTER', 'menu_confirm')
+        _cancel_lbl = _nav_hint('ESC', 'menu_back')
+    except Exception:
+        _confirm_lbl, _cancel_lbl = 'ENTER', 'ESC'
+    hint_text = f"{_cancel_lbl}: {t('cancel', 'Cancel')}  ·  {_confirm_lbl}: {t('confirm', 'Confirm')}"
+    hint_fit = ellipsize_text(hint_text, font_hint, dw - pad * 2)
+    hint_surf_c = font_hint.render(hint_fit, True, (65, 65, 95))
+    preset_label_surf = font_preset_label.render(
+        t('color_picker_preset_label', 'PRESET'), True, (90, 90, 120))
 
     # ── Ana Döngü ───────────────────────────────────────────────────
     # Gamepad: bu bloklayıcı döngü ana döngünün pump'ını atlar; gamepad'i
@@ -664,9 +923,8 @@ def pygame_color_picker(
         # ── Dialog panel (cached) ──
         screen.blit(dialog_panel, (dx, dy))
 
-        # ── Başlık ──
-        ts = font_title.render(title, True, (0, 240, 255))
-        screen.blit(ts, (dx + pad, dy + 12))
+        # ── Başlık (P1-8: döngü dışında üretildi, ellipsis'li) ──
+        screen.blit(title_surf, (dx + pad, dy + _sp(12, minimum=4)))
         pygame.draw.line(screen, (0, 240, 255, 50),
                          (dx + pad, dy + top_bar - 4),
                          (dx + dw - pad, dy + top_bar - 4), 1)
@@ -794,9 +1052,9 @@ def pygame_color_picker(
             screen.blit(font_vals.render(txt, True, col), (rp_x + 6, vy))
             vy += 21
 
-        # ── Preset Renk Paleti ──────────────────────────────────────
-        screen.blit(font_preset_label.render(t('color_picker_preset_label', 'PRESET'), True, (90, 90, 120)),
-                    (preset_x, preset_y - 4))
+        # ── Preset Renk Paleti (P1-8: etiket döngü dışında üretildi) ──
+        screen.blit(preset_label_surf,
+                    (preset_x, preset_y - max(2, _sp(4, minimum=2))))
 
         for i, pr in enumerate(preset_rects):
             pc = _PRESET_COLORS[i]
@@ -848,11 +1106,6 @@ def pygame_color_picker(
                         (rect.x + 8, rect.y + 5))
 
         # ── Butonlar (cached) ───────────────────────────────────────
-        try:
-            cl = t("color_picker_cancel")
-        except Exception:
-            cl = "İptal"
-
         _draw_premium_button(screen, ok_rect, t('confirm', 'Confirm'), font_btn,
                              (0, 180, 100), h_ok,
                              btn_cache=ok_btn_h if h_ok else ok_btn_n)
@@ -860,16 +1113,8 @@ def pygame_color_picker(
                              (180, 40, 50), h_cancel,
                              btn_cache=cancel_btn_h if h_cancel else cancel_btn_n)
 
-        # ── Kısayol ipucu ──
-        try:
-            from promptfont_support import resolve_nav_hint_label as _nav_hint
-            _confirm_lbl = _nav_hint('ENTER', 'menu_confirm')
-            _cancel_lbl = _nav_hint('ESC', 'menu_back')
-        except Exception:
-            _confirm_lbl, _cancel_lbl = 'ENTER', 'ESC'
-        hint_text = f"{_cancel_lbl}: {t('cancel', 'Cancel')}  ·  {_confirm_lbl}: {t('confirm', 'Confirm')}"
-        screen.blit(font_hint.render(hint_text, True, (65, 65, 95)),
-                    (dx + pad, btn_y + btn_h + 4))
+        # ── Kısayol ipucu (P1-8: döngü dışında üretildi, ellipsis'li) ──
+        screen.blit(hint_surf_c, (dx + pad, hint_y))
 
         pygame.display.flip()
         if is_darwin_busy:
@@ -910,22 +1155,40 @@ def pygame_text_input(
     sw, sh = screen.get_size()
     t0 = time.time()
 
-    dw = min(520, int(sw * 0.8))
-    dh = 230
-    dx = (sw - dw) // 2
-    dy = (sh - dh) // 2
-    d_rect = pygame.Rect(dx, dy, dw, dh)
+    # ── Layout (P0-4/P1-8: ölçek + safe-rect bağlı, ölç-önce) ──────────
+    # Sabit 520x230 (ve sabit 95/44/130/16 ofsetleri) küçük pencerelerde
+    # ekran/safe-rect bütçesini aşabiliyordu; artık modal ölçeği ile
+    # boyutlanır, safe-rect'e clamp'lenir, sığmazsa kuantalı küçültme +
+    # dar diyaloglarda dikey buton istifine düşer.
+    ms = _dialog_modal_scale(screen)
+    bounds = _dialog_safe_bounds(screen)
+    _sp = lambda value, minimum=1: scale_px(value, ms, minimum=minimum)
 
-    pad = 18
-    inp_h = 44
-    inp_rect = pygame.Rect(dx + pad, dy + 95, dw - pad * 2, inp_h)
+    font_t = _get_font(_sp(26, minimum=14), bold=True)
+    font_p = _get_font(_sp(18, minimum=11))
+    font_i = _get_font(_sp(20, minimum=12))
+    font_b = _get_font(_sp(20, minimum=12), bold=True)
 
-    btn_w = 130
-    btn_h = 44
-    btn_gap_h = 16
-    btn_y = dy + dh - btn_h - pad
-    ok_rect = pygame.Rect(dx + dw - pad - btn_w * 2 - btn_gap_h, btn_y, btn_w, btn_h)
-    cancel_rect = pygame.Rect(dx + dw - pad - btn_w, btn_y, btn_w, btn_h)
+    # Uzun prompt wrap edilir; satır bütçesi küçültme merdiveniyle
+    # 2 → 1 → 0 düşer (diyalog yükseklik bütçesi korunarak).
+    _prompt_wrap = None
+    _prompt_line_h = 0
+    if prompt:
+        _prompt_wrap = lambda max_w, max_lines: wrap_text_limited(
+            prompt, font_p, max_w, max_lines=max_lines).lines
+        _prompt_line_h = font_p.get_height()
+
+    lay = _compute_text_input_layout(sw, sh, ms, bounds,
+                                     _prompt_wrap, _prompt_line_h)
+    dw = lay['dw']; dh = lay['dh']; dx = lay['dx']; dy = lay['dy']
+    d_rect = lay['d_rect']
+    pad = lay['pad']
+    inp_rect = lay['inp_rect']
+    ok_rect = lay['ok_rect']; cancel_rect = lay['cancel_rect']
+    btn_w = lay['btn_w']; btn_h = lay['btn_h']; btn_gap_h = lay['btn_gap_h']
+    title_y = lay['title_y']; sep_y = lay['sep_y']; prompt_y = lay['prompt_y']
+    prompt_line_gap = lay['prompt_line_gap']
+    prompt_lines = lay['prompt_lines']
 
     text = initial_text
     cursor = len(text)
@@ -946,10 +1209,17 @@ def pygame_text_input(
     cn_n = _build_button_surf(btn_w, btn_h, (180, 40, 50), False)
     cn_h = _build_button_surf(btn_w, btn_h, (180, 40, 50), True)
 
-    font_t = _get_font(26, bold=True)
-    font_p = _get_font(18)
-    font_i = _get_font(20)
-    font_b = _get_font(20, bold=True)
+    # P1-8: statik metinler döngü dışında bir kez üretilir (kare-başı
+    # render yasağı); başlık diyalog genişliğine ASCII '...' ile sığar.
+    title_fit = ellipsize_text(title, font_t, dw - pad * 2)
+    title_surf = font_t.render(title_fit, True, (0, 240, 255))
+    _pl_h = font_p.get_height()
+    prompt_positions = [
+        (dx + pad, prompt_y + i * (_pl_h + prompt_line_gap))
+        for i in range(len(prompt_lines))
+    ]
+    prompt_surfs = [font_p.render(line, True, (190, 190, 215))
+                    for line in prompt_lines]
 
     # Gamepad: bloklayıcı döngü → pointer modunu bastır + her frame pump et.
     _gpm = None
@@ -1047,14 +1317,13 @@ def pygame_text_input(
         screen.blit(overlay, (0, 0))
         screen.blit(panel, (dx, dy))
 
-        screen.blit(font_t.render(title, True, (0, 240, 255)),
-                    (dx + pad, dy + 14))
+        # P1-8: statik başlık/prompt yüzeyleri döngü dışında üretildi.
+        screen.blit(title_surf, (dx + pad, title_y))
         pygame.draw.line(screen, (0, 240, 255, 50),
-                         (dx + pad, dy + 48), (dx + dw - pad, dy + 48), 1)
+                         (dx + pad, sep_y), (dx + dw - pad, sep_y), 1)
 
-        if prompt:
-            screen.blit(font_p.render(prompt, True, (190, 190, 215)),
-                        (dx + pad, dy + 60))
+        for _pline_surf, _pline_pos in zip(prompt_surfs, prompt_positions):
+            screen.blit(_pline_surf, _pline_pos)
 
         # Input
         ip = pygame.Surface((inp_rect.w, inp_rect.h), pygame.SRCALPHA)
