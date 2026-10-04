@@ -79,6 +79,7 @@ from gameplay_layout import (
     get_display_pixel_ratio,
 )
 from ui_scaling import apply_ui_scale_preset, calculate_overlay_metrics, get_scale, resolve_ui_scale_size
+from ui_text_layout import ellipsize_text
 
 try:
     from gamepad_manager import normalize_gamepad_event_button
@@ -4096,65 +4097,176 @@ class CoopGame:
         ui = self._ui_scale()
         cx = self.window_width // 2
 
+        # --- Ölç-önce (DUZ-014): tüm metinler panellerden önce planlanır ---
+        pad = self._sx(10, ui, minimum=6)
+        top_inner_w = max(24, bw + 20 - 2 * pad)
+        bot_inner_w = top_inner_w
+
+        # Title (render_fit_text FIFO önbelleği: dil değişse bile anahtar
+        # metni içerir; eski boyut-anahtarlı cache bayat başlık gösteriyordu)
+        title_text = t('coop_title', default='QUADRIX CO-OP')
+        title_base = self._sx(26, ui, minimum=16)
+        title_min = self._sx(16, ui, minimum=11)
+        title_font = retro_style.get_fitting_font(
+            title_text, title_base, top_inner_w, bold=True, min_size=title_min)
+        if title_font.size(title_text)[0] > top_inner_w:
+            title_text = ellipsize_text(title_text, title_font, top_inner_w)
+        title_h = title_font.get_height()
+        title_surf = retro_style.render_fit_text(
+            title_text, retro_style.primary, top_inner_w,
+            title_base, bold=True, min_size=title_min)
+
+        score_txt = f"{t('coop_team_score', default='Team Score')}: {self.team_score:,}".replace(',', '.')
+        score_base = self._sx(20, ui, minimum=14)
+        score_min = self._sx(14, ui, minimum=10)
+        score_font = retro_style.get_fitting_font(
+            score_txt, score_base, top_inner_w, bold=True, min_size=score_min)
+        if score_font.size(score_txt)[0] > top_inner_w:
+            score_txt = ellipsize_text(score_txt, score_font, top_inner_w)
+        score_h = score_font.get_height()
+        score_surf = retro_style.render_fit_text(
+            score_txt, retro_style.text_primary, top_inner_w,
+            score_base, bold=True, min_size=score_min)
+
+        # Üst bar yüksekliği içerikle büyütülebilir, küçültülemez: başlık +
+        # skor stack'i barın dışına taşamaz (§6.2 üst bar bütçesi).
+        top_h = max(self._sx(68, ui, minimum=50), 6 + title_h + 4 + score_h)
+
         # --- Üst bar: cam panel ile başlık + skor ---
-        top_h = self._sx(68, ui, minimum=50)
         top_rect = pygame.Rect(ox - 10, 4, bw + 20, top_h)
         retro_style.draw_glass_panel(self.screen, top_rect, alpha=90,
                                       border_color=(60, 70, 90), glow=False,
                                       top_highlight=False)
-
-        # Title (cached — doesn't change during gameplay)
-        title_size = self._sx(26, ui, minimum=16)
-        hud_cache = getattr(self, '_hud_title_cache', None)
-        if hud_cache is None or hud_cache.get('size') != title_size:
-            title_font = retro_style.get_font(title_size, bold=True)
-            title_surf = title_font.render(t('coop_title', default='QUADRIX CO-OP'), True, retro_style.primary)
-            self._hud_title_cache = {'size': title_size, 'surf': title_surf}
-        title_surf = self._hud_title_cache['surf']
-        self.screen.blit(title_surf, title_surf.get_rect(centerx=cx, top=10))
-
-        score_font = retro_style.get_font(self._sx(20, ui, minimum=14), bold=True)
-        score_txt = f"{t('coop_team_score', default='Team Score')}: {self.team_score:,}".replace(',', '.')
-        score_surf = score_font.render(score_txt, True, retro_style.text_primary)
-        self.screen.blit(score_surf, score_surf.get_rect(centerx=cx, top=10 + title_surf.get_height() + 4))
+        title_rect = title_surf.get_rect(centerx=cx, top=10)
+        self.screen.blit(title_surf, title_rect)
+        score_rect = score_surf.get_rect(centerx=cx, top=10 + title_h + 4)
+        self.screen.blit(score_surf, score_rect)
 
         # --- Alt bar: seviye, satırlar, süre, katkı ---
         info_y = oy + bh + 6
-        bot_h = self._sx(48, ui, minimum=36)
-        bot_rect = pygame.Rect(ox - 10, info_y - 4, bw + 20, bot_h)
-        retro_style.draw_glass_panel(self.screen, bot_rect, alpha=90,
-                                      border_color=(60, 70, 90), glow=False,
-                                      top_highlight=False)
-
-        stat_font = retro_style.get_font(self._sx(16, ui, minimum=11))
+        stat_base = self._sx(16, ui, minimum=11)
+        stat_floor = self._sx(11, ui, minimum=8)
         level_txt = f"Lv.{self.level}"
         lines_txt = f"{self.total_lines_cleared} {t('coop_lines', default='Lines')}"
         minutes = int(self.elapsed_time) // 60000
         seconds = (int(self.elapsed_time) // 1000) % 60
         time_txt = f"{minutes}:{seconds:02d}"
-
         items = [level_txt, lines_txt, time_txt]
-        gap = self._sx(30, ui, minimum=16)
-        total_w = sum(stat_font.size(it)[0] for it in items) + gap * (len(items) - 1)
-        start_x = cx - total_w // 2
-        for it in items:
-            surf = stat_font.render(it, True, retro_style.text_secondary)
-            self.screen.blit(surf, (start_x, info_y))
-            start_x += surf.get_width() + gap
 
-        contrib_y = info_y + stat_font.get_height() + 2
-        contrib_w = max(120, bw // 2 - self._sx(20, ui, minimum=12))
+        # Genişlik bütçesi (§6.2): stat satırı alt barın iç bütçesini
+        # aşarsa font 0.05 adımlarla kuantalı küçültülür (font_cache
+        # disiplini), gap daralır; tabanda da sığmazsa en uzun öğe ASCII
+        # '...' ile kısalır — satır barın dışına asla taşmaz.
+        gap = self._sx(30, ui, minimum=16)
+        gap_floor = self._sx(12, ui, minimum=8)
+        stat_font = retro_style.get_font(stat_base)
+        total_w = sum(stat_font.size(it)[0] for it in items) + gap * (len(items) - 1)
+        if total_w > bot_inner_w:
+            ratio = 0.95
+            fitted = False
+            while ratio >= 0.40:
+                cand_font = retro_style.get_font(max(stat_floor, int(stat_base * ratio)))
+                cand_gap = max(gap_floor, int(gap * ratio))
+                cand_w = (sum(cand_font.size(it)[0] for it in items)
+                          + cand_gap * (len(items) - 1))
+                if cand_w <= bot_inner_w:
+                    stat_font, gap, total_w = cand_font, cand_gap, cand_w
+                    fitted = True
+                    break
+                ratio -= 0.05
+            if not fitted:
+                stat_font = retro_style.get_font(stat_floor)
+                gap = gap_floor
+                rest_w = (bot_inner_w
+                          - stat_font.size(level_txt)[0]
+                          - stat_font.size(time_txt)[0]
+                          - 2 * gap)
+                items[1] = ellipsize_text(lines_txt, stat_font, max(16, rest_w))
+                total_w = (sum(stat_font.size(it)[0] for it in items)
+                           + gap * (len(items) - 1))
+        stat_h = stat_font.get_height()
+
+        # Katkı metinleri: fitting + önbellekli surface (kare başına tahsis
+        # yok); §6.2 sözleşmesi — katkı satırı alt barı aşamaz.
         p1_txt, p2_txt = self._score_contribution_texts()
         contrib_base = self._sx(14, ui, minimum=10)
-        p1_font = retro_style.get_fitting_font(p1_txt, contrib_base, contrib_w, bold=False, min_size=9)
-        p2_font = retro_style.get_fitting_font(p2_txt, contrib_base, contrib_w, bold=False, min_size=9)
-        p1_surf = p1_font.render(p1_txt, True, (90, 235, 170))
-        p2_surf = p2_font.render(p2_txt, True, (120, 210, 255))
-        self.screen.blit(p1_surf, p1_surf.get_rect(centerx=ox + bw * 0.25, top=contrib_y))
-        self.screen.blit(p2_surf, p2_surf.get_rect(centerx=ox + bw * 0.75, top=contrib_y))
+        contrib_w = max(120, bw // 2 - self._sx(20, ui, minimum=12))
+        p1_font = retro_style.get_fitting_font(
+            p1_txt, contrib_base, contrib_w, bold=False, min_size=9)
+        if p1_font.size(p1_txt)[0] > contrib_w:
+            p1_txt = ellipsize_text(p1_txt, p1_font, contrib_w)
+        p2_font = retro_style.get_fitting_font(
+            p2_txt, contrib_base, contrib_w, bold=False, min_size=9)
+        if p2_font.size(p2_txt)[0] > contrib_w:
+            p2_txt = ellipsize_text(p2_txt, p2_font, contrib_w)
+        p1_surf = retro_style.render_fit_text(
+            p1_txt, (90, 235, 170), contrib_w, contrib_base, bold=False, min_size=9)
+        p2_surf = retro_style.render_fit_text(
+            p2_txt, (120, 210, 255), contrib_w, contrib_base, bold=False, min_size=9)
+        contrib_h = max(p1_font.get_height(), p2_font.get_height())
+
+        # Alt bar yüksekliği stat + katkı stack'ini kapsar; bar ekranın
+        # altından çıkamaz (sıkı yerleşimlerde yukarı kayar — 800x480 gibi
+        # bölünmüş tahta senaryoları, §6.2).
+        bot_h = max(self._sx(48, ui, minimum=36), stat_h + 2 + contrib_h + 4)
+        bar_top = min(info_y - 4, self.window_height - bot_h)
+        bot_rect = pygame.Rect(ox - 10, max(0, bar_top), bw + 20, bot_h)
+        retro_style.draw_glass_panel(self.screen, bot_rect, alpha=90,
+                                      border_color=(60, 70, 90), glow=False,
+                                      top_highlight=False)
+
+        stat_y = bot_rect.y + 4
+        start_x = cx - total_w // 2
+        stat_rects = []
+        for it in items:
+            surf = render_text(stat_font, it, True, retro_style.text_secondary)
+            rect = surf.get_rect(topleft=(start_x, stat_y))
+            self.screen.blit(surf, rect)
+            stat_rects.append(rect)
+            start_x += surf.get_width() + gap
+
+        contrib_y = stat_y + stat_h + 2
+        p1_rect = p1_surf.get_rect(centerx=ox + bw * 0.25, top=contrib_y)
+        p2_rect = p2_surf.get_rect(centerx=ox + bw * 0.75, top=contrib_y)
+        self.screen.blit(p1_surf, p1_rect)
+        self.screen.blit(p2_surf, p2_rect)
+
+        # Containment testleri için rect kaydı (§6.2 test matrisi) —
+        # kayıtlı rect'ler o karenin gerçek çizim geometrisidir.
+        self._coop_hud_rects = {
+            'top_rect': top_rect,
+            'title_rect': title_rect,
+            'score_rect': score_rect,
+            'bot_rect': bot_rect,
+            'stat_rects': list(stat_rects),
+            'contrib_p1_rect': p1_rect,
+            'contrib_p2_rect': p2_rect,
+            'top_inner_w': top_inner_w,
+            'bot_inner_w': bot_inner_w,
+            'stat_total_w': total_w,
+            'gap': gap,
+            'ui': ui,
+            'title_text': title_text,
+            'score_text': score_txt,
+            'stat_texts': list(items),
+            'contrib_texts': (p1_txt, p2_txt),
+            'title_surf': title_surf,
+            'score_surf': score_surf,
+            'p1_surf': p1_surf,
+            'p2_surf': p2_surf,
+        }
 
     def _draw_side_panels(self, ox, oy, cs, bw, bh) -> None:
         panel_w = self._side_panel_width
+
+        # Enforce split screen board boundaries (§6.2): dar yerleşimde
+        # panel 40px taban genişliğine kadar daralır; tahta sınır koridoru
+        # bozulmaz (v2 uyarlaması).
+        width, height = self.screen.get_size()
+        max_allowed_w = min(ox - 16, width - (ox + bw) - 16)
+        if panel_w + 12 > max_allowed_w:
+            panel_w = max(40, max_allowed_w - 12)
+
         preview_cs = max(12, min(max(12, panel_w // 4), self._sx(22, self._ui_scale(), minimum=12)))
         ui = self._ui_scale()
 
@@ -4239,6 +4351,15 @@ class CoopGame:
         draw_preview_card(p2_hold_rect, self.p2_hold_piece, self._hold_label('P2'), accent_color=right_color, disabled=no_hold)
         draw_stack_connector(p1_next_rect, p1_hold_rect, left_color)
         draw_stack_connector(p2_next_rect, p2_hold_rect, right_color)
+
+        # Containment testleri için rect kaydı (§6.2 test matrisi) —
+        # kayıtlı rect'ler o karenin gerçek çizim geometrisidir.
+        self._coop_side_panel_rects = {
+            'p1_next': p1_next_rect, 'p2_next': p2_next_rect,
+            'p1_hold': p1_hold_rect, 'p2_hold': p2_hold_rect,
+            'panel_w': panel_w, 'requested_panel_w': self._side_panel_width,
+            'board_left': ox, 'board_right': ox + bw, 'no_preview': no_preview,
+        }
 
     def _draw_piece_preview(self, piece: Piece | None, x, y, cs, label: str, panel_width: int | None = None) -> None:
         ui = self._ui_scale()
