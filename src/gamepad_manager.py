@@ -1055,9 +1055,9 @@ class GamepadManager:
             )
             # PlayStation D-pad debounce (v2 paritesi): PS directinput
             # sürücüleri hat-tekrarında çift ok üretebiliyor; 60ms debounce
-            # bunu yerinde filtreler (GamepadState alanları demo'da zaten
-            # vardı — yalnızca süre atanmıyordu, dolayısıyla debounce kapalı
-            # kalıyordu).
+            # bunu yerinde filtreler. Debounce alanları + tüketici katmanı
+            # bu dalga ile port edildi (önceki dalga yalnızca süreyi
+            # atamıştı — hiçbir kod okumuyordu).
             if gp_type == GamepadType.PLAYSTATION:
                 state.dpad_debounce_time_ms = 60.0
             else:
@@ -1427,10 +1427,11 @@ class GamepadManager:
         }
 
         # Eğer bu yöne atanmış aksiyon (rebind edilmiş buton) şu an basılıysa doğrudan True dön.
-        # NOT: cihaz-kapsamlı çağrıda bu kısayol atlanır — is_action_pressed
-        # aktif (ilk) pad'i okur, yanlış pad'in butonu True döndürebilirdi.
+        # Cihaz-kapsamlı çağrıda kısayol de aynı cihaza bakar (is_action_pressed
+        # device_index alır) — butona yeniden atanmış hareketlerde 'diğer yön
+        # basılı' tespiti kaybolmasın (v2 paritesi, R2 inceleme bulgusu).
         action = dir_to_action.get(direction)
-        if action and device_index is None and self.is_action_pressed(action):
+        if action and self.is_action_pressed(action, device_index=device_index):
             return True
 
         # Eğer bu yön bir aksiyon tarafından override edildiyse yön girdisini algılama
@@ -1465,17 +1466,25 @@ class GamepadManager:
 
         return False
 
-    def is_action_pressed(self, action: str) -> bool:
+    def is_action_pressed(self, action: str, device_index=None) -> bool:
         """Belirtilen gamepad aksiyonunun şu an basılı olup olmadığını döndür.
 
         pygame.key.get_pressed() sentetik olayları algılamadığından,
         kart yetenekleri (G, H, B vb.) için doğrudan gamepad buton
         durumunu kontrol etmek gerekir.
+
+        device_index verilirse O cihazın durumu okunur (çok padli
+        PvP/koop'ta cihaz-kapsamlı held/bırakış kontrolleri için —
+        aktif/ilk pad'e bakmak oyuncular-arası sızıntı yapar);
+        verilmezse aktif gamepad kullanılır (v2 paritesi).
         """
         binding = self._bindings.get(action)
         if not binding:
             return False
-        gp = self.get_active_gamepad()
+        if device_index is not None:
+            gp = self.gamepads.get(int(device_index))
+        else:
+            gp = self.get_active_gamepad()
         if not gp:
             return False
         for trigger_dir in self._iter_trigger_dirs(binding):
@@ -2698,7 +2707,11 @@ class GamepadManager:
             'slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6',
             'restart', 'level_select',
         ):
-            for btn in self._iter_button_indices(self._bindings.get(poll_action, {})):
+            poll_binding = self._bindings.get(poll_action)
+            if not poll_binding:
+                # Boş-dict varsayılanı tahsis etme (kare-başı tahsis kuralı).
+                continue
+            for btn in self._iter_button_indices(poll_binding):
                 if btn in dpad_btn_to_dir:
                     overridden.add(dpad_btn_to_dir[btn])
 

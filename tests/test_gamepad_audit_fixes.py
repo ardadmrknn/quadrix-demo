@@ -451,3 +451,67 @@ def test_migration_v1_loop_guarded_for_version2_files():
     )
     # v2→v3 adımı yine çalışır.
     assert migrated['restart'] == {'primary': 3, 'secondary': -1}
+
+
+def test_load_settings_bumps_bindings_rev():
+    """R2 inceleme bulgusu (v2): _load_settings bindings'i yeniden atarken
+    rev bump YAPMALI — yoksa ayar ekranından rebind uygulandığında memoize
+    çözüm haritası bayat kalır (yeni atama yeniden başlatana kadar etkin
+    olmaz). Kaynak sözleşmesi: deepcopy atamasını rev bump izlemeli."""
+    src = (ROOT_DIR / 'src' / 'gamepad_manager.py').read_text(encoding='utf-8')
+    start = src.index('def _load_settings')
+    end = src.index('\n    def ', start + 10)
+    body = src[start:end]
+    assign_pos = body.index('self._bindings = copy.deepcopy(DEFAULT_GAMEPAD_BINDINGS)')
+    after = body[assign_pos:assign_pos + 800]
+    assert '_bindings_rev' in after.split('def ')[0], (
+        '_load_settings deepcopy atamasını rev bump izlemeli'
+    )
+
+
+def test_renumber_refreshes_gamepad_idx_for_rumble():
+    """idx senkronu: instance hayatta kalıp yeni indekse taşındıysa
+    p*_gamepad_idx tazelenir — rumble hedefleri idx üzerinden okunur."""
+    import coop_game as cg
+    import gamepad_manager as gm
+    import types as _t
+
+    game = cg.CoopGame.__new__(cg.CoopGame)
+    game.p1_gamepad_idx = 0
+    game.p2_gamepad_idx = 1
+    game.p1_gamepad_instance_id = 201
+    game.p2_gamepad_instance_id = 202
+    # P1 koptu; P2'nin pedi (202) 1'den 0'a taşındı.
+    gpm_after = _t.SimpleNamespace(gamepads={0: _t.SimpleNamespace(instance_id=202)})
+    orig_cg, orig_gm = cg.get_gamepad_manager, gm.get_gamepad_manager
+    try:
+        cg.get_gamepad_manager = lambda: gpm_after
+        gm.get_gamepad_manager = lambda: gpm_after
+        game._ensure_gamepad_player_assignments()
+        assert game.p2_gamepad_idx == 0, 'hayatta kalan pad yeni indekse senkron olmali'
+        assert game.p2_gamepad_instance_id == 202
+    finally:
+        cg.get_gamepad_manager = orig_cg
+        gm.get_gamepad_manager = orig_gm
+
+
+def test_v1_layout_file_still_migrates_to_v2():
+    """version=1 dosyada v1→v2 döngüsü ÇALIŞMALI (version<2 koruması yalnız
+    version=2+ dosyaları korur — v1 yolu kapanmamalı)."""
+    import settings_manager as sm
+    inst = sm.SettingsManager.__new__(sm.SettingsManager)
+    gp_existing = {
+        'gamepad_layout_version': 1,
+        # v1 default'ları (özelleştirilmemiş):
+        'slot_1': {'primary': 9, 'secondary': -1},
+        'hard_drop': {'primary': 3, 'secondary': -1},
+        'hold2': {'primary': 2, 'secondary': -1},
+        'restart': {'primary': -1, 'secondary': -1},
+    }
+    migrated = inst._migrate_gamepad_block(gp_existing)
+    assert migrated['slot_1']['primary'] == 0, 'v1 LB(9) → v2 A(0)'
+    assert migrated['hard_drop']['primary'] == 10, 'v1 Y(3) → v2 RB(10)'
+    assert migrated['hold2']['primary'] == 8, 'v1 X(2) → v2 R3(8)'
+    # v2→v3 adımı da çalışır.
+    assert migrated['restart']['primary'] == 3
+    assert migrated['gamepad_layout_version'] == sm.CURRENT_GAMEPAD_LAYOUT_VERSION

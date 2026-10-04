@@ -227,6 +227,16 @@ class CoopCampaignMode(CoopGame):
                     if event.key == pygame.K_r:
                         self._restart_level()
                         return True
+                    # A / ENTER → ileri aksiyon: failed'da yeniden dene (menüye
+                    # DÜŞMESİN), complete'te sonraki level. "Herhangi tuş → menü"
+                    # fallback'inden ÖNCE gelir (v2 paritesi; R2 inceleme
+                    # bulgusu: demo portu bu dalı kaçırıyordu — A ile retry
+                    # menüye düşüyordu).
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        if self.level_failed:
+                            self._restart_level()
+                            return True
+                        return 'next_level'
                     # Herhangi bir tuş → sonraki level veya menü
                     if self.level_complete:
                         return 'next_level'

@@ -2820,6 +2820,23 @@ class CoopGame:
                     setattr(self, inst_attr, None)
                     setattr(self, idx_attr, None)
 
+            # 1b) idx senkronu: instance HAYATTA kalıp renumber ile yeni
+            #     indekse taşındıysa p*_gamepad_idx'i tazele — rumble gibi
+            #     ikincil cihaz hedefleri idx üzerinden okunuyor (bayatırsa
+            #     kayıp/yanlış pade giderdi; R2 inceleme bulgusu).
+            for inst_attr, idx_attr in (
+                ('p1_gamepad_instance_id', 'p1_gamepad_idx'),
+                ('p2_gamepad_instance_id', 'p2_gamepad_idx'),
+            ):
+                inst = getattr(self, inst_attr, None)
+                if inst is None:
+                    continue
+                for pad_idx, pad_state in pads.items():
+                    if getattr(pad_state, 'instance_id', None) == inst:
+                        if getattr(self, idx_attr, None) != int(pad_idx):
+                            setattr(self, idx_attr, int(pad_idx))
+                        break
+
             # 2) Tek pad → atama yok (legacy P2).
             if len(pads) < 2:
                 return
