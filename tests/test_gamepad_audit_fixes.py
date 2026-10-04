@@ -114,7 +114,7 @@ def test_ensure_gamepad_player_assignments_two_pads(monkeypatch):
     game = cg.CoopGame.__new__(cg.CoopGame)
     game.p1_gamepad_idx = None
     game.p2_gamepad_idx = None
-    fake_gpm = types.SimpleNamespace(gamepads={0: object(), 3: object()})
+    fake_gpm = types.SimpleNamespace(gamepads={0: types.SimpleNamespace(instance_id=101), 3: types.SimpleNamespace(instance_id=102)})
     # v2 coop modül-düzeyi import'la bağlar; iç import da aynı kaynağa düşer.
     monkeypatch.setattr(cg, 'get_gamepad_manager', lambda: fake_gpm)
     monkeypatch.setattr(gm, 'get_gamepad_manager', lambda: fake_gpm)
@@ -128,7 +128,7 @@ def test_ensure_gamepad_player_assignments_two_pads(monkeypatch):
     single = cg.CoopGame.__new__(cg.CoopGame)
     single.p1_gamepad_idx = None
     single.p2_gamepad_idx = None
-    single_gpm = types.SimpleNamespace(gamepads={2: object()})
+    single_gpm = types.SimpleNamespace(gamepads={2: types.SimpleNamespace(instance_id=103)})
     monkeypatch.setattr(cg, 'get_gamepad_manager', lambda: single_gpm)
     monkeypatch.setattr(gm, 'get_gamepad_manager', lambda: single_gpm)
     single._ensure_gamepad_player_assignments()
@@ -143,7 +143,10 @@ def test_main_gamepad_context_and_pump_contracts():
     src = (ROOT_DIR / 'src' / 'main.py').read_text(encoding='utf-8')
     norm = re.sub(r'\s+', ' ', src)
     assert "elif state in ('game', 'pvp', 'coop', 'coop_campaign'):" in norm
-    assert "if state not in ('online_pvp', 'online_coop'):" in norm
+    # Pompa istisnası yalnız online_pvp: demo'nun OnlineCoopGame'i v2'nin
+    # aksine KENDİ pompasını çağırmaz — online_coop'u istisna etmek
+    # gamepad girdisini tamamen öldürürdü (inceleme bulgusu, geri alındı).
+    assert "if state != 'online_pvp':" in norm
     # coop_campaign runtime'ı bağlam dalında çözülür.
     assert 'active_runtime = coop_campaign_game' in norm
     # SDL öncesi Steam init (Steam Input geç hazırlanma dayanıklılığı —
@@ -243,6 +246,11 @@ def test_swallow_keydown_has_deadline():
     assert src.count('_swallow_next_keydown_deadline_ms = pygame.time.get_ticks() + 600') == 4, (
         'dört set noktasının hepsi süre limiti atamalı'
     )
+    # Bayrak atamaları da deadline atamalarıyla eş sayıda olmalı — gelecekte
+    # deadlinesız yeni bir bayrak seti eklense test yakalamalı (inceleme bulgusu).
+    assert src.count('_swallow_next_keydown = True') == src.count(
+        '_swallow_next_keydown_deadline_ms = pygame.time.get_ticks() + 600'
+    )
     assert 'pygame.time.get_ticks() > self._swallow_next_keydown_deadline_ms' in src, (
         'süresi dolan bayrak gerçek tuşu yutmamalı'
     )
@@ -319,3 +327,127 @@ def test_register_gamepad_state_carries_device_index():
     block = src[start:end]
     assert 'device_index=device_index,' in block
     assert 'dpad_debounce_time_ms = 60.0' in block
+
+
+# ── instance-id atama takibi (inceleme düzeltmesi) ───────────────────────────
+
+def test_gamepad_player_assignment_survives_renumber():
+    """Bir pad kopunca SDL kalan pad'in indeksini kaydırır; instance_id
+    ataması hayatta kalan pad'in OYUNCUSUNU korur (indeks karışması yok)."""
+    import coop_game as cg
+    import gamepad_manager as gm
+
+    game = cg.CoopGame.__new__(cg.CoopGame)
+    game.p1_gamepad_idx = 0
+    game.p2_gamepad_idx = 1
+    game.p1_gamepad_instance_id = 201
+    game.p2_gamepad_instance_id = 202
+
+    # P1'in pedi (instance 201, indeks 0) koptu; kalan ped (202) artık
+    # indeks 0'da (SDL renumbering).
+    gpm_after = types.SimpleNamespace(gamepads={0: types.SimpleNamespace(instance_id=202)})
+    # _resolve: kalan pad'in event'i (device 0) → instance 202 → P2 kalmalı.
+    orig_cg = cg.get_gamepad_manager
+    orig_gm = gm.get_gamepad_manager
+    try:
+        cg.get_gamepad_manager = lambda: gpm_after
+        gm.get_gamepad_manager = lambda: gpm_after
+        ev = types.SimpleNamespace(
+            type=pygame.KEYDOWN, key=pygame.K_c, mod=0, from_gamepad=True,
+            action='hold', device_index=0, gamepad_player=None,
+        )
+        assert game._resolve_gamepad_player(ev) == 2, (
+            'renumber sonrası hayatta kalan pad oyuncusunu korumalı (P2)'
+        )
+        # _ensure: kopan instance temizlenmeli (P1 ataması boşalmalı).
+        game._ensure_gamepad_player_assignments()
+        assert game.p1_gamepad_instance_id is None
+        assert game.p1_gamepad_idx is None
+        # Kalan pad tek başına → P2 ataması da temizlenmez (instance bağlı):
+        assert game.p2_gamepad_instance_id == 202
+    finally:
+        # HER İKİ modül bağlaması geri konmalı — yalnız cg'yi geri koymak
+        # gm.get_gamepad_manager lambdasını sızdırır (sonraki dosyaların
+        # get_gamepad_manager() çağrıları SimpleNamespace alırdı).
+        cg.get_gamepad_manager = orig_cg
+        gm.get_gamepad_manager = orig_gm
+
+
+def test_poll_only_binding_on_dpad_dir_suppresses_natural_direction():
+    """Slot/restart gibi poll-only aksiyon D-pad yön butonuna bağlıysa doğal
+    yön bastırılır — aynı buton doğal yönü VE slot poll'unu birlikte
+    tetiklememeli (inceleme bulgusu; v2 paritesi)."""
+    import gamepad_manager as gm
+
+    manager = gm.GamepadManager.__new__(gm.GamepadManager)
+    manager.gamepads = {}
+    manager._context = gm.GamepadManager.CONTEXT_GAME
+    manager._bindings = {
+        'slot_1': {'button': 12},  # D-pad Down'a slot bağlandı
+    }
+    assert 'down' in manager._get_overridden_dpad_dirs()
+
+    # restart da poll-only: D-pad Up'a bağlanınca 'up' bastırılır.
+    manager._bindings = {'restart': {'button': 11}}
+    assert 'up' in manager._get_overridden_dpad_dirs()
+
+
+def test_resolve_game_button_actions_is_memoized():
+    """Çözüm haritası bindings değişmedikçe ÖNBELLEK'Ten döner (kare başına
+    3-4 kez yeniden inşanın kapanması; v2 paritesi)."""
+    import gamepad_manager as gm
+
+    manager = gm.GamepadManager.__new__(gm.GamepadManager)
+    manager.gamepads = {}
+    manager._context = gm.GamepadManager.CONTEXT_GAME
+    manager._bindings = {'rotate': {'button': 11}, 'hard_drop': {'button': 5}}
+
+    first = manager._resolve_game_button_actions()
+    second = manager._resolve_game_button_actions()
+    assert first is second, 'aynı bindings → aynı (önbellek) nesne'
+
+    manager._bindings_rev = getattr(manager, '_bindings_rev', 0) + 1
+    third = manager._resolve_game_button_actions()
+    assert third is not first, 'rev değişince önbellek düşmeli'
+
+
+def test_is_direction_held_scopes_to_device():
+    """is_direction_held(device_index=...) O cihazın durumunu okur (v2
+    paritesi) — iki padli oyunda DAS bırakış kontrolü bırakan oyuncunun
+    pad'ine bakar."""
+    import gamepad_manager as gm
+
+    manager = gm.GamepadManager.__new__(gm.GamepadManager)
+    manager.gamepads = {}
+    manager._context = gm.GamepadManager.CONTEXT_GAME
+    manager._bindings = {}
+    fake_js = lambda: types.SimpleNamespace(get_init=lambda: True, get_name=lambda: 'Pad', quit=lambda: None)
+    pad_p1 = gm.GamepadState(device_index=0, joystick=fake_js())
+    pad_p1.dpad = (1, 0)   # P1 pad'i SAĞI basılı tutuyor
+    pad_p1.dpad_debounced_dx = 1  # debounced değerlerden okuma (v2 paritesi)
+    pad_p2 = gm.GamepadState(device_index=1, joystick=fake_js())
+    pad_p2.dpad = (0, 0)   # P2 pad'i boş
+    manager.gamepads = {0: pad_p1, 1: pad_p2}
+
+    assert manager.is_direction_held('right') is True
+    assert manager.is_direction_held('right', device_index=1) is False
+    assert manager.is_direction_held('right', device_index=0) is True
+
+
+def test_migration_v1_loop_guarded_for_version2_files():
+    """version=2 dosyada v1→v2 döngüsü YENİDEN ÇALIŞMAZ — v1 eski
+    default'una denk kullanıcı özelleştirmeleri ezilmez (inceleme bulgusu)."""
+    import settings_manager as sm
+    inst = sm.SettingsManager.__new__(sm.SettingsManager)
+    # hard_drop=3, v1'in eski default'u (kullanıcı bilerek böyle bıraktı).
+    gp_existing = {
+        'gamepad_layout_version': 2,
+        'hard_drop': {'primary': 3, 'secondary': -1},
+        'restart': {'primary': -1, 'secondary': -1},
+    }
+    migrated = inst._migrate_gamepad_block(gp_existing)
+    assert migrated['hard_drop'] == {'primary': 3, 'secondary': -1}, (
+        'version=2 dosyada v1→v2 döngüsü custom değeri ezmemeli'
+    )
+    # v2→v3 adımı yine çalışır.
+    assert migrated['restart'] == {'primary': 3, 'secondary': -1}

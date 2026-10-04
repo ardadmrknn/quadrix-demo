@@ -4977,11 +4977,13 @@ def main():
         # event kuyruğuna post et.  Böylece tüm handler'lar (menü, oyun,
         # ayarlar vb.) otomatik olarak gamepad girişini klavye olayı
         # gibi işler — ek kod değişikliği gerekmez.
-        # online_pvp ve online_coop kendi handle_input() içinde update()
-        # çağırır (çift güncelleme önlenir; ana döngü pompası menu-context
-        # baseline'ı yenileyip oyun bağlamı edge'lerini yutuyordu).
+        # online_pvp kendi handle_input() içinde update() çağırır (çift
+        # güncelleme önlenir). NOT: online_coop burada istisna EDİLMEZ —
+        # demo'nun OnlineCoopGame'i v2'nin aksine kendi pompasını
+        # ÇAĞIRMAZ; istisna yapılsaydı gamepad girdisi tamamen ölürdü
+        # (v2'deki karşılığı kendi set_context+update bloğuna sahiptir).
         try:
-            if state not in ('online_pvp', 'online_coop'):
+            if state != 'online_pvp':
                 gp_events = gamepad_mgr.update(delta_ms)
                 for gp_ev in gp_events:
                     pygame.event.post(gp_ev)

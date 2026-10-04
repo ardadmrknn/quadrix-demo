@@ -501,6 +501,20 @@ class GamepadState:
     # D-pad (hat)
     dpad: Tuple[int, int] = (0, 0)  # (x, y) : -1/0/+1
     prev_dpad: Tuple[int, int] = (0, 0)
+    # D-pad debouncing (v2 paritesi): PS directinput sürücüleri hat-tekrarında
+    # çift ok üretebiliyor; dpad_debounce_time_ms > 0 olan cihazlarda edge
+    # karşılaştırması bu debounced değerlerden yapılır.
+    dpad_debounce_time_ms: float = 0.0
+    dpad_last_real_dx: int = 0
+    dpad_last_real_dy: int = 0
+    dpad_release_timestamp_x: float = 0.0
+    dpad_release_timestamp_y: float = 0.0
+    dpad_is_debouncing_x: bool = False
+    dpad_is_debouncing_y: bool = False
+    dpad_debounced_dx: int = 0
+    dpad_debounced_dy: int = 0
+    prev_dpad_debounced_dx: int = 0
+    prev_dpad_debounced_dy: int = 0
     dpad_repeat_x: float = 0.0
     dpad_repeat_y: float = 0.0
     dpad_initial_delay_x: bool = False
@@ -596,6 +610,8 @@ class GamepadManager:
 
         # Instance-level binding kopyası (global DEFAULT_GAMEPAD_BINDINGS mutasyona uğramaz)
         self._bindings = copy.deepcopy(DEFAULT_GAMEPAD_BINDINGS)
+        # Bindings değişti → çözüm haritası önbelleğini düşür (rev bump).
+        self._bindings_rev = getattr(self, '_bindings_rev', 0) + 1
 
         # Menü navigasyonunda çift tetiklenmeyi önlemek için debouncing veri yapısı
         self._last_menu_key_times: Dict[int, int] = {}
@@ -693,6 +709,8 @@ class GamepadManager:
                 self.MOUSE_SENSITIVITY = max(0.1, min(3.0, float(ms)))
             # Her reload'da temiz bir kopya ile başla (önceki mutasyonlar sıfırlanır)
             self._bindings = copy.deepcopy(DEFAULT_GAMEPAD_BINDINGS)
+            # Bindings değişti → çözüm haritası önbelleğini düşür (rev bump).
+            self._bindings_rev = getattr(self, '_bindings_rev', 0) + 1
 
             # Eski çakışan ayarları temizle.
             # NOT: 'restart' artik kullaniliyor (game-over Y butonu) — deprecated
@@ -1380,14 +1398,23 @@ class GamepadManager:
             for gp in self.gamepads.values()
         )
 
-    def is_direction_held(self, direction: str) -> bool:
+    def is_direction_held(self, direction: str, device_index=None) -> bool:
         """Belirtilen yönün (up/down/left/right) gamepad'de basılı tutulup
         tutulmadığını döndür. D-pad VEYA sol analog stick kontrol edilir.
 
         Bu metod pygame.key.get_pressed() ile birlikte kullanılarak
         gamepad'den gelen sürekli yön girdisini algılamak için tasarlanmıştır.
+
+        device_index verilirse O cihazın durumu okunur (çok padli
+        PvP/koop'ta DAS bırakış kontrolü bırakan OYUNCUNUN pad'ine
+        bakmalıdır — ilk/aktif pad'e bakmak oyuncular-arası girdi
+        sızıntısı yapar); verilmezse aktif gamepad kullanılır (v2
+        paritesi, mevcut çağrılarla geriye dönük uyumludur).
         """
-        gp = self.get_active_gamepad()
+        if device_index is not None:
+            gp = self.gamepads.get(int(device_index))
+        else:
+            gp = self.get_active_gamepad()
         if not gp:
             return False
 
@@ -1398,10 +1425,12 @@ class GamepadManager:
             'left': 'move_left',
             'right': 'move_right'
         }
-        
-        # Eğer bu yöne atanmış aksiyon (rebind edilmiş buton) şu an basılıysa doğrudan True dön
+
+        # Eğer bu yöne atanmış aksiyon (rebind edilmiş buton) şu an basılıysa doğrudan True dön.
+        # NOT: cihaz-kapsamlı çağrıda bu kısayol atlanır — is_action_pressed
+        # aktif (ilk) pad'i okur, yanlış pad'in butonu True döndürebilirdi.
         action = dir_to_action.get(direction)
-        if action and self.is_action_pressed(action):
+        if action and device_index is None and self.is_action_pressed(action):
             return True
 
         # Eğer bu yön bir aksiyon tarafından override edildiyse yön girdisini algılama
@@ -1410,7 +1439,9 @@ class GamepadManager:
             return False
 
         # D-pad kontrolü
-        dx, dy = gp.dpad
+        # Debounce edilmiş yönleri kullan (v2 paritesi): PS hat-tekrarı
+        # burada da filtrelenir.
+        dx, dy = gp.dpad_debounced_dx, gp.dpad_debounced_dy
         if direction == 'down' and dy == -1:    # SDL hat: aşağı = -1
             return True
         if direction == 'up' and dy == 1:       # SDL hat: yukarı = +1
@@ -1700,6 +1731,8 @@ class GamepadManager:
                 # Önceki durumu kaydet
                 gp.prev_buttons = dict(gp.buttons)
                 gp.prev_dpad = gp.dpad
+                gp.prev_dpad_debounced_dx = gp.dpad_debounced_dx
+                gp.prev_dpad_debounced_dy = gp.dpad_debounced_dy
                 gp.left_stick.prev_digital_x = gp.left_stick.digital_x
                 gp.left_stick.prev_digital_y = gp.left_stick.digital_y
                 # Trigger prev durumunu da BURADA (yeni degerler okunmadan once)
@@ -2268,7 +2301,15 @@ class GamepadManager:
         (buton yolu 'eventi D-pad yolu üretecek' varsayımıyla kazanan doğal
         aksiyonu atlıyor, bastırma katmanı ise kaybeden düşük öncelikli
         aksiyon yüzünden aynı yönü bastırıyordu → hiçbir event üretilmiyordu).
+
+        Sonuç memoize edilir (v2 paritesi): bindings yalnızca
+        _load_settings/init'te değiştiğinden çözüm haritası kare başına
+        3-4 kez yeniden inşa edilmez (revizyon sayacı _bindings_rev).
         """
+        rev = getattr(self, '_bindings_rev', 0)
+        cached = getattr(self, '_resolved_buttons_cache', None)
+        if cached is not None and getattr(self, '_resolved_buttons_rev', -1) == rev:
+            return cached
         button_actions_map: dict[int, list[str]] = {}
         for action in GAME_ACTIONS_LIST:
             binding = self._bindings.get(action, {})
@@ -2284,6 +2325,11 @@ class GamepadManager:
             else:
                 sorted_actions = sorted(actions, key=lambda a: GAME_ACTION_PRIORITY.get(a, 0), reverse=True)
                 button_actions[btn] = sorted_actions[0]
+        try:
+            self._resolved_buttons_cache = button_actions
+            self._resolved_buttons_rev = rev
+        except Exception:
+            pass
         return button_actions
 
     def _generate_button_events(self, gp: GamepadState) -> List[pygame.event.Event]:
@@ -2643,6 +2689,19 @@ class GamepadManager:
             if winner is not None and winner != dir_to_action.get(btn_dir):
                 overridden.add(btn_dir)
 
+        # 1b) POLL-ONLY aksiyonlar (slotlar, restart, level_select) bir D-pad
+        # yön butonuna bağlıysa doğal yön yine bastırılır (eski Kural 1'in
+        # kapsamı; v2 paritesi): kazanan taraması bu aksiyonları içermez
+        # (event üretmezler) — dahil edilmezse aynı fiziksel buton doğal yönü
+        # VE slot poll'unu birlikte tetiklerdi (inceleme bulgusu).
+        for poll_action in (
+            'slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6',
+            'restart', 'level_select',
+        ):
+            for btn in self._iter_button_indices(self._bindings.get(poll_action, {})):
+                if btn in dpad_btn_to_dir:
+                    overridden.add(dpad_btn_to_dir[btn])
+
         # 2) Eğer bir hareket eylemine (move_left, move_right, soft_drop, rotate) başka bir tuş atanmışsa,
         # o eylemin doğal D-pad yönünün yerleşik emülasyonunu bastır.
         for btn_dir, action in dir_to_action.items():
@@ -2698,8 +2757,75 @@ class GamepadManager:
         D-Pad butonları (11-14) bir kart aksiyonuna atandıysa
         o yön için ok-tuşu üretilmez (çakışma engellenir)."""
         events = []
-        dx, dy = gp.dpad
-        pdx, pdy = gp.prev_dpad
+
+        # --- D-pad Debounce Hesaplaması (v2 paritesi) ---
+        # dpad_debounce_time_ms <= 0 olan cihazlarda (Xbox vb.) debounced
+        # değerler ham değerleri izler — davranış değişmez. PS cihazlarında
+        # (60ms) hat-tekrarı kaynaklı çift ok olayları filtrelenir.
+        now = getattr(self, '_internal_time', 0.0)
+        raw_dpad_dx, raw_dpad_dy = gp.dpad
+
+        # X Ekseni Debounce
+        raw_dx = raw_dpad_dx
+        if gp.dpad_debounce_time_ms <= 0.0:
+            gp.dpad_debounced_dx = raw_dx
+            gp.dpad_is_debouncing_x = False
+        else:
+            if raw_dx == 0:
+                if gp.dpad_debounced_dx != 0:
+                    if not gp.dpad_is_debouncing_x:
+                        gp.dpad_is_debouncing_x = True
+                        gp.dpad_release_timestamp_x = now
+                        gp.dpad_last_real_dx = gp.dpad_debounced_dx
+                    else:
+                        if now - gp.dpad_release_timestamp_x >= gp.dpad_debounce_time_ms:
+                            gp.dpad_is_debouncing_x = False
+                            gp.dpad_debounced_dx = 0
+                else:
+                    gp.dpad_is_debouncing_x = False
+            else:
+                if gp.dpad_is_debouncing_x:
+                    if raw_dx == gp.dpad_last_real_dx:
+                        gp.dpad_is_debouncing_x = False
+                    else:
+                        gp.dpad_is_debouncing_x = False
+                        gp.dpad_debounced_dx = raw_dx
+                else:
+                    gp.dpad_debounced_dx = raw_dx
+
+        # Y Ekseni Debounce
+        raw_dy = raw_dpad_dy
+        if gp.dpad_debounce_time_ms <= 0.0:
+            gp.dpad_debounced_dy = raw_dy
+            gp.dpad_is_debouncing_y = False
+        else:
+            if raw_dy == 0:
+                if gp.dpad_debounced_dy != 0:
+                    if not gp.dpad_is_debouncing_y:
+                        gp.dpad_is_debouncing_y = True
+                        gp.dpad_release_timestamp_y = now
+                        gp.dpad_last_real_dy = gp.dpad_debounced_dy
+                    else:
+                        if now - gp.dpad_release_timestamp_y >= gp.dpad_debounce_time_ms:
+                            gp.dpad_is_debouncing_y = False
+                            gp.dpad_debounced_dy = 0
+                else:
+                    gp.dpad_is_debouncing_y = False
+            else:
+                if gp.dpad_is_debouncing_y:
+                    if raw_dy == gp.dpad_last_real_dy:
+                        gp.dpad_is_debouncing_y = False
+                    else:
+                        gp.dpad_is_debouncing_y = False
+                        gp.dpad_debounced_dy = raw_dy
+                else:
+                    gp.dpad_debounced_dy = raw_dy
+
+        # Debounce edilmiş yönleri kullan (v2 paritesi)
+        dx = gp.dpad_debounced_dx
+        dy = gp.dpad_debounced_dy
+        pdx = gp.prev_dpad_debounced_dx
+        pdy = gp.prev_dpad_debounced_dy
 
         # Oyun içinde kart aksiyonlarına atanmış D-Pad yönlerini bul
         suppressed = self._get_overridden_dpad_dirs() if self._context == self.CONTEXT_GAME else set()

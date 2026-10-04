@@ -131,6 +131,11 @@ class CoopGame:
     # yok (legacy tek-gamepad davranışı: P2'yi sürer).
     p1_gamepad_idx = None
     p2_gamepad_idx = None
+    # Cihaz→oyuncu atamasının KALICI kimliği: instance_id (SDL renumbering'de
+    # indeksler kayar, instance sabit kalır — hayatta kalan pad oyuncusunu
+    # korur; 2026-10-04 inceleme bulgusu, v2 paritesi).
+    p1_gamepad_instance_id = None
+    p2_gamepad_instance_id = None
     _AMBIENT_PARTICLE_COLOR = (200, 200, 255)
     _SOFT_DROP_SPEED = 50  # ms
     _LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED = 0.144
@@ -2751,14 +2756,31 @@ class CoopGame:
     def _resolve_gamepad_player(self, event) -> int:
         """Gamepad event'inin hangi oyuncuya ait olduğunu çöz.
 
-        gamepad_player metadata'sı önceliklidir; yoksa device_index
-        p1/p2_gamepad_idx eşleşmesinden çözülür; hiçbiri yoksa legacy
-        tek-gamepad davranışı (ok tuşları P2'yi sürer) korunur.
+        Öncelik sırası: (1) gamepad_player metadata'sı; (2) event'in
+        cihazındaki instance_id'nin oyuncu atamasına eşleşmesi — SDL
+        renumbering'e dayanıklıdır (bir pad kopunca kalan padlerin indeksleri
+        kayar; instance sabit kalır, hayatta kalan pad OYUNCUSUNU korur);
+        (3) device_index ↔ p1/p2_gamepad_idx eşleşmesi; (4) hiçbiri yoksa
+        legacy tek-gamepad davranışı (ok tuşları P2'yi sürer).
         """
         gp_player = getattr(event, 'gamepad_player', None)
         if gp_player in (1, 2):
             return gp_player
         gp_device = getattr(event, 'device_index', None)
+        if gp_device is not None:
+            try:
+                from gamepad_manager import get_gamepad_manager
+                gpm = get_gamepad_manager()
+                pads = getattr(gpm, 'gamepads', {}) if gpm is not None else {}
+                gp_state = pads.get(gp_device)
+                inst = getattr(gp_state, 'instance_id', None) if gp_state is not None else None
+                if inst is not None:
+                    if inst == getattr(self, 'p1_gamepad_instance_id', None):
+                        return 1
+                    if inst == getattr(self, 'p2_gamepad_instance_id', None):
+                        return 2
+            except Exception:
+                pass
         if self.p1_gamepad_idx is not None and gp_device == self.p1_gamepad_idx:
             return 1
         if self.p2_gamepad_idx is not None and gp_device == self.p2_gamepad_idx:
@@ -2766,25 +2788,59 @@ class CoopGame:
         return 2
 
     def _ensure_gamepad_player_assignments(self):
-        """İki+ gamepad bağlıysa cihaz→oyuncu otomatik ataması (v2 routing
-        katmanı paritesi; koop'ta atama lobisi yoktur).
+        """İki+ gamepad bağlıysa cihaz→oyuncu ataması (instance_id ile takip).
 
         Tek pad legacy P2 davranışını korur; iki+ pad bağlandığında bağlanma
-        sırasına göre ilk pad P1'e, ikinci pad P2'ye atanır — iki padin de
-        aynı oyuncuyu sürmesi yerine. Klavye girişleri paralel çalışmaya
-        devam eder. Idempotenttir; atama bir kez yapıldığında değişmez.
+        sırasına göre ilk pad P1'e, ikinci pad P2'ye atanır. Atama
+        instance_id ile HATIRLANIR: SDL renumbering'de (bir pad kopunca
+        kalan padlerin indeksleri kayar) hayatta kalan pad oyuncusunu KORUR
+        — indeks sırasına yeniden karışmaz. Hatırlanan instance artık bağlı
+        değilse (pad koptu) atama temizlenir ve boşalan oyuncuya yeni pad
+        atanabilir. Klavye girişleri paralel çalışmaya devam eder.
+        Idempotenttir (v2 paritesi; atama lobisi demo'da yoktur).
         """
         try:
             from gamepad_manager import get_gamepad_manager
             gpm = get_gamepad_manager()
             if gpm is None:
                 return
-            indices = sorted(int(idx) for idx in getattr(gpm, 'gamepads', {}).keys())
-            if len(indices) >= 2:
-                if self.p1_gamepad_idx is None:
-                    self.p1_gamepad_idx = indices[0]
-                if self.p2_gamepad_idx is None:
-                    self.p2_gamepad_idx = indices[1]
+            pads = getattr(gpm, 'gamepads', {}) or {}
+
+            # 1) Stale temizliği: hatırlanan instance artık bağlı değilse o
+            #    oyuncunun atamasını düşür (yeni pad atanabilsin).
+            for inst_attr, idx_attr in (
+                ('p1_gamepad_instance_id', 'p1_gamepad_idx'),
+                ('p2_gamepad_instance_id', 'p2_gamepad_idx'),
+            ):
+                inst = getattr(self, inst_attr, None)
+                if inst is not None and not any(
+                    getattr(gp, 'instance_id', None) == inst
+                    for gp in pads.values()
+                ):
+                    setattr(self, inst_attr, None)
+                    setattr(self, idx_attr, None)
+
+            # 2) Tek pad → atama yok (legacy P2).
+            if len(pads) < 2:
+                return
+
+            # 3) Eksik atamaları doldur (indeks sırasıyla; instance çakışmasın).
+            for idx in sorted(pads.keys()):
+                inst = getattr(pads[idx], 'instance_id', None)
+                if inst is None:
+                    continue
+                if (
+                    getattr(self, 'p1_gamepad_instance_id', None) is None
+                    and inst != getattr(self, 'p2_gamepad_instance_id', None)
+                ):
+                    self.p1_gamepad_instance_id = inst
+                    self.p1_gamepad_idx = int(idx)
+                elif (
+                    getattr(self, 'p2_gamepad_instance_id', None) is None
+                    and inst != getattr(self, 'p1_gamepad_instance_id', None)
+                ):
+                    self.p2_gamepad_instance_id = inst
+                    self.p2_gamepad_idx = int(idx)
         except Exception:
             pass
 

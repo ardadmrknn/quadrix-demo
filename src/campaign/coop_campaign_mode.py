@@ -173,6 +173,18 @@ class CoopCampaignMode(CoopGame):
     # Oyun döngüsü override
     # ------------------------------------------------------------------
 
+    def wants_mouse_visible(self) -> bool:
+        """Kampanya tamamlandı/başarısız ekranlarında gamepad 'menu' bağlamına
+        dönmeli (A=onay/B=menü reklam edilen davranış) — main.py state→context
+        çözümü bu metoda bakar. CoopGame temel sınıfı yalnız paused/game_over'da
+        True döner; level_complete'te game_over SET EDİLMEZ → bağlam 'game'
+        kalır, B=rotate üretir, ekranda 'B ile dön' reklamı ölü kalırdı
+        (v2 paritesi).
+        """
+        if getattr(self, 'level_failed', False) or getattr(self, 'level_complete', False):
+            return True
+        return super().wants_mouse_visible()
+
     def update(self, delta_time: float) -> None:
         super().update(delta_time)
 
@@ -183,6 +195,29 @@ class CoopCampaignMode(CoopGame):
     def handle_input(self):
         """Level tamamlandıysa özel input akışı."""
         if self.level_complete or self.level_failed:
+            # === Gamepad poll-only aksiyonları (v2 paritesi) ===
+            # Bu ekranlarda wants_mouse_visible=True → main.py 'menu' bağlamını
+            # seçer. Yani A (menu_confirm) sentetik K_RETURN, B (menu_back)
+            # sentetik K_ESCAPE üretir; bunlar aşağıdaki klavye döngüsünde
+            # işlenir. restart (Y) ve level_select (X) POLL-ONLY'dir — yalnızca
+            # burada edge-detection ile okunur. (Denetim bulgusu: blok demo
+            # koop'a port edilmemişti — Y, menü bağlamında 'menüye dön' olarak
+            # yorumlanıyordu, retry hiç çalışmıyordu.)
+            try:
+                from gamepad_manager import get_gamepad_manager
+                _gpm = get_gamepad_manager()
+                if _gpm and getattr(_gpm, 'enabled', False):
+                    # X → Bölüm Seç (v2 koop paritesi: menüye dönüş).
+                    if _gpm.was_action_just_pressed('level_select'):
+                        pygame.event.clear((pygame.KEYDOWN, pygame.KEYUP))
+                        return 'menu'
+                    # Y → Yeniden Dene (level_complete'te sonraki A'dadır).
+                    if _gpm.was_action_just_pressed('restart'):
+                        pygame.event.clear((pygame.KEYDOWN, pygame.KEYUP))
+                        self._restart_level()
+                        return True
+            except Exception:
+                pass
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return False

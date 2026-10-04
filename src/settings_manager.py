@@ -34,8 +34,10 @@ from storage_layout import (
 #
 # NOT: Demo'da enerji yetenekleri (Ground Sweep / Time Warp) yalnizca klavye
 # (Z/X) ile kullanilir; gamepad atamasi hicbir zaman olmadi. Bu yuzden ana
-# oyundaki v2→v3 (enerji gamepad'den kaldirma) adimina gerek yoktur; tek adimli
-# v1→v2 migration yeterlidir ve nihai layout ana oyunla birebir aynidir.
+# oyundaki enerji-kaldirma adimina gerek yoktur. Demo gocu uc adimlidir:
+# v1→v2 (cift-tetik normalizasyonu), v2→v3 (restart=Y/level_select=X — ana
+# oyunun v4 adiminin demo karsiligi; game-over Y-retry). Nihai layout ana
+# oyunun restart/level_select eslemeleriyle esdegerdir.
 CURRENT_GAMEPAD_LAYOUT_VERSION = 3
 
 # Eski (v1) varsayilan gamepad layout'unun `primary` imzasi. Bir aksiyonun
@@ -1425,36 +1427,40 @@ class SettingsManager:
 
         # ── v1 → v2: eski cift-tetikli layout normalizasyonu ──────────────────
         # hold2 (R3) cift-tetik guard'i icin once digerlerini tasi, en son hold2.
-        for action, old_primary in _OLD_GAMEPAD_LAYOUT_V1.items():
-            if action == 'hold2':
-                continue
-            new_primary = _new_primary(action)
-            stored = migrated.get(action, _MISSING)
-            if stored is _MISSING:
-                # Eski settings'te hic yoktu → kullanici dokunmamis → yeni default.
-                migrated[action] = {'primary': new_primary, 'secondary': -1}
-                continue
-            primary, secondary = self._extract_gamepad_binding(stored)
-            unmodified = (primary == old_primary) and (secondary is None or secondary == -1)
-            if unmodified:
-                migrated[action] = {'primary': new_primary, 'secondary': -1}
-            # else: kullanici ozellestirmis → oldugu gibi birak.
+        # NOT: adım `version < 2` ile korunur — version=2 dosyalarda yeniden
+        # çalışırsa v1 eski default'una denk kullanıcı özelleştirmeleri
+        # mekanik olarak ezerdi (inceleme bulgusu).
+        if version < 2:
+            for action, old_primary in _OLD_GAMEPAD_LAYOUT_V1.items():
+                if action == 'hold2':
+                    continue
+                new_primary = _new_primary(action)
+                stored = migrated.get(action, _MISSING)
+                if stored is _MISSING:
+                    # Eski settings'te hic yoktu → kullanici dokunmamis → yeni default.
+                    migrated[action] = {'primary': new_primary, 'secondary': -1}
+                    continue
+                primary, secondary = self._extract_gamepad_binding(stored)
+                unmodified = (primary == old_primary) and (secondary is None or secondary == -1)
+                if unmodified:
+                    migrated[action] = {'primary': new_primary, 'secondary': -1}
+                # else: kullanici ozellestirmis → oldugu gibi birak.
 
-        # hold2 (Ekstra Cep): v1 X(2) → v2 R3(8). Cift-tetik guard.
-        hold2_old = _OLD_GAMEPAD_LAYOUT_V1['hold2']
-        stored_h2 = migrated.get('hold2', _MISSING)
-        if stored_h2 is _MISSING:
-            hold2_unmodified = True
-        else:
-            h2_primary, h2_secondary = self._extract_gamepad_binding(stored_h2)
-            hold2_unmodified = (h2_primary == hold2_old) and (h2_secondary is None or h2_secondary == -1)
-        if hold2_unmodified:
-            new_hold2 = _new_primary('hold2')  # 8 (R3)
-            if new_hold2 >= 0 and new_hold2 in _occupied_buttons(exclude=('hold2',)):
-                migrated['hold2'] = {'primary': -1, 'secondary': -1}
+            # hold2 (Ekstra Cep): v1 X(2) → v2 R3(8). Cift-tetik guard.
+            hold2_old = _OLD_GAMEPAD_LAYOUT_V1['hold2']
+            stored_h2 = migrated.get('hold2', _MISSING)
+            if stored_h2 is _MISSING:
+                hold2_unmodified = True
             else:
-                migrated['hold2'] = {'primary': new_hold2, 'secondary': -1}
-        # else: kullanici hold2'yi ozellestirmis → dokunma.
+                h2_primary, h2_secondary = self._extract_gamepad_binding(stored_h2)
+                hold2_unmodified = (h2_primary == hold2_old) and (h2_secondary is None or h2_secondary == -1)
+            if hold2_unmodified:
+                new_hold2 = _new_primary('hold2')  # 8 (R3)
+                if new_hold2 >= 0 and new_hold2 in _occupied_buttons(exclude=('hold2',)):
+                    migrated['hold2'] = {'primary': -1, 'secondary': -1}
+                else:
+                    migrated['hold2'] = {'primary': new_hold2, 'secondary': -1}
+            # else: kullanici hold2'yi ozellestirmis → dokunma.
 
         # ── v2 → v3: game-over/level-failed gamepad eslemesi (v2 v4 paritesi) ──
         # restart=Y(3), level_select=X(2). Bu iki aksiyon POLL-ONLY'dir;
