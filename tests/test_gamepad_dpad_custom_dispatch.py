@@ -14,8 +14,11 @@ yön butonlarının (11-14) custom aksiyon bağlanması:
   action damgasını taşır (DUZ-007 sözleşmesi).
 - Bastırma (Kural 1): D-pad yön butonuna bağlı aksiyonların KAZANANI
   (GP-001 öncelik çözümü) doğal yön aksiyonu DEĞİLSE o yönün doğal
-  ok-tuşu HİÇ üretilmez — ne basışta KEYDOWN ne bırakışta KEYUP ("hiç
-  basılmamış sayılır"); çapraz girdide yalnızca bastırılan yön kaybolur.
+  ok-tuşu KEYDOWN'u ÜRETİLMEZ; bırakış KEYUP'I yine de ÜRETİLİR (A-4,
+  2026-10-04: bastırma yalnız yeni basışları kapatır — bırakış her
+  koşulda iletilir ki ayarlar sırasında binding değişince tüketici tuşu
+  basılı sanıp DAS'ı kilitlemesin; eşleşmeyen KEYUP tüketici için zararsız
+  no-op'tır); çapraz girdide yalnızca bastırılan yönün basışı kaybolur.
   Kazanan DOĞAL aksiyonsa yön bastırılmaz (buton yolu skip eder, hat
   yolu üretir) — iki katmanın aynı kazanan kararını kullanması ölü-girdi
   sınıfını kapatır (aşağıdaki ölü-girdi testleri).
@@ -214,12 +217,15 @@ def test_suppressed_dpad_up_produces_neither_keydown_nor_keyup():
         )
         assert events == [], 'bu karede başka yön de yok'
 
-        # Bırakış: hat (0,0), önceki (0,1) → doğal K_UP KEYUP üretilMEZ.
+        # Bırakış: hat (0,0), önceki (0,1) → doğal K_UP KEYUP ÜRETİLİR (A-4:
+        # bastırma yalnız KEYDOWN'ları kapatır; bırakış her koşulda iletilir —
+        # bastırma ayarlar arasında değişse bile tuş kilitlenmez).
         gp.dpad = (0, 0)
         _set_prev_dpad(gp, 0, 1)
         events = manager._generate_dpad_events(gp, delta_ms=16.6)
-        assert events == [], 'bastırılan yönün KEYUP\'ı da üretilmemeli'
-
+        assert [(e.key, e.type) for e in events] == [(pygame.K_UP, pygame.KEYUP)], (
+            'bastırılan yönün bırakış KEYUP-ı üretilmeli (A-4)'
+        )
         # Çapraz: hat (1,1) → K_RIGHT üretilmeye DEVAM eder, K_UP yine yok.
         gp.dpad = (1, 1)
         _set_prev_dpad(gp, 0, 0)
@@ -341,6 +347,24 @@ def test_custom_winner_on_dpad_dir_after_natural_unbound():
     _set_prev_dpad(gp, 0, 0)
     hat_events = manager._generate_dpad_events(gp, delta_ms=16.6)
     assert hat_events == [], 'taşınmış doğal yönün emülasyonu bastırılmalı'
+
+
+# ---------------------------------------------------------------------------
+# A-3: menü bağlamında D-pad yön butonları SAF navigasyondur
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize('menu_action', ['menu_confirm', 'menu_back', 'menu_tab_next'])
+def test_menu_dpad_direction_button_is_pure_navigation(menu_action):
+    """Menü aksiyonu D-pad yön butonuna bağlansa da buton yolu event ÜRETMEZ
+    — D-pad menüde yalnız navigasyon okları üretir (aksiyon + navigasyon
+    çift tetiklenmesi yok; denetim bulgusu A-3)."""
+    manager = _make_manager('menu')
+    manager._bindings[menu_action] = {'button': 11}
+
+    _, events = _press_button(manager, 11)
+    assert events == [], (
+        'menü bağlamında D-pad yön butonuna bağlı menü aksiyonu event üretmemeli'
+    )
 
 
 # ---------------------------------------------------------------------------

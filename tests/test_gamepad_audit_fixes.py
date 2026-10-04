@@ -143,10 +143,11 @@ def test_main_gamepad_context_and_pump_contracts():
     src = (ROOT_DIR / 'src' / 'main.py').read_text(encoding='utf-8')
     norm = re.sub(r'\s+', ' ', src)
     assert "elif state in ('game', 'pvp', 'coop', 'coop_campaign'):" in norm
-    # Pompa istisnası yalnız online_pvp: demo'nun OnlineCoopGame'i v2'nin
-    # aksine KENDİ pompasını çağırmaz — online_coop'u istisna etmek
-    # gamepad girdisini tamamen öldürürdü (inceleme bulgusu, geri alındı).
-    assert "if state != 'online_pvp':" in norm
+    # Pompa istisnası online_pvp + online_coop: ikisi de KENDİ pompasını
+    # yönetir (online_coop self-pump'ı v2 paritesidir — handle_input
+    # başında set_context+update). İstisna yapılmasa çifte pompa olurdu.
+    assert "if state not in ('online_pvp', 'online_coop'):" in norm
+    assert "if state in ('online_pvp', 'online_coop'):" in norm
     # coop_campaign runtime'ı bağlam dalında çözülür.
     assert 'active_runtime = coop_campaign_game' in norm
     # SDL öncesi Steam init (Steam Input geç hazırlanma dayanıklılığı —
@@ -263,9 +264,12 @@ def test_game_over_legend_survives_dict_binding_format():
     start = src.index("restart_key = 'R'")
     end = src.index('buttons = [', start)
     block = src[start:end]
-    assert 'def _binding_button' in block
-    assert 'isinstance(raw, dict)' in block
-    assert "raw.get('primary', raw.get('button'" in block
+    # Modül seviyesindeki güvenli çözümleyici (kare-başı closure yasağı).
+    assert '_gp_binding_button_value' in block
+    helper = src[src.index('def _gp_binding_button_value'):]
+    helper = helper[:helper.index('\ndef ')]
+    assert 'isinstance(raw, dict)' in helper
+    assert "raw.get('primary', raw.get('button'" in helper
 
 
 # ── dispatch kullanım sözleşmeleri ───────────────────────────────────────────
@@ -515,3 +519,49 @@ def test_v1_layout_file_still_migrates_to_v2():
     # v2→v3 adımı da çalışır.
     assert migrated['restart']['primary'] == 3
     assert migrated['gamepad_layout_version'] == sm.CURRENT_GAMEPAD_LAYOUT_VERSION
+
+
+def test_online_coop_self_pump_contract():
+    """online_coop handle_input kendi gamepad pompasını yönetir (v2 paritesi):
+    PLAYING'de 'game', aksi halde 'menu' bağlamı + update(delta) + dönen
+    sentetik eventlerin ana döngüye karışması. Blok silinirse ana döngü
+    pompa istisnası yüzünden gamepad girdisi tamamen ölürdü (R2 inceleme
+    bulgusunun kapanışı)."""
+    src = (ROOT_DIR / 'src' / 'online_coop_game.py').read_text(encoding='utf-8')
+    assert "self.gamepad = _get_gpm()" in src or "self.gamepad = _get_gamepad_manager()" in src, (
+        '__init__ gamepad bağlantısı olmalı'
+    )
+    assert "online_state == OnlineCoopState.PLAYING" in src
+    assert "_gamepad.set_context('game')" in src
+    assert "_gamepad.set_context('menu')" in src
+    assert "gamepad_events = _gamepad.update(delta)" in src
+    assert "list(pygame.event.get()) + gamepad_events" in src
+
+
+# ── game-over / level-fail gamepad tüketim sözleşmeleri ─────────────────────
+
+def test_campaign_level_fail_polls_restart_and_level_select():
+    """Solo campaign level-fail/complete ekranı Y(restart)/X(level_select)
+    poll-only aksiyonlarını okur — blok silinirse gamepad tamamen ölür ve
+    paket yeşil kalırdı (kapsam eleştirmeni boşluğu)."""
+    src = (ROOT_DIR / 'src' / 'campaign' / 'campaign_mode.py').read_text(encoding='utf-8')
+    hi = src.index('def handle_input')
+    body = src[hi:src.index('\n    def ', hi + 10)]
+    assert "was_action_just_pressed('level_select')" in body
+    assert "was_action_just_pressed('restart')" in body
+    # Poll tetiklendiğinde sentetik sızıntı tüketilir.
+    assert 'pygame.event.clear' in body
+
+
+def test_coop_campaign_level_fail_gamepad_paths():
+    """Coop campaign level-fail: Y/X poll bloğu + A/ENTER ileri-aksiyon dalı
+    (demo'da ENTER dalı 2026-10-04 port edildi; v2 doğuştan sahip)."""
+    src = (ROOT_DIR / 'src' / 'campaign' / 'coop_campaign_mode.py').read_text(encoding='utf-8')
+    hi = src.index('def handle_input')
+    body = src[hi:src.index('\n    def ', hi + 10)]
+    assert "was_action_just_pressed('restart')" in body
+    # A/ENTER ileri aksiyon: failed'da retry, complete'te sonraki level.
+    enter_branch = src[src.index("if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER)"):]
+    enter_branch = enter_branch[:enter_branch.index('\n                    #')]
+    assert 'self._restart_level()' in enter_branch
+    assert "'next_level'" in enter_branch

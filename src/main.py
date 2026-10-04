@@ -4919,14 +4919,15 @@ def main():
         # Oyun/PvP/Koop sırasında gamepad bağlamını 'game' olarak ayarla.
         # Böylece B=rotate, A=hard_drop vb. oyun aksiyonları çalışır.
         # Menü/ayar ekranlarında bağlam 'menu' kalır (B=back, A=confirm).
-        # Not: online_pvp kendi bağlam yönetimini yapar (lobi=menu,
-        # playing=game). coop_campaign ise gameplay state'i olduğu için
+        # Not: online_pvp ve online_coop kendi bağlam yönetimini yapar
+        # (lobi=menu, playing=game — OnlineCoopGame self-pump'ı v2
+        # paritesidir). coop_campaign ise gameplay state'i olduğu için
         # 'game' bağlamına girer (runtime'ı kendi pompasını çağırmaz;
         # ana döngü pompalar) — aksi halde koop kampanya boyunca RB/LB
         # menü aksiyonu (köşeli parantez) üretir, hard_drop/hold çalışmaz.
         try:
-            if state == 'online_pvp':
-                pass  # online_pvp kendi set_context + update çağrısını yapar
+            if state in ('online_pvp', 'online_coop'):
+                pass  # kendi set_context + update çağrısını yapar
             elif state in ('game', 'pvp', 'coop', 'coop_campaign'):
                 active_runtime = None
                 if state == 'game':
@@ -4977,13 +4978,13 @@ def main():
         # event kuyruğuna post et.  Böylece tüm handler'lar (menü, oyun,
         # ayarlar vb.) otomatik olarak gamepad girişini klavye olayı
         # gibi işler — ek kod değişikliği gerekmez.
-        # online_pvp kendi handle_input() içinde update() çağırır (çift
-        # güncelleme önlenir). NOT: online_coop burada istisna EDİLMEZ —
-        # demo'nun OnlineCoopGame'i v2'nin aksine kendi pompasını
-        # ÇAĞIRMAZ; istisna yapılsaydı gamepad girdisi tamamen ölürdü
-        # (v2'deki karşılığı kendi set_context+update bloğuna sahiptir).
+        # online_pvp VE online_coop kendi handle_input() içinde update()
+        # çağırır (çift güncelleme önlenir). online_coop self-pump'ı v2
+        # paritesidir: PLAYING'de bağlamı 'game' yapar (oyun aksiyonları
+        # üretilir), lobide 'menu' — buradaki menu-context baseline'ı oyun
+        # bağlamı edge'lerini yutuyordu (v2 2026-10-04 dalga-1 bulgusu).
         try:
-            if state != 'online_pvp':
+            if state not in ('online_pvp', 'online_coop'):
                 gp_events = gamepad_mgr.update(delta_ms)
                 for gp_ev in gp_events:
                     pygame.event.post(gp_ev)

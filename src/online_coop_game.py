@@ -285,6 +285,17 @@ class OnlineCoopGame:
         self.fullscreen = True
         self.clock = pygame.time.Clock()
 
+        # ─── Gamepad (v2 paritesi: self-pump deseni) ───
+        # online_coop kendi gamepad pompasını handle_input'ta yönetir
+        # (bağlam PLAYING'de 'game', lobide 'menu'); main.py ana döngü
+        # pompası bu state'te istisna uygular (çifte pompa yok).
+        self.gamepad = None
+        try:
+            from gamepad_manager import get_gamepad_manager as _get_gpm
+            self.gamepad = _get_gpm()
+        except Exception:
+            self.gamepad = None
+
         # Ses
         self.sound = sound_manager if sound_manager else SoundManager()
         if settings_manager:
@@ -1834,7 +1845,25 @@ class OnlineCoopGame:
 
     def handle_input(self):
         """Pygame event'lerini işle. False=çık, 'menu'=menüye dön."""
-        for event in pygame.event.get():
+        # ─── Gamepad sentetik eventleri (v2 paritesi — PvP ile aynı model) ───
+        # online_coop KENDİ pompasını yönetir: PLAYING'de bağlam 'game'
+        # (B=rotate, RB=hard_drop gibi oyun aksiyonları), lobide/beklemede
+        # 'menu' (A=onay, B=geri). main.py ana döngü pompası bu state'te
+        # istisnadadır; burası pompamazsa gamepad girdisi tamamen ölür.
+        gamepad_events = []
+        _gamepad = getattr(self, 'gamepad', None)
+        if _gamepad:
+            try:
+                delta = self.clock.get_time() if hasattr(self, 'clock') else 16
+                if self.online_state == OnlineCoopState.PLAYING and not getattr(self, 'paused', False):
+                    _gamepad.set_context('game')
+                else:
+                    _gamepad.set_context('menu')
+                gamepad_events = _gamepad.update(delta)
+            except Exception:
+                pass
+
+        for event in list(pygame.event.get()) + gamepad_events:
             if event.type == pygame.QUIT:
                 return False
             if self._is_focus_loss_event(event):

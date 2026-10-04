@@ -101,6 +101,19 @@ from screen_shake import (
 GAMEPLAY_UI_REFERENCE_SIZE = (1366.0, 768.0)
 
 
+def _gp_binding_button_value(raw, default):
+    """Gamepad ayarlarındaki buton değerini güvenli int'e çöz (kare-başı
+    closure tahsisini önlemek için modül seviyesinde — draw yolu her karede
+    çalışır; denetim mikro bulgusu). Eski int VE yeni dict
+    {'primary': N}/{'button': N} formatlarını kabul eder."""
+    if isinstance(raw, dict):
+        raw = raw.get('primary', raw.get('button', default))
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return int(default)
+
+
 def _gp_btn(raw) -> int:
     """Gamepad ayarlardaki buton değerini int'e çevir.
 
@@ -6885,20 +6898,12 @@ class Game:
                 # legendı hiç görünmüyordu).
                 gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
 
-                def _binding_button(raw, default):
-                    if isinstance(raw, dict):
-                        raw = raw.get('primary', raw.get('button', default))
-                    try:
-                        return int(raw)
-                    except (TypeError, ValueError):
-                        return int(default)
-
-                restart_btn = _binding_button(gp_cfg.get('restart', 3), 3)
+                restart_btn = _gp_binding_button_value(gp_cfg.get('restart', 3), 3)
                 if restart_btn >= 0:
                     restart_key = gpm.get_button_index_label(restart_btn).upper()
 
                 # back/menu için menu_back oku (varsayılan 1. buton, yani B)
-                back_btn = _binding_button(gp_cfg.get('menu_back', 1), 1)
+                back_btn = _gp_binding_button_value(gp_cfg.get('menu_back', 1), 1)
                 if back_btn >= 0:
                     menu_key = gpm.get_button_index_label(back_btn).upper()
         except Exception:

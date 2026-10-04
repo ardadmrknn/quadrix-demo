@@ -1076,26 +1076,35 @@ class GamepadManager:
             return False
 
     def _detect_type(self, js: pygame.joystick.JoystickType) -> str:
-        """Kontrolcü tipini ismine göre algıla"""
+        """Kontrolcü tipini ismine göre algıla (v2 paritesi: dal sırası dahil)."""
         name = js.get_name().lower()
 
-        # Xbox ailesi
-        if any(k in name for k in ('xbox', 'xinput', 'x-box', 'microsoft')):
-            return GamepadType.XBOX
-
-        # PlayStation ailesi
+        # Steam Input cihaz adları "Steam Input" ile başladığı için fiziksel
+        # aileleri genel Steam/XInput kontrolünden önce sınıflandırılmalıdır
+        # (v2: 'steam' anahtarı Xbox dalındadır — PS/Nintendo dalları ÖNCE
+        # çalışmazsa "Steam Input PlayStation Controller" yanlışlıkla Xbox
+        # ailesine düşerdi).
         if any(k in name for k in (
             'dualsense', 'dualshock', 'ps5', 'ps4', 'ps3',
             'playstation', 'sony', 'wireless controller'
         )):
             return GamepadType.PLAYSTATION
 
-        # Nintendo ailesi
         if any(k in name for k in (
             'pro controller', 'joy-con', 'switch', 'nintendo',
             'joycon', 'joy con'
         )):
             return GamepadType.NINTENDO
+
+        # Xbox, Generic XInput, Steam Controller, Steam Input ve Steam Deck
+        # aynı canonical ABXY eksen düzeni üzerinden okunur (v2 paritesi:
+        # 'steam'/'valve'/'virtual gamepad' anahtarları olmadan Steam Deck ve
+        # Steam Controller UNKNOWN'a düşüyordu).
+        if any(k in name for k in (
+            'xbox', 'xinput', 'x-box', 'microsoft', 'steam',
+            'virtual gamepad', 'valve'
+        )):
+            return GamepadType.XBOX
 
         return GamepadType.UNKNOWN
 
@@ -2408,6 +2417,13 @@ class GamepadManager:
                 btn_dir = dpad_btn_to_dir[btn_idx]
                 if dir_to_action.get(btn_dir) == action:
                     continue
+                if not in_game:
+                    # Menü bağlamında D-pad yön butonu SAF navigasyondur: o
+                    # butona bağlı menü aksiyonları event ÜRETMEZ — aksiyon +
+                    # navigasyon çift tetiklenmesi olmaz (denetim bulgusu A-3;
+                    # v2 paritesi). Oyun bağlamında kazanan-öncelik kuralı
+                    # yukarıdaki doğal eşleşme denetimiyle işler.
+                    continue
 
             # Menü pointer modunda menu_confirm → K_RETURN üretme;
             # A butonu _generate_mouse_click_events'te tıklama olarak işlenir.
@@ -2864,9 +2880,15 @@ class GamepadManager:
         # D-pad X ekseni (sol/sağ)
         if dx != pdx:
             # Önceki yönün KEYUP'ını gönder
-            if pdx == -1 and 'left' not in suppressed:
+            # KEYUP bastırmadan BAĞIMSIZDIR: bastırma yalnız YENİ basışları
+            # (KEYDOWN) kapatır — daha önce teslim edilmiş bir basışın
+            # bırakışı her koşulda iletilmeli; yoksa ayarlar sırasında
+            # binding değişince bastırılan yönün bırakışı yutulur ve oyun
+            # tuşu basılı sanıp DAS'ı kilitler (denetim bulgusu A-4; v2
+            # paritesi).
+            if pdx == -1:
                 events.append(self._make_key_event(pygame.K_LEFT, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_LEFT)))
-            elif pdx == 1 and 'right' not in suppressed:
+            elif pdx == 1:
                 events.append(self._make_key_event(pygame.K_RIGHT, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_RIGHT)))
 
             # Yeni yönün KEYDOWN'ını gönder
@@ -2899,9 +2921,9 @@ class GamepadManager:
         # D-pad Y ekseni (yukarı/aşağı)
         # Not: SDL hat'ında Y ekseni ters: yukarı = +1, aşağı = -1
         if dy != pdy:
-            if pdy == -1 and 'down' not in suppressed:  # aşağı bırakıldı
+            if pdy == -1:  # aşağı bırakıldı
                 events.append(self._make_key_event(pygame.K_DOWN, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_DOWN)))
-            elif pdy == 1 and 'up' not in suppressed:  # yukarı bırakıldı
+            elif pdy == 1:  # yukarı bırakıldı
                 events.append(self._make_key_event(pygame.K_UP, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_UP)))
 
             if dy == -1 and 'down' not in suppressed:  # aşağı basıldı
