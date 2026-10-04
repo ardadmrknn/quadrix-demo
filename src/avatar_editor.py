@@ -116,6 +116,14 @@ class AvatarEditor:
         """Kırpma karesini resim sınırları içinde tut"""
         if self.display_image:
             img_w, img_h = self.display_image.get_size()
+            # Kare BOYUTU da görüntüye sığdırılır (v2 uyarlaması): varsayılan
+            # 300px'lik kare alçak pencerelerde (yükseklik < 600 → görüntü kısa
+            # kenarı 300'ün altında ölçeklenir) her yüklemede görüntüden büyük
+            # başlıyordu ve get_cropped_image kaynak-dışı bölge blit'leyip
+            # avatarı bozuyordu; +/- tuşları da kareyi görüntünün dışına
+            # büyütebiliyordu. min_crop_size tabanı korunur (aşırı ince
+            # görüntülerde kare yine görüntüden büyük kalabilir — bilinen sınır).
+            self.crop_size = max(self.min_crop_size, min(self.crop_size, min(img_w, img_h)))
             self.crop_x = max(0, min(self.crop_x, img_w - self.crop_size))
             self.crop_y = max(0, min(self.crop_y, img_h - self.crop_size))
     
@@ -254,6 +262,12 @@ class AvatarEditor:
     def draw(self):
         """Editör ekranını çiz"""
         width, height = self.screen.get_size()
+        # Çizim sözleşmesi kaydı (containment regresyon testleri): rect'ler
+        # zaten hesaplanmış nesneler — kare başına yalnızca küçük bir dict
+        # tutulur, yeni Surface/font tahsisi yok (v2 _draw_layout deseni,
+        # v2 uyarlaması).
+        layout = self._draw_layout = {}
+        layout['has_image'] = self.display_image is not None
         
         # Koyu gradient arka plan
         for i in range(height):
@@ -265,6 +279,7 @@ class AvatarEditor:
         # Başlık
         title = self.font_title.render(t('avatar_edit_title'), True, WHITE)
         title_rect = title.get_rect(center=(width // 2, 50))
+        layout['title'] = title_rect
         self.screen.blit(title, title_rect)
         
         if self.display_image:
@@ -275,6 +290,7 @@ class AvatarEditor:
             
             # Resim arka plan
             bg_rect = pygame.Rect(img_x - 10, img_y - 10, img_w + 20, img_h + 20)
+            layout['image_bg'] = bg_rect
             pygame.draw.rect(self.screen, (50, 60, 80), bg_rect, border_radius=10)
             pygame.draw.rect(self.screen, (100, 120, 180), bg_rect, 2, border_radius=10)
             
@@ -288,6 +304,8 @@ class AvatarEditor:
                 self.crop_size
             )
             
+            layout['crop'] = crop_rect
+
             # Karanlık overlay (kırpma dışı alan)
             overlay = pygame.Surface((img_w, img_h), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 120))
@@ -324,6 +342,8 @@ class AvatarEditor:
                 resize_handle_size
             )
             
+            layout['resize_handle'] = resize_handle
+
             # Resize tutamacı - daha belirgin
             pygame.draw.rect(self.screen, (255, 200, 0), resize_handle, border_radius=5)
             pygame.draw.rect(self.screen, (255, 255, 100), resize_handle, 3, border_radius=5)
@@ -349,6 +369,7 @@ class AvatarEditor:
             size_text = f'{self.crop_size}x{self.crop_size} px'
             size_surf = self.font_small.render(size_text, True, (255, 255, 100))
             size_bg_rect = pygame.Rect(crop_rect.centerx - 60, crop_rect.top - 35, 120, 30)
+            layout['size_badge'] = size_bg_rect
             pygame.draw.rect(self.screen, (40, 50, 70), size_bg_rect, border_radius=8)
             pygame.draw.rect(self.screen, BLUE, size_bg_rect, 2, border_radius=8)
             size_rect = size_surf.get_rect(center=size_bg_rect.center)
@@ -358,6 +379,12 @@ class AvatarEditor:
             preview_size = 150  # Biraz daha büyük
             preview_x = width - preview_size - 50
             preview_y = 150
+            # (v2 uyarlaması) dar/uzun pencerede önizleme görüntü PANELİNE
+            # binmesin: panelin sağ kenarından sonraya sıkıştırılır; ekran
+            # sınırı önceliklidir (aşırı uzun pencerelerde bindirme bilinen
+            # sınırdır).
+            preview_x = max(preview_x, min(bg_rect.right + 12,
+                                           width - preview_size - 10))
             
             # Kırpılmış alanı al
             cropped = self.get_cropped_image()
@@ -367,6 +394,7 @@ class AvatarEditor:
                 
                 # Önizleme arka plan
                 preview_bg = pygame.Rect(preview_x - 10, preview_y - 10, preview_size + 20, preview_size + 20)
+                layout['preview_bg'] = preview_bg
                 pygame.draw.rect(self.screen, (50, 60, 80), preview_bg, border_radius=15)
                 pygame.draw.rect(self.screen, GREEN, preview_bg, 3, border_radius=15)
                 
@@ -375,6 +403,7 @@ class AvatarEditor:
                 # Önizleme label
                 preview_label = self.font_small.render(t('avatar_preview'), True, WHITE)
                 preview_label_rect = preview_label.get_rect(center=(preview_x + preview_size // 2, preview_y - 25))
+                layout['preview_label'] = preview_label_rect
                 self.screen.blit(preview_label, preview_label_rect)
         
         else:
@@ -394,6 +423,7 @@ class AvatarEditor:
         
         # Alt bar - butonlar
         bottom_bar_y = height - 100
+        layout['bottom_bar_y'] = bottom_bar_y
         
         # Gradient alt bar
         for i in range(100):
@@ -413,13 +443,22 @@ class AvatarEditor:
             ('ESC', t('avatar_key_cancel'), (200, 100, 100))
         ]
         
-        total_width = sum(160 for _ in buttons) - 20
+        # Gerçek satır genişliğiyle ortala (v2 uyarlaması): eski kod tüm
+        # slotları 160px varsayıp 940px'lik toplamla ortalamıştı — 640/800
+        # genişlikte buton barı iki uçtan da ekrana taşıyordu (başlangıç
+        # x'i -150'ye, son butonun sağı 745'e düşüyordu). Adım da sabit
+        # 165 yerine gerçek key_width + 5'tir (v2'nin scale=1 formülü).
+        key_widths = [160 if len(k) > 8 else (100 if len(k) > 5 else 70) for k, _l, _c in buttons]
+        total_width = sum(key_widths) + 5 * (len(buttons) - 1)
         button_x = width // 2 - total_width // 2
         button_y = bottom_bar_y + 10
         
+        button_rects = []
+        button_label_rects = []
         for key, label, color in buttons:
             key_width = 160 if len(key) > 8 else (100 if len(key) > 5 else 70)
             key_bg = pygame.Rect(button_x, button_y, key_width, 40)
+            button_rects.append(key_bg)
             
             # Buton devre dışıysa gri yap
             if label == 'Kaydet' and not self.display_image:
@@ -433,9 +472,13 @@ class AvatarEditor:
             
             label_surf = self.font_small.render(label, True, (180, 180, 180))
             label_rect = label_surf.get_rect(midtop=(button_x + key_width // 2, button_y + 45))
+            button_label_rects.append(label_rect)
             self.screen.blit(label_surf, label_rect)
             
-            button_x += 165
+            button_x += key_width + 5
+
+        layout['buttons'] = button_rects
+        layout['button_labels'] = button_label_rects
     
     def get_cropped_image(self):
         """Kırpılmış resmi al (orijinal kalitede)"""
