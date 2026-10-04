@@ -23,16 +23,9 @@ def _env_requests_demo_mode() -> bool:
 IS_DEMO = bool(IS_DEMO or _env_requests_demo_mode())
 
 DEMO_STEAM_APP_ID = "4635310"
-DEMO_STEAM_DEPOT_ID = "4635311"
-FULL_GAME_STEAM_APP_ID = "4414520"
 DEMO_STEAM_STORE_URL = "https://store.steampowered.com/app/4414520/Quadrix/"
-FULL_GAME_STEAM_STORE_URL = DEMO_STEAM_STORE_URL
 DEMO_APP_NAME = "quadrix_demo"
 FULL_APP_NAME = "quadrix_full"
-
-# Kart Ustalığı (Mystery) modunda demo skor sınırı. Bu skora ulaşıldığında
-# "Demo Tamamlandı" paneli açılır ve oyun dondurulur.
-DEMO_MYSTERY_SCORE_CAP = 1000000
 
 DEMO_LOCKED_EXTRAS_MODE_IDS = {
     "Cascade Mode",
@@ -51,11 +44,14 @@ DEMO_SOLO_WORLD_LIMIT = 1
 DEMO_SOLO_LEVEL_LIMIT = 20
 DEMO_COOP_WORLD_LIMIT = 1
 DEMO_COOP_LEVEL_LIMIT = 10
-
+# Kart Ustalığı (Mystery) modunda demo skor sınırı. Bu skora ulaşıldığında
+# "Demo Tamamlandı" paneli açılır ve oyun dondurulur.
+DEMO_MYSTERY_SCORE_CAP = 1000000
 
 
 def _normalize_id(value: str | None) -> str:
     return str(value or "").strip()
+
 
 def get_runtime_app_name() -> str:
     return DEMO_APP_NAME if IS_DEMO else FULL_APP_NAME
@@ -112,6 +108,7 @@ def is_coop_campaign_level_available(level_num: int) -> bool:
         return int(level_num or 0) <= DEMO_COOP_LEVEL_LIMIT
     except Exception:
         return False
+
 
 def apply_runtime_environment(env: MutableMapping[str, str] | None = None) -> str | None:
     target_env = os.environ if env is None else env
