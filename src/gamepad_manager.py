@@ -312,7 +312,13 @@ DEFAULT_GAMEPAD_BINDINGS = {
     'rotate_alt':   {'button': None}, # bos (eski B=1 kaldirildi)
     'hold':         {'button': 9},   # LB / L1 (degismedi)
     'hold2':        {'button': 8},   # R3 / RS Click (Ekstra Cep / perk_second_pocket)
-    'pause':        {'button': 6, 'button_secondary': 5},   # Start / Options / + or Guide (Home)
+    # NOT (2026-10-04, denetim bulgusu): pause'in Guide/Home ikincil bağlaması
+    # bilinçli YOK — __init__/_load_settings ayarları yükleyip ikincil bağları
+    # ayar tarafından (secondary=-1) çözdüğü için fabrika değeri zaten anında
+    # siliniyordu (ölü satır). Guide→pause game.py'deki Steam overlay işleyicisinden
+    # (normalize_gamepad_event_button == 5) çalışır; bağlama sistemine taşınması
+    # çift-tetik (aynı basışta iki pause) doğurur.
+    'pause':        {'button': 6},   # Start / Options / +
     'lt':           {'button': None}, # bos (eski LT trigger kaldirildi)
     'rt':           {'button': None}, # bos (eski RT trigger kaldirildi)
     # POLL-ONLY game-over / level-failed aksiyonlari.
