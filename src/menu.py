@@ -10783,7 +10783,7 @@ class BlockStyleSettingsScreen:
         retro_style.draw_background(self.screen)
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
-        title_rect = retro_style.draw_title(self.screen, t('panel_block_styles'), (width // 2, _s(70)), emoji='🎨')
+        title_rect = retro_style.draw_title(self.screen, t('panel_block_styles'), (width // 2, _s(70)))
         # Başlığın altındaki tuş ipuçları kaldırıldı (mouse odaklı kullanım)
 
         self.option_rects = []

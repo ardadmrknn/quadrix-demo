@@ -387,7 +387,7 @@ class ExtrasScreen:
         """AI görsel promptlarını döndür (kullanıcıya gösterim için)"""
         info = []
         info.append("=" * 70)
-        info.append("🎨 NANO BANANA PRO İLE MOD SİMGELERİ ÜRETİMİ")
+        info.append("NANO BANANA PRO İLE MOD SİMGELERİ ÜRETİMİ")
         info.append("=" * 70)
         info.append("")
         info.append("Her mod için aşağıdaki promptları kullanarak simge oluşturun:")
