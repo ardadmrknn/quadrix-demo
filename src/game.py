@@ -5949,7 +5949,15 @@ class Game:
             # Etiket ("SKOR"/"SEVİYE" vb.) statik metin + sabit renk → cache'li.
             # Değer (v_surf) skor/seviye gibi sık değişen veri olduğundan ham
             # render edilir (cache churn'ü ve görsel fark olmaması için).
-            l_surf = render_text(plan['label_font'], plan['label_text'], True, (160, 170, 190))
+            # Paylaşılan planlayıcı dikey modda yalnız DEĞERİ ellipsis'ler;
+            # aşırı dar bütçede etiket taşabilir — Hardcore panelindeki
+            # draw-zamanı guard deseni (game_modes.py) buraya da uygulanır
+            # (P2 dikey slot-clamp): plan sözleşmesi değişmez, etiket ölçümü
+            # zaten plan içinde LRU'dan okunmuştur, ellipsis önbelleklidir.
+            label_text = plan['label_text']
+            if plan['label_w'] > plan['avail_w'] and label_text:
+                label_text = self._ellipsis_text(label_text, plan['label_font'], plan['avail_w'])
+            l_surf = render_text(plan['label_font'], label_text, True, (160, 170, 190))
             v_surf = plan['value_font'].render(plan['value_text'], True, color_val)
             if plan['vertical']:
                 self.screen.blit(l_surf, (content_x + stat_pad, y_pos))
