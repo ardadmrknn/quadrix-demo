@@ -83,3 +83,4 @@ backend/.env
 local_artifacts/*.pptx
 local_artifacts/~$*.pptx
 ~$*.pptx
+.lukai/index/index.db
