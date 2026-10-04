@@ -913,11 +913,25 @@ class PieceWorkshopScreen:
         mirrored_grid_height_limit = (height - grid_top - _s(120)) // (self.GRID_SIZE * 2)
         cell_size = min(_s(45), mirrored_grid_height_limit, (width - _s(300)) // self.GRID_SIZE)
         cell_size = max(_s(30), cell_size)
+        grid_y = grid_top + _s(10)
+        # SERT bütçeler (preset taşması, v2 uyarlaması): _s(30) okunabilirlik
+        # tabanı üstteki min() bütçelerini ezebilir (massive/double UI preset
+        # + dar pencere). Taban kazanınca grid alt kenardan taşıyor,
+        # KAYDET/SİL butonları ekran dışına düşüyor, palet sağ kenarı
+        # aşıyordu (640x480 + double: grid alt 541 > 480, buton alt
+        # 649 > 480, palet sağı 699 > 640). Ekran sınırı okunabilirlik
+        # tabanından önceliklidir. Dikey bütçe = grid + konteyner payu
+        # (_s(12)) + buton boşluğu (_s(10)) + buton (_s(42)) + _s(12)
+        # güvenlik.
+        cell_size = min(
+            cell_size,
+            max(1, (width - _s(300)) // self.GRID_SIZE),
+            max(1, (height - grid_y - _s(76)) // self.GRID_SIZE),
+        )
         self.last_cell_size = cell_size
-        
+
         grid_pixel_size = cell_size * self.GRID_SIZE
         grid_x = _s(60)
-        grid_y = grid_top + _s(10)
         grid_rect = pygame.Rect(grid_x, grid_y, grid_pixel_size, grid_pixel_size)
         self.last_grid_rect = grid_rect
         
@@ -984,8 +998,19 @@ class PieceWorkshopScreen:
         card_x = int(round(container_rect.centerx - (card_size / 2)))
         card_x = max(_s(18), min(card_x, panel_start_x - card_size))
         card_y = card_top_limit + max(0, (card_bottom_limit - card_top_limit - card_size) // 2)
-        self.block_styles_card_rect = pygame.Rect(card_x, card_y, card_size, card_size)
-        self._draw_block_styles_card(self.block_styles_card_rect)
+        # Kart içerik tabanı sığmıyorsa kart çizilmez (v2 uyarlaması):
+        # dikey alan tükenince card_size 1x1'e küçülür ve
+        # _draw_block_styles_card içinde negatif çözünürlüklü Surface
+        # üretip draw()'ı her karede ÇÖKERTİYORDU (massive/double preset
+        # + dar pencere: 640x480 double → pygame.error 'Invalid
+        # resolution for Surface'). Rect sıfırlanınca tıklama hedefi de
+        # kapanır (handle_input falsy-rect kontrolü) — ölü 1x1
+        # hit-zone kalmaz.
+        if card_size >= _s(180):
+            self.block_styles_card_rect = pygame.Rect(card_x, card_y, card_size, card_size)
+            self._draw_block_styles_card(self.block_styles_card_rect)
+        else:
+            self.block_styles_card_rect = pygame.Rect(0, 0, 0, 0)
 
 
         
@@ -998,7 +1023,16 @@ class PieceWorkshopScreen:
         # Önce çizim yaparak rect'i güncellememiz lazım, ama _draw_color_palette çizim yapıyor.
         # Bu yüzden burada koordinatı verip çizdireceğiz.
         
-        self._draw_color_palette(panel_start_x, panel_y, available_height)
+        # Palet sütun bütçesi (v2 uyarlaması): doğal palet yüksekliği +
+        # özel renk butonu (_s(12) + _s(74)) available_height'i aşarsa
+        # buton ekran dışına düşüyordu (640x480 + massive: alt 544 > 480).
+        # Palet butona yer ayırarak kırpılır; sığmayan swatch satırları
+        # çizilmez ve hit-rect kaydı verilmez (görünmeyen swatch
+        # tıklanamaz — palet click döngüsü yalnız kayıtlı rect'lere bakar).
+        self._draw_color_palette(
+            panel_start_x, panel_y,
+            max(_s(80), available_height - _s(86)),
+        )
         
         # 2. Özel Renk Butonu (Paletin altına)
         # Palet rect güncellendi (`self.palette_rect`)
@@ -1162,7 +1196,14 @@ class PieceWorkshopScreen:
             row = idx // per_row
             sx = palette_rect.x + _s(10) + col * (swatch_size + spacing)
             sy = palette_rect.y + _s(26) + row * (swatch_size + spacing)
-            
+
+            # Kırpılmış palet (v2 uyarlaması): panel altına düşen satır
+            # çizilmez ve hit-rect kaydı verilmez (satırlar sıralı aktığı
+            # için ilk taşan satırda kesmek yeterli). Böylece kırpma ekran
+            # dışı swatch üretmez, görünmeyen renk tıklanamaz.
+            if sy + swatch_size > palette_rect.bottom - _s(4):
+                break
+
             swatch_rect = pygame.Rect(sx, sy, swatch_size, swatch_size)
             pygame.draw.rect(self.screen, color, swatch_rect, border_radius=_s(4))
             self.palette_swatch_rects.append((swatch_rect, idx))
@@ -1227,6 +1268,15 @@ class PieceWorkshopScreen:
                 tag_w = (panel_rect.width - _s(44) - (cols - 1) * _s(8)) // cols
                 tag_h = _s(28)
                 mode_panel_h = _s(14) + _s(16) + ((len(WORKSHOP_MODES) + cols - 1) // cols) * (tag_h + _s(6)) + _s(12)
+                # Dikey bütçe (v2 uyarlaması): mode paneli parça panelinin
+                # altına taşmasın (massive/double preset + dar pencere:
+                # 800x480 + double'da etiketler 456-560'a düşüyordu —
+                # panel altı 446, ekran altı 480). Sığmayan satır çizilmez
+                # ve hit-rect kaydı verilmez.
+                mode_panel_h = min(
+                    mode_panel_h,
+                    max(1, panel_rect.bottom - header_rect.bottom - _s(18)),
+                )
                 mode_panel_rect = pygame.Rect(panel_rect.x + _s(10), header_rect.bottom + _s(8), panel_rect.width - _s(20), mode_panel_h)
                 retro_style.draw_glass_panel(
                     self.screen,
@@ -1261,6 +1311,11 @@ class PieceWorkshopScreen:
                         tag_w,
                         tag_h,
                     )
+                    # Kırpılmış mode paneli (v2 uyarlaması): altına düşen
+                    # satır çizilmez ve kayda girmez (satırlar sıralı —
+                    # ilk taşanda kes).
+                    if tag_rect.bottom > mode_panel_rect.bottom - _s(6):
+                        break
                     enabled = mode_key in modes
                     fill = (52, 110, 86, 215) if enabled else (22, 30, 50, 180)
                     if idx == self.mode_focus:
