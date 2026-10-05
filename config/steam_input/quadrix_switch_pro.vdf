@@ -1,11 +1,11 @@
 "controller_mappings"
 {
     "version" "3"
-    "revision" "1"
+    "revision" "2"
     "title" "Quadrix Nintendo Switch Pro Controls"
     "description" "Native Quadrix Steam Input actions"
     "controller_type" "controller_switch_pro"
-    "major_revision" "1"
+    "major_revision" "2"
     "minor_revision" "0"
     "actions"
     {

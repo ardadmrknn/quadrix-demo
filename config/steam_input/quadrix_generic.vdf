@@ -1,11 +1,11 @@
 "controller_mappings"
 {
     "version" "3"
-    "revision" "1"
+    "revision" "2"
     "title" "Quadrix Generic Gamepad Controls"
     "description" "Native Quadrix Steam Input actions"
     "controller_type" "controller_generic"
-    "major_revision" "1"
+    "major_revision" "2"
     "minor_revision" "0"
     "actions"
     {

@@ -1,11 +1,11 @@
 "controller_mappings"
 {
     "version" "3"
-    "revision" "1"
+    "revision" "2"
     "title" "Quadrix Gamepad"
     "description" "Native Quadrix Steam Input actions"
     "controller_type" "controller_xbox360"
-    "major_revision" "1"
+    "major_revision" "2"
     "minor_revision" "0"
     "actions"
     {
@@ -80,7 +80,7 @@
     }
     "group"
     {
-        "id" "1"
+        "id" "9"
         "mode" "dpad"
         "inputs"
         {
@@ -93,7 +93,7 @@
     }
     "group"
     {
-        "id" "2"
+        "id" "8"
         "mode" "joystick_move"
         "inputs" { "click" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay right_stick_click" } } } } }
         "gameactions" { "gameplay" "right_stick" }

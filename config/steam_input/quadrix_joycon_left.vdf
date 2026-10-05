@@ -1,11 +1,11 @@
 "controller_mappings"
 {
     "version" "3"
-    "revision" "1"
+    "revision" "2"
     "title" "Quadrix Joy-Con Controls"
     "description" "Native Quadrix Steam Input actions for a single Joy-Con"
     "controller_type" "controller_switch_joycon_left"
-    "major_revision" "1"
+    "major_revision" "2"
     "minor_revision" "0"
     "actions"
     {
