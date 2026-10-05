@@ -332,7 +332,7 @@ public:
     {
         if (!m_matchmaking)
             return;
-        CSteamID lid(lobby_id);
+        CSteamID lid(static_cast<uint64>(lobby_id));
         SteamAPICall_t call = m_matchmaking->JoinLobby(lid);
         m_lobbyEnterResult.Set(call, this, &SteamNetBridge::OnLobbyEnter);
     }
@@ -369,7 +369,7 @@ public:
     {
         if (!m_matchmaking || m_isShutdown)
             return "";
-        CSteamID lid(lobby_id);
+        CSteamID lid(static_cast<uint64>(lobby_id));
         if (!lid.IsValid())
             return "";
         const char *val = m_matchmaking->GetLobbyData(lid, key.c_str());
@@ -380,7 +380,7 @@ public:
     {
         if (!m_matchmaking || m_isShutdown)
             return false;
-        CSteamID lid(lobby_id);
+        CSteamID lid(static_cast<uint64>(lobby_id));
         if (!lid.IsValid())
             return false;
         return m_matchmaking->RequestLobbyData(lid);
@@ -573,7 +573,7 @@ public:
     {
         if (!m_friends || m_isShutdown)
             return "";
-        CSteamID sid(steam_id);
+        CSteamID sid(static_cast<uint64>(steam_id));
         const char *name = m_friends->GetFriendPersonaName(sid);
         return name ? std::string(name) : "";
     }
@@ -996,7 +996,7 @@ void SteamNetBridge::OnLobbyChatUpdate(LobbyChatUpdate_t *pParam)
     if (state & k_EChatMemberStateChangeEntered)
     {
         std::string name = m_friends
-                               ? m_friends->GetFriendPersonaName(CSteamID(changed_id))
+                               ? m_friends->GetFriendPersonaName(CSteamID(static_cast<uint64>(changed_id)))
                                : "";
         push_event("lobby_member_joined", changed_id, name);
     }
