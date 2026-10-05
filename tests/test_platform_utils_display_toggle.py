@@ -143,6 +143,19 @@ def _force_non_windows(module):
     module.IS_LINUX = True
 
 
+# Import anındaki doğal platform bayrakları — teardown'lar bayrakları
+# zorladıktan sonra buna döner (aşağı akış test kirliliği kapanır).
+_NATURAL_PLATFORM_FLAGS = (
+    platform_utils.IS_WINDOWS,
+    platform_utils.IS_MACOS,
+    platform_utils.IS_LINUX,
+)
+
+
+def _restore_natural_platform_flags(module):
+    (module.IS_WINDOWS, module.IS_MACOS, module.IS_LINUX) = _NATURAL_PLATFORM_FLAGS
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 class TestGetWindowsPhysicalResolution(unittest.TestCase):
     """_get_windows_physical_resolution() birim testleri."""
@@ -438,6 +451,22 @@ class TestAltF4EventNormalization(unittest.TestCase):
 
 class TestWindowedModeAndResolution(unittest.TestCase):
     """Bölüm A: Pencereli mod, çözünürlük clamp ve SDL ortam değişkenleri testleri."""
+
+    def setUp(self):
+        # Bu sınıfın sözleşmesi Windows borderless/pencereli yoludur; Linux'un
+        # gerçek SDL fullscreen dalı test_linux_fullscreen_display.py'de ayrıca
+        # kapsanır (v2 paritesi). Çözünürlük kaynakları sabitlenir — gerçek
+        # ctypes masaüstü ölçüsü makineye göre değişir, test deterministik olmalı.
+        _force_windows(platform_utils)
+        self._orig_phys = platform_utils._get_windows_physical_resolution
+        platform_utils._get_windows_physical_resolution = lambda: (1920, 1080)
+        self._orig_native = platform_utils.get_native_resolution
+        platform_utils.get_native_resolution = lambda: (1920, 1080)
+
+    def tearDown(self):
+        platform_utils._get_windows_physical_resolution = self._orig_phys
+        platform_utils.get_native_resolution = self._orig_native
+        _restore_natural_platform_flags(platform_utils)
 
     def test_create_display_windowed_flags(self):
         """fullscreen=False ile create_display gerçekten pencereli modda çalışmalı."""

@@ -983,6 +983,21 @@ def get_native_resolution():
         if ns_res is not None:
             return ns_res
 
+    # Linux (SDL2/pygame-ce): Info().current_w/h İLK set_mode'dan sonra mevcut
+    # PENCERE boyutunu yansıtır — windowed bir moddan sonra "native" eski pencere
+    # boyutu sanılır; borderless fullscreen geçişi eski boyutta mini NOFRAME
+    # pencere açar ve windowed çözünürlük yükseltmesi native clamp'ında reddedilir
+    # (ELF turu bulgusu, 2026-10-04: Info=1280x720 iken desktop_sizes=1920x1080).
+    # Gerçek masaüstü boyutu pencereden bağımsız API'den okunur; hata halinde
+    # aşağıdaki Info() yolu (pencere henüz yokken doğrudur) korunur.
+    if IS_LINUX:
+        try:
+            desktop_sizes = pygame.display.get_desktop_sizes()
+            if desktop_sizes and desktop_sizes[0][0] > 0 and desktop_sizes[0][1] > 0:
+                return (int(desktop_sizes[0][0]), int(desktop_sizes[0][1]))
+        except Exception:
+            pass
+
     try:
         info = pygame.display.Info()
         width = info.current_w
@@ -1452,9 +1467,206 @@ def record_platform_display_telemetry(context: str = 'startup') -> None:
             )
         except Exception:
             pass
+        # Linux display teşhisi (plan LINUX_FULLSCREEN §7.1): seçilen mod,
+        # session/sürücü/masaüstü ve pencere/surface durumu ayrı alanlarla.
+        # Yalnız Linux'ta eklenir — Windows/macOS telemetry satırı değişmez.
+        if IS_LINUX:
+            try:
+                parts.extend(_linux_display_telemetry_fields())
+            except Exception:
+                pass
         _gl_diag(' | '.join(parts))
     except Exception:
         pass
+
+
+# ── Linux fullscreen mod durumu (plan LINUX_FULLSCREEN §4.3/§10) ─────────────
+# Son Linux create_display çağrısının seçtiği mod:
+#   'linux-native'                → gerçek SDL fullscreen kuruldu,
+#   'linux-borderless-fallback'   → native hata verdi, çerçevesiz pencere,
+#   'windowed'                    → fullscreen istenmedi,
+#   None                          → fullscreen istendi ama kurulamadı.
+# Telemetri/rollback kararının girdisidir; davranışı değiştirmez.
+_linux_display_selected_mode = None
+_linux_display_requested = None
+
+
+def get_linux_display_selected_mode():
+    """Son Linux create_display'in seçtiği fullscreen modu döndür (diğer platformlarda None)."""
+    return _linux_display_selected_mode
+
+
+def _linux_fullscreen_mode_override() -> str:
+    """QUADRIX_LINUX_FULLSCREEN_MODE staging override'u: auto | native | borderless.
+
+    Geçici test/rollback anahtarıdır (plan §10): kalıcı ayar DEĞİLDİR,
+    Windows/macOS'a uygulanmaz ve geçersiz değerler 'auto' sayılır.
+    """
+    raw = (os.environ.get('QUADRIX_LINUX_FULLSCREEN_MODE') or '').strip().lower()
+    if raw in ('native', 'borderless'):
+        return raw
+    return 'auto'
+
+
+def _linux_session_type() -> str:
+    """Oturum tipi teşhisi: x11 | wayland | unknown (plan §7.1)."""
+    raw = (os.environ.get('XDG_SESSION_TYPE') or '').strip().lower()
+    if raw in ('x11', 'wayland'):
+        return raw
+    # XDG boş/uyumsuzsa SDL'in tercih ettiği ortamdan çıkar.
+    if os.environ.get('WAYLAND_DISPLAY'):
+        return 'wayland'
+    if os.environ.get('DISPLAY'):
+        return 'x11'
+    return 'unknown'
+
+
+def _linux_video_driver_name() -> str:
+    """Aktif SDL video sürücüsü (init yoksa 'unknown'; hata yutar)."""
+    try:
+        if pygame.display.get_init():
+            return str(pygame.display.get_driver())
+    except Exception:
+        pass
+    return 'unknown'
+
+
+def _linux_window_position():
+    """Aktif pencere konumu (best-effort teşhis okuması; None dönebilir).
+
+    pygame._sdl2.video.Window.from_display_module deprecated'dir — birincil
+    çözüm olarak KULLANILMAZ (plan §4.2); yalnız teşhis değeri okunur.
+    """
+    try:
+        from pygame._sdl2.video import Window
+        win = Window.from_display_module()
+        pos = win.position
+        if pos is not None:
+            return (int(pos[0]), int(pos[1]))
+    except Exception:
+        pass
+    return None
+
+
+def _create_linux_fullscreen_display(native_w, native_h, set_mode_with_vsync):
+    """Linux gerçek SDL fullscreen yolu (plan LINUX_FULLSCREEN §4/§6).
+
+    Birincil deneme pygame.FULLSCREEN — SDL fullscreen window state
+    compositor'a bildirilir; NOFRAME+WINDOW_POS yaklaşımı Linux'ta
+    work-area'ya sıkışan süzülen pencere üretir (2026-10-04 WSLg probe:
+    NOFRAME'de is_fullscreen=False ve pencere (314,163)'te; FULLSCREEN'de
+    is_fullscreen=True, pencere (0,0)'da). Çerçevesiz pencere YALNIZ
+    kontrollü fallback'tir; boyutu native olsa bile gerçek fullscreen
+    başarılı SAYILMAZ (plan §2.4) — mod değeri bunu açıkça raporlar.
+
+    Env sözleşmesi (plan §4.4): SDL_VIDEO_CENTERED/SDL_VIDEO_WINDOW_POS
+    çağrı öncesi kaldırılır, finally'de eski değerlere geri yüklenir;
+    Linux native dalında SDL_VIDEO_WINDOW_POS='0,0' ASLA set edilmez.
+    """
+    global _linux_display_selected_mode
+    mode = _linux_fullscreen_mode_override()
+    old_centered = os.environ.pop('SDL_VIDEO_CENTERED', None)
+    old_win_pos = os.environ.get('SDL_VIDEO_WINDOW_POS')
+    if 'SDL_VIDEO_WINDOW_POS' in os.environ:
+        del os.environ['SDL_VIDEO_WINDOW_POS']
+    pending_diag = (
+        f"create_display(linux): mode={mode} native={int(native_w)}x{int(native_h)} "
+        f"driver={_linux_video_driver_name()}"
+    )
+    try:
+        if mode != 'borderless':
+            try:
+                surface = set_mode_with_vsync((0, 0), pygame.FULLSCREEN | pygame.DOUBLEBUF)
+                _linux_display_selected_mode = 'linux-native'
+                try:
+                    _gl_diag(
+                        pending_diag
+                        + f" | native set_mode OK → selected_mode=linux-native "
+                        f"sonuç_flags=0x{int(surface.get_flags()) & 0xFFFFFFFF:X}"
+                    )
+                except Exception:
+                    pass
+                return surface
+            except pygame.error as native_error:
+                pending_diag += f" | native set_mode BAŞARISIZ: {native_error}"
+                if mode == 'native':
+                    # Staging override: fallback kapalı — başarısızlık görünür
+                    # kalsın (plan §10 'native' semantiği), hata yükselir.
+                    _gl_diag(pending_diag + ' | mode=native → fallback YOK')
+                    raise
+        # Çerçevesiz fallback: auto modunda native hata verdi; borderless
+        # modunda karşılaştırma/rollback için istendi (plan §10).
+        surface = set_mode_with_vsync(
+            (int(native_w), int(native_h)), pygame.NOFRAME | pygame.DOUBLEBUF
+        )
+        _linux_display_selected_mode = 'linux-borderless-fallback'
+        _gl_diag(pending_diag + ' → selected_mode=linux-borderless-fallback')
+        return surface
+    finally:
+        if old_centered is not None:
+            os.environ['SDL_VIDEO_CENTERED'] = old_centered
+        if old_win_pos is not None:
+            os.environ['SDL_VIDEO_WINDOW_POS'] = old_win_pos
+
+
+def _linux_display_telemetry_fields() -> list[str]:
+    """Linux display teşhis alanları (plan §7.1) — salt-okunur, hata yutucu.
+
+    Boyut eşleşmesi tek başına fullscreen kanıtı olmadığından (§2.4) seçilen
+    mod, pencere/surface durumu ve is_fullscreen AYRI alanlar halinde
+    raporlanır; tek başına karar mekanizması yapılmaz.
+    """
+    fields: list[str] = []
+    try:
+        fields.append(f"session={_linux_session_type()}")
+    except Exception:
+        pass
+    try:
+        sizes = pygame.display.get_desktop_sizes()
+        if sizes:
+            fields.append(f"desktop={int(sizes[0][0])}x{int(sizes[0][1])}")
+    except Exception:
+        pass
+    try:
+        if pygame.display.get_init():
+            fields.append(f"driver={pygame.display.get_driver()}")
+    except Exception:
+        pass
+    try:
+        req = _linux_display_requested or {}
+        fields.append(f"requested_fullscreen={int(bool(req.get('fullscreen')))}")
+        fields.append(f"requested_borderless={int(bool(req.get('borderless')))}")
+    except Exception:
+        pass
+    try:
+        mode = _linux_display_selected_mode
+        fields.append(f"selected_mode={mode if mode else '<yok>'}")
+    except Exception:
+        pass
+    try:
+        surf = pygame.display.get_surface()
+        if surf is not None:
+            fields.append(f"surface={int(surf.get_width())}x{int(surf.get_height())}")
+            # Negatif sabit birleşimleri (FULLSCREEN işaret biti) maskelenir.
+            fields.append(f"surface_flags=0x{int(surf.get_flags()) & 0xFFFFFFFF:X}")
+    except Exception:
+        pass
+    try:
+        win_w, win_h = pygame.display.get_window_size()
+        fields.append(f"window={int(win_w)}x{int(win_h)}")
+    except Exception:
+        pass
+    try:
+        pos = _linux_window_position()
+        if pos is not None:
+            fields.append(f"window_pos={pos[0]},{pos[1]}")
+    except Exception:
+        pass
+    try:
+        fields.append(f"display_is_fullscreen={int(bool(pygame.display.is_fullscreen()))}")
+    except Exception:
+        pass
+    return fields
 
 
 def create_display(
@@ -1465,6 +1677,10 @@ def create_display(
     borderless: bool = False,
 ):
     """Create a pygame display honoring the requested fullscreen/windowed mode."""
+    # Linux seçilen-mod durumu (plan §4.3): her çağrıda yeniden yazılır —
+    # windowed çağrıda 'windowed', fullscreen çağrısında helper sonucu
+    # (None = kurulamadı sinyali). Atama aşağıda bool normalizasyonundan sonra.
+    global _linux_display_selected_mode, _linux_display_requested
     # Software virtual canvas bir overlay backend'i değildir. Gerçek display yeniden
     # kurulacaksa önce monkey-patch'leri sök; aksi halde yeni set_mode sonrası flip()
     # eski/stale display surface'e blit etmeye devam edebilir. (v2 paritesi, FAZ A3)
@@ -1477,6 +1693,13 @@ def create_display(
     fullscreen = bool(fullscreen)
     borderless = bool(borderless) if fullscreen else False
     resizable = bool(resizable) if not fullscreen else False
+
+    # Linux seçilen-mod durumu (plan §4.3): windowed çağrıda 'windowed' yazılır;
+    # fullscreen çağrısında helper sonucu beklenir (None = kurulamadı sinyali).
+    # Yalnız teşhis durumu taşır — akış/davranış değiştirmez.
+    if IS_LINUX:
+        _linux_display_requested = {'fullscreen': fullscreen, 'borderless': borderless}
+        _linux_display_selected_mode = 'windowed' if not fullscreen else None
 
     if not fullscreen:
         # Ekran boyutundan büyük pencerelerin taşmasını engellemek için çözünürlüğü clamp et (en-boy oranını koru)
@@ -1638,8 +1861,46 @@ def create_display(
             elif 'SDL_VIDEO_WINDOW_POS' in os.environ:
                 del os.environ['SDL_VIDEO_WINDOW_POS']
     
-    # Windows/Linux için standart handling
-    if fullscreen and borderless:
+    # set_mode adaptörü (v2 paritesi): SDL_RENDER_VSYNC=1 isteğine göre vsync
+    # parametresini taşır; pygame-ce'nin vsync parametresini tanımadığı eski
+    # sürümlerde TypeError düz çağrıya düşer. Demo'da yalnız Linux fullscreen
+    # dalı bu adaptörü kullanır — Windows/macOS yollarındaki mevcut düz
+    # set_mode çağrıları bilinçli olarak değişmedi.
+    def _set_mode_with_vsync(size, flags_val):
+        vsync_val = 1 if os.environ.get('SDL_RENDER_VSYNC') == '1' else 0
+        try:
+            return pygame.display.set_mode(size, flags_val, vsync=vsync_val)
+        except TypeError:
+            return pygame.display.set_mode(size, flags_val)
+    
+
+    # ── Linux: gerçek SDL fullscreen yolu (plan LINUX_FULLSCREEN §3.3/§4/§6.1) ──
+    # Linux'ta fullscreen isteği borderless parametresinden BAĞIMSIZ olarak
+    # gerçek SDL fullscreen'a gider: kullanıcı arayüzünde "Fullscreen" paneli
+    # kapatan tam ekran demektir. Ortak NOFRAME+WINDOW_POS yolu compositor'a
+    # fullscreen bildirmez, pencere work-area'ya sıkışır (kullanıcı ekran
+    # görüntüsü bulgusu + 2026-10-04 WSLg probe kanıtı: NOFRAME'de
+    # is_fullscreen=False, pencere (314,163)'te süzülür).
+    if IS_LINUX and fullscreen:
+        native_w, native_h = get_native_resolution()
+        try:
+            surface = _create_linux_fullscreen_display(
+                native_w, native_h, _set_mode_with_vsync
+            )
+            invalidate_refresh_rate_cache()
+            return surface
+        except pygame.error as _linux_fs_err:
+            # mode=native görünürlüğü veya çift başarısızlık: mevcut kontrollü
+            # hata zincirine devret (aşağıdaki genel yol → windowed fallback →
+            # son-çare pygame.Surface). Akış bilinçli olarak aşağı düşer.
+            _gl_diag(
+                "create_display(linux): fullscreen helper başarısız "
+                f"({_linux_fs_err}) → genel display yoluna düşülüyor"
+            )
+
+    # Windows için standart borderless handling — Linux fullscreen yolu yukarıda
+    # ayrıldı (plan §3.3), macOS yukarıda döndü; bu yol artık Windows'a özgür.
+    if IS_WINDOWS and fullscreen and borderless:
         # Windows: ctypes ile DPI-bağımsız fiziksel çözünürlük al
         native_w, native_h = (
             _get_windows_physical_resolution() if IS_WINDOWS else get_native_resolution()
