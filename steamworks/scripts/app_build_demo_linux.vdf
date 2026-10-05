@@ -1,0 +1,13 @@
+"AppBuild"
+{
+    "AppID" "4635310"
+    "Desc" "Demo Linux build"
+    "SetLive" ""
+    "ContentRoot" ""
+    "BuildOutput" ""
+
+    "Depots"
+    {
+        "4635313" "depot_build_demo_linux.vdf"
+    }
+}
