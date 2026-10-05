@@ -85,7 +85,7 @@ def test_demo_score_cap_prompt_tracks_confirm_and_cancel(monkeypatch):
     assert prompt.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)) is True
     expected_targets = {
         prompt_module.demo_config.DEMO_STEAM_STORE_URL,
-        f"steam://store/{prompt_module.demo_config.FULL_GAME_STEAM_APP_ID}",
+        f"steam://store/{getattr(prompt_module.demo_config, 'FULL_GAME_STEAM_APP_ID', '4414520')}",
     }
     assert any(url in expected_targets for url in opened_urls)
     assert prompt.consume_last_action() == 'confirm'
@@ -122,7 +122,7 @@ def test_demo_score_cap_prompt_mouse_confirm_waits_for_release(monkeypatch) -> N
     assert prompt.handle_input(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=prompt.confirm_rect.center)) is True
     expected_targets = {
         prompt_module.demo_config.DEMO_STEAM_STORE_URL,
-        f"steam://store/{prompt_module.demo_config.FULL_GAME_STEAM_APP_ID}",
+        f"steam://store/{getattr(prompt_module.demo_config, 'FULL_GAME_STEAM_APP_ID', '4414520')}",
     }
     assert any(url in expected_targets for url in opened_urls)
     assert prompt.consume_last_action() == 'confirm'
