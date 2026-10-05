@@ -1982,6 +1982,23 @@ def main():
     except Exception:
         pass
 
+    # Linux optimizasyon telemetrisi (2026-10-04, kullanıcı talebi): OS/CPU/
+    # bellek/GPU/oturum/sürücü bilgilerini YEREL log dosyasına yazar —
+    # local/ dizini Auto-Cloud dışıdır, veriler makineden dışarı çıkmaz.
+    # Linux dışında no-op; her türlü hatayı yutar (oyun akışını etkilemez).
+    try:
+        import linux_system_telemetry as _linux_sys_tel
+    except ImportError:
+        try:
+            from src import linux_system_telemetry as _linux_sys_tel  # type: ignore[no-redef]
+        except Exception:
+            _linux_sys_tel = None
+    if _linux_sys_tel is not None:
+        try:
+            _linux_sys_tel.collect_and_log_startup()
+        except Exception:
+            pass
+
     # Teşhis: startup sonrası gerçek görünür display ve gl durumunu logla.
     try:
         _ovl = _active_overlay_module()
