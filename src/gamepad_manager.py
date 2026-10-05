@@ -643,6 +643,11 @@ class GamepadManager:
         # ring-buffer tavanı (64) kare başına bellek disiplinini korur.
         self._capture_edges: deque = deque(maxlen=64)
 
+        # Steam Input action köprüsü canlıysa (Steam + manifest + bağlı
+        # denetleyici) SDL cihazları o oturumda yok sayılır; öncelik kararı
+        # her karede _sync_steam_input_gamepads içinde yeniden değerlenir.
+        self._steam_input_primary: bool = False
+
         # İlk tarama
         self._scan_gamepads()
         self._sync_steam_input_gamepads()
@@ -871,17 +876,64 @@ class GamepadManager:
         )
 
     def _sync_steam_input_gamepads(self) -> None:
-        """SDL cihazı yoksa Steam Input action cihazlarını fallback olarak kaydet."""
+        """Steam Input action köprüsü canlıysa onu birincil kaynak yap.
+
+        Oyun Steam'den başlatılıp Steam Input açıkken Steam, oyun sürecine
+        XInput kancası enjekte eder; SDL Xbox pad'lerini XInput üzerinden
+        okuduğu için oyun, Steam'in çevrilmiş (yapılandırmaya göre takaslı
+        olabilen) akışını görür. Action manifest oyunda zaten yüklü olduğundan
+        köprü canlıysa action verisi tek doğru kaynaktır: SDL cihazları o
+        oturumda kapatılır — hem kancalı akış hem aynı cihazın çift kaydı
+        engellenir. Köprü canlı değilse davranış değişmez: SDL birincil,
+        Steam Input yalnız boş SDL listesinde fallback olarak devreye girer.
+        """
         try:
             sdl_count = int(pygame.joystick.get_count())
         except Exception:
             sdl_count = 0
 
+        # Snapshot'lar artık HER durumda sorgulanır (eski davranışta yalnız
+        # sdl_count == 0 iken): köprünün canlılığı öncelik kararıdır. Manifest
+        # yüklemesi steam_integration tarafında 2 sn'lik yeniden deneme kapısı
+        # ile sınırlıdır; Steam yoksa burası ucuz erken çıkışla boş döner.
+        try:
+            import steam_integration
+            snapshots = steam_integration.get_steam_input_snapshots()
+        except Exception:
+            snapshots = []
+
+        was_primary = bool(getattr(self, '_steam_input_primary', False))
+        bridge_live = bool(snapshots)
+        self._steam_input_primary = bridge_live
+
         steam_keys = [
             key for key, gp in self.gamepads.items()
             if isinstance(getattr(gp, 'joystick', None), _SteamInputJoystick)
         ]
-        if sdl_count > 0:
+
+        if bridge_live:
+            # SDL kayıtlarını kapat; _scan_gamepads/_register_gamepad ve
+            # hotplug yolları _steam_input_primary bayrağı sayesinde bu
+            # oturumda yeni SDL cihazı açmaz.
+            sdl_keys = [
+                key for key, gp in self.gamepads.items()
+                if not isinstance(getattr(gp, 'joystick', None), _SteamInputJoystick)
+            ]
+            for key in sdl_keys:
+                gp = self.gamepads.pop(key, None)
+                if gp is not None:
+                    try:
+                        gp.joystick.quit()
+                    except Exception:
+                        pass
+            # GP-006: kapanan SDL cihazlarının bekleyen capture kenarlarını at.
+            if sdl_keys:
+                self._purge_capture_edges_for_devices(sdl_keys)
+                try:
+                    print("[Steam Input] birincil: SDL cihazları bu oturumda yok sayıldı")
+                except Exception:
+                    pass
+        elif sdl_count > 0:
             for key in steam_keys:
                 try:
                     self.gamepads[key].joystick.quit()
@@ -892,13 +944,13 @@ class GamepadManager:
             # Steam cihazlarının bekleyen capture kenarlarını da at.
             if steam_keys:
                 self._purge_capture_edges_for_devices(steam_keys)
+            if was_primary:
+                # Köprü kapandı (SI kapatıldı / Steam çıktı) ve SDL cihazları
+                # birincil moddayken kapatılmıştı. Fiziksel cihaz SDL için
+                # hiç kopmadığından JOYDEVICEADDED eventi gelmeyebilir →
+                # taramayı elle tetikle (bayrak artık kapalı).
+                self._scan_gamepads()
             return
-
-        try:
-            import steam_integration
-            snapshots = steam_integration.get_steam_input_snapshots()
-        except Exception:
-            snapshots = []
 
         live_keys: set[int] = set()
         for snapshot in snapshots:
@@ -947,6 +999,12 @@ class GamepadManager:
 
     def _scan_gamepads(self) -> None:
         """Bağlı gamepad'leri de-duplication mantığıyla tara ve kaydet"""
+        if getattr(self, '_steam_input_primary', False):
+            # Steam Input action köprüsü birincilken SDL cihazlarını açma:
+            # Steam'in süreç-içi XInput kancası çevrilmiş akış taşır ve aynı
+            # cihaz iki kez kaydedilirdi. Cihazlar action verisinden gelir
+            # (_sync_steam_input_gamepads).
+            return
         try:
             count = int(pygame.joystick.get_count())
         except Exception:
@@ -1028,6 +1086,11 @@ class GamepadManager:
 
     def _register_gamepad(self, device_index: int):
         """Yeni bir gamepad'i kaydet"""
+        if getattr(self, '_steam_input_primary', False):
+            # Hotplug eventi doğrudan buraya düşebilir; birincil modda SDL
+            # cihazı açma (kancalı akış + çift girdi). Steam, cihazı sonraki
+            # sync karesinde action verisinden kaydeder.
+            return False
         try:
             js = pygame.joystick.Joystick(device_index)
             js.init()

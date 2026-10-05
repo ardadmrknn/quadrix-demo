@@ -64,19 +64,126 @@ def test_manager_adds_steam_action_fallback_when_sdl_is_empty(monkeypatch):
     assert isinstance(state.joystick, _SteamInputJoystick)
     assert state.controller is state.joystick
     assert state.gamepad_type == "xbox"
+    # Boş SDL listesinde köprü canlıysa birincil mod açılır.
+    assert manager._steam_input_primary is True
 
 
-def test_manager_removes_steam_action_fallback_when_sdl_device_exists(monkeypatch):
+def test_manager_keeps_steam_primary_when_sdl_device_exists(monkeypatch):
+    """SI açıkken Steam'in XInput kancası SDL'e çevrilmiş akış sunar: köprü
+    canlıysa Steam action verisi birincil kalır, SDL kaynağına düşülmez."""
     manager = _manager()
     key = -1000123
     joystick = _SteamInputJoystick(_snapshot(), key)
     manager.gamepads[key] = SimpleNamespace(joystick=joystick, name=joystick.get_name())
     monkeypatch.setattr(gamepad_manager_module.pygame.joystick, "get_count", lambda: 1)
+    monkeypatch.setitem(sys.modules, "steam_integration", SimpleNamespace(
+        get_steam_input_snapshots=lambda: [_snapshot()],
+    ))
 
     manager._sync_steam_input_gamepads()
 
+    assert manager._steam_input_primary is True
+    assert set(manager.gamepads) == {key}
+    assert joystick.get_init() is True
+
+
+def test_bridge_live_purges_sdl_gamepads(monkeypatch):
+    """Birincil moda geçişte kayıtlı SDL pad'leri kapatılır (kancalı akış +
+    çift girdi önlenir) ve bekleyen capture kenarları GP-006 ile atılır."""
+    manager = _manager()
+    manager._capture_edges = [(0, "down"), (-1000123, "down")]
+    quit_calls = []
+    manager.gamepads[0] = SimpleNamespace(
+        joystick=SimpleNamespace(quit=lambda: quit_calls.append(0)),
+        name="Xbox 360 Controller",
+    )
+    monkeypatch.setattr(gamepad_manager_module.pygame.joystick, "get_count", lambda: 1)
+    monkeypatch.setitem(sys.modules, "steam_integration", SimpleNamespace(
+        get_steam_input_snapshots=lambda: [_snapshot()],
+    ))
+
+    manager._sync_steam_input_gamepads()
+
+    assert quit_calls == [0]
+    assert set(manager.gamepads) == {-1000123}
+    assert isinstance(manager.gamepads[-1000123].joystick, _SteamInputJoystick)
+    # SDL cihazına ait kenar atıldı, Steam cihazınınki korundu.
+    assert manager._capture_edges == [(-1000123, "down")]
+
+
+def test_scan_gamepads_skipped_while_steam_primary(monkeypatch):
+    """Birincil modda SDL taraması hiç açılmaz (get_count bile çağrılmaz)."""
+    manager = _manager()
+    manager._steam_input_primary = True
+    manager.gamepads = {}
+
+    def _boom():
+        raise AssertionError("get_count çağrılmamalıydı")
+
+    monkeypatch.setattr(
+        gamepad_manager_module.pygame.joystick, "get_count", _boom
+    )
+
+    manager._scan_gamepads()  # exception yok = erken dönüş
+
+
+def test_register_gamepad_skipped_while_steam_primary(monkeypatch):
+    """Hotplug event'i doğrudan _register_gamepad'e düşebilir; birincil
+    modda SDL cihazı açılmaz ve False döner."""
+    manager = _manager()
+    manager._steam_input_primary = True
+    manager.gamepads = {}
+
+    def _boom(_index):
+        raise AssertionError("Joystick açılmamalıydı")
+
+    monkeypatch.setattr(gamepad_manager_module.pygame.joystick, "Joystick", _boom)
+
+    assert manager._register_gamepad(0) is False
+
+
+def test_bridge_loss_rescans_sdl_devices(monkeypatch):
+    """Köprü ortada kapandıysa (SI kapatıldı/Steam çıktı) fiziksel cihaz SDL
+    için hiç kopmadığından hotplug eventi gelmez: elle yeniden tarama."""
+    manager = _manager()
+    manager._steam_input_primary = True
+    key = -1000123
+    joystick = _SteamInputJoystick(_snapshot(), key)
+    manager.gamepads[key] = SimpleNamespace(joystick=joystick, name=joystick.get_name())
+    monkeypatch.setattr(gamepad_manager_module.pygame.joystick, "get_count", lambda: 1)
+    monkeypatch.setitem(sys.modules, "steam_integration", SimpleNamespace(
+        get_steam_input_snapshots=lambda: [],
+    ))
+    scan_calls = []
+    monkeypatch.setattr(
+        manager, "_scan_gamepads", lambda: scan_calls.append(True)
+    )
+
+    manager._sync_steam_input_gamepads()
+
+    assert manager._steam_input_primary is False
     assert manager.gamepads == {}
     assert joystick.get_init() is False
+    assert scan_calls == [True]
+
+
+def test_no_scan_when_bridge_never_live(monkeypatch):
+    """Köprü hiç canlı olmamışsa (SI kapalı) eski davranış: SDL taraması
+    elle tetiklenmez, periyodik polling halleder."""
+    manager = _manager()
+    monkeypatch.setattr(gamepad_manager_module.pygame.joystick, "get_count", lambda: 1)
+    monkeypatch.setitem(sys.modules, "steam_integration", SimpleNamespace(
+        get_steam_input_snapshots=lambda: [],
+    ))
+    scan_calls = []
+    monkeypatch.setattr(
+        manager, "_scan_gamepads", lambda: scan_calls.append(True)
+    )
+
+    manager._sync_steam_input_gamepads()
+
+    assert manager._steam_input_primary is False
+    assert scan_calls == []
 
 
 def test_steam_input_device_families_keep_their_native_labels():
