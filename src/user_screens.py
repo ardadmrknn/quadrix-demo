@@ -1272,24 +1272,77 @@ class UserSelectionScreen:
         elif self.state in ('create_new', 'edit_existing'):
             self._draw_form_screen()
 
+    def _get_solid_alpha_surface(self, size: tuple[int, int], color) -> pygame.Surface:
+        """Game ile aynı desen: (boyut, renk) anahtarlı LRU düz-alfa yüzey."""
+        if not hasattr(self, '_solid_alpha_surface_cache') or self._solid_alpha_surface_cache is None:
+            self._solid_alpha_surface_cache = {}
+            self._solid_alpha_surface_cache_order = []
+            self._solid_alpha_surface_cache_max = 96
+        width = max(1, int(size[0]))
+        height = max(1, int(size[1]))
+        color_key = tuple(color) if isinstance(color, (tuple, list)) else color
+        key = (width, height, color_key)
+        cached = self._solid_alpha_surface_cache.get(key)
+        if cached is not None:
+            try:
+                self._solid_alpha_surface_cache_order.remove(key)
+            except ValueError:
+                pass
+            self._solid_alpha_surface_cache_order.append(key)
+            return cached
+        surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        surface.fill(color)
+        self._solid_alpha_surface_cache[key] = surface
+        self._solid_alpha_surface_cache_order.append(key)
+        max_cap = getattr(self, '_solid_alpha_surface_cache_max', 96)
+        while len(self._solid_alpha_surface_cache_order) > max_cap:
+            old_key = self._solid_alpha_surface_cache_order.pop(0)
+            self._solid_alpha_surface_cache.pop(old_key, None)
+        return surface
+
+    def _get_rounded_rect_surface(self, size: tuple[int, int], color, border_radius: int = 0, width: int = 0) -> pygame.Surface:
+        """Game ile aynı desen: (boyut, renk, radius, genişlik) anahtarlı LRU."""
+        if not hasattr(self, '_rounded_rect_surface_cache') or self._rounded_rect_surface_cache is None:
+            self._rounded_rect_surface_cache = {}
+            self._rounded_rect_surface_cache_order = []
+            self._rounded_rect_surface_cache_max = 96
+        rect_w = max(1, int(size[0]))
+        rect_h = max(1, int(size[1]))
+        color_key = tuple(color) if isinstance(color, (tuple, list)) else color
+        key = (rect_w, rect_h, color_key, max(0, int(border_radius)), max(0, int(width)))
+        cached = self._rounded_rect_surface_cache.get(key)
+        if cached is not None:
+            try:
+                self._rounded_rect_surface_cache_order.remove(key)
+            except ValueError:
+                pass
+            self._rounded_rect_surface_cache_order.append(key)
+            return cached
+        surface = pygame.Surface((rect_w, rect_h), pygame.SRCALPHA)
+        pygame.draw.rect(surface, color, surface.get_rect(), width=max(0, int(width)), border_radius=max(0, int(border_radius)))
+        self._rounded_rect_surface_cache[key] = surface
+        self._rounded_rect_surface_cache_order.append(key)
+        while len(self._rounded_rect_surface_cache_order) > self._rounded_rect_surface_cache_max:
+            old_key = self._rounded_rect_surface_cache_order.pop(0)
+            self._rounded_rect_surface_cache.pop(old_key, None)
+        return surface
+
     def _draw_user_card(self, rect, username, user_data, selected, is_active, index):
         s = self._sx
         radius = 14
         border_w = 2
         hovered = (self._hovered_index == index)
-        card_surface = pygame.Surface(rect.size, pygame.SRCALPHA)
-        card_surface.fill((18, 22, 44, 230) if selected else (12, 14, 30, 210))
+        card_surface = self._get_solid_alpha_surface(
+            rect.size, (18, 22, 44, 230) if selected else (12, 14, 30, 210))
         self.screen.blit(card_surface, rect.topleft)
 
         if selected:
             glow_rect = rect.inflate(s(12), s(12))
-            glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(glow, (*retro_style.primary, 34), glow.get_rect(), border_radius=radius + 4)
+            glow = self._get_rounded_rect_surface(glow_rect.size, (*retro_style.primary, 34), border_radius=radius + 4)
             self.screen.blit(glow, glow_rect.topleft)
         elif hovered:
             glow_rect = rect.inflate(s(10), s(10))
-            glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(glow, (*retro_style.primary, 26), glow.get_rect(), border_radius=radius + 4)
+            glow = self._get_rounded_rect_surface(glow_rect.size, (*retro_style.primary, 26), border_radius=radius + 4)
             self.screen.blit(glow, glow_rect.topleft)
 
         border_color = retro_style.primary if (selected or hovered) else (60, 70, 110)
@@ -1356,20 +1409,18 @@ class UserSelectionScreen:
         radius = 14
         border_w = 2
         hovered = (self._hovered_index == index)
-        card_surface = pygame.Surface(rect.size, pygame.SRCALPHA)
-        card_surface.fill((20, 44, 44, 220) if selected else (12, 26, 26, 210))
+        card_surface = self._get_solid_alpha_surface(
+            rect.size, (20, 44, 44, 220) if selected else (12, 26, 26, 210))
         self.screen.blit(card_surface, rect.topleft)
 
         accent = retro_style.accent
         if selected:
             glow_rect = rect.inflate(s(12), s(12))
-            glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(glow, (*accent, 30), glow.get_rect(), border_radius=radius + 4)
+            glow = self._get_rounded_rect_surface(glow_rect.size, (*accent, 30), border_radius=radius + 4)
             self.screen.blit(glow, glow_rect.topleft)
         elif hovered:
             glow_rect = rect.inflate(s(10), s(10))
-            glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(glow, (*accent, 24), glow.get_rect(), border_radius=radius + 4)
+            glow = self._get_rounded_rect_surface(glow_rect.size, (*accent, 24), border_radius=radius + 4)
             self.screen.blit(glow, glow_rect.topleft)
 
         border_color = accent if (selected or hovered) else (60, 130, 120)

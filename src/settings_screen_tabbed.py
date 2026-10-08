@@ -3785,7 +3785,7 @@ class TabbedSettingsScreen:
         üretilmiş bayat yüzeyler, kuşak artışından sonra hit alamaz.
         """
         self._ui_cache_generation = int(getattr(self, '_ui_cache_generation', 0)) + 1
-        for cache_name in ('_panel_bg_cache', '_panel_shadow_cache', '_tab_surf_cache'):
+        for cache_name in ('_panel_bg_cache', '_panel_shadow_cache', '_tab_surf_cache', '_slider_surface_cache'):
             cache = getattr(self, cache_name, None)
             if cache is not None:
                 cache.clear()
@@ -4608,6 +4608,8 @@ class TabbedSettingsScreen:
                 active_count = max(0, min(num_blocks, int(round(actual_val * num_blocks))))
                 b_radius = max(1, s(2, minimum=1))
                 is_active = selected or (self._slider_drag_active and self._slider_drag_key == key)
+                if not hasattr(self, '_slider_surface_cache') or self._slider_surface_cache is None:
+                    self._slider_surface_cache = {}
 
                 for b_idx in range(num_blocks):
                     bx = bar_rect.x + b_idx * (block_w + gap)
@@ -4617,18 +4619,37 @@ class TabbedSettingsScreen:
                         # Aktif Blok: Parlak Neon Dolgu
                         pygame.draw.rect(self.screen, (*fill_color, _sma(230)), block_rect, border_radius=b_radius)
                         # Üst parlak vurgu şeridi
+                        # OP-021: vurgu yüzeyi (block_w, bar_h)'den deterministik
+                        # türetilir — kare başına Surface tahsisi yerine kuşaklı
+                        # önbellek. Doğrudan draw.rect çağrıları tahsissizdir,
+                        # dokunulmaz (OP-017 probe dersi: ekran piksel-alfasız,
+                        # RGBA alfa yok sayılır — bu yüzey zaten SRCALPHA
+                        # fill+blit'ti, birebir kalır).
                         hl_h = max(1, bar_h // 3)
-                        hl_rect = pygame.Rect(bx + 1, bar_rect.y + 1, max(1, block_w - 2), hl_h)
-                        hl_surf = pygame.Surface((hl_rect.width, hl_rect.height), pygame.SRCALPHA)
-                        hl_surf.fill((255, 255, 255, _sma(90)))
-                        self.screen.blit(hl_surf, hl_rect.topleft)
+                        hl_key = ('block_hl', int(getattr(self, '_ui_cache_generation', 0)), block_w, bar_h, _sma(90))
+                        hl_surf = self._slider_surface_cache.get(hl_key)
+                        if hl_surf is None:
+                            hl_surf = pygame.Surface((max(1, block_w - 2), hl_h), pygame.SRCALPHA)
+                            hl_surf.fill((255, 255, 255, _sma(90)))
+                            if len(self._slider_surface_cache) > 128:
+                                self._slider_surface_cache.clear()
+                            self._slider_surface_cache[hl_key] = hl_surf
+                        self.screen.blit(hl_surf, (bx + 1, bar_rect.y + 1))
                         # İnce kenarlık
                         glow_c = tuple(min(255, c + 40) for c in fill_color)
                         pygame.draw.rect(self.screen, (*glow_c, _sma(180)), block_rect, 1, border_radius=b_radius)
                     else:
                         # Pasif Blok: Koyu Şeffaf Arka Plan
-                        bg_surf = pygame.Surface((block_rect.width, block_rect.height), pygame.SRCALPHA)
-                        bg_surf.fill((18, 26, 44, _sma(190)))
+                        # OP-021: pasif blok zemini önbellekten — aynı SRCALPHA
+                        # fill+blit, piksel birebir.
+                        bg_key = ('block_bg', int(getattr(self, '_ui_cache_generation', 0)), block_w, bar_h, _sma(190))
+                        bg_surf = self._slider_surface_cache.get(bg_key)
+                        if bg_surf is None:
+                            bg_surf = pygame.Surface((block_w, bar_h), pygame.SRCALPHA)
+                            bg_surf.fill((18, 26, 44, _sma(190)))
+                            if len(self._slider_surface_cache) > 128:
+                                self._slider_surface_cache.clear()
+                            self._slider_surface_cache[bg_key] = bg_surf
                         self.screen.blit(bg_surf, block_rect.topleft)
                         pygame.draw.rect(self.screen, (50, 70, 105, _sma(120)), block_rect, 1, border_radius=b_radius)
 
@@ -4639,26 +4660,40 @@ class TabbedSettingsScreen:
                     pygame.draw.rect(self.screen, (255, 255, 255), last_rect, 1, border_radius=b_radius)
             else:
                 # Track – pill şekli, derinlik gölgesi
-                track_surf = pygame.Surface((bar_rect.width, bar_h), pygame.SRCALPHA)
-                pygame.draw.rect(track_surf, (20, 28, 48, _sma(200)), track_surf.get_rect(), border_radius=r)
-                pygame.draw.rect(track_surf, (60, 80, 120, _sma(130)), track_surf.get_rect(), 1, border_radius=r)
-                hl_t = pygame.Surface((max(1, bar_rect.width - s(6, minimum=4)), s(2, minimum=2)), pygame.SRCALPHA)
-                hl_t.fill((255, 255, 255, _sma(14)))
-                track_surf.blit(hl_t, (s(3, minimum=2), s(3, minimum=2)))
+                if not hasattr(self, '_slider_surface_cache') or self._slider_surface_cache is None:
+                    self._slider_surface_cache = {}
+                track_key = ('track', int(getattr(self, '_ui_cache_generation', 0)), bar_rect.width, bar_h, r, _sma(200), _sma(130), _sma(14), s(6, minimum=4), s(2, minimum=2), s(3, minimum=2))
+                track_surf = self._slider_surface_cache.get(track_key)
+                if track_surf is None:
+                    track_surf = pygame.Surface((bar_rect.width, bar_h), pygame.SRCALPHA)
+                    pygame.draw.rect(track_surf, (20, 28, 48, _sma(200)), track_surf.get_rect(), border_radius=r)
+                    pygame.draw.rect(track_surf, (60, 80, 120, _sma(130)), track_surf.get_rect(), 1, border_radius=r)
+                    hl_t = pygame.Surface((max(1, bar_rect.width - s(6, minimum=4)), s(2, minimum=2)), pygame.SRCALPHA)
+                    hl_t.fill((255, 255, 255, _sma(14)))
+                    track_surf.blit(hl_t, (s(3, minimum=2), s(3, minimum=2)))
+                    if len(self._slider_surface_cache) > 128:
+                        self._slider_surface_cache.clear()
+                    self._slider_surface_cache[track_key] = track_surf
                 self.screen.blit(track_surf, bar_rect.topleft)
 
                 # Dolgu – parlak pill + üst vurgu şeridi
                 fill_w = int(bar_rect.width * ratio)
                 if fill_w > 2:
-                    fill_surf = pygame.Surface((fill_w, bar_h), pygame.SRCALPHA)
-                    pygame.draw.rect(fill_surf, (*fill_color, _sma(220)), fill_surf.get_rect(), border_radius=r)
-                    # üst parlak vurgu
-                    hl_f = pygame.Surface((max(1, fill_w - s(8, minimum=6)), s(3, minimum=2)), pygame.SRCALPHA)
-                    hl_f.fill((255, 255, 255, _sma(70)))
-                    fill_surf.blit(hl_f, (s(4, minimum=3), s(2, minimum=1)))
-                    # hafif glow overlay
-                    glow_c = tuple(min(255, c + 55) for c in fill_color)
-                    pygame.draw.rect(fill_surf, (*glow_c, _sma(45)), fill_surf.get_rect(), border_radius=r)
+                    fill_key = ('fill', int(getattr(self, '_ui_cache_generation', 0)), fill_w, bar_h, tuple(fill_color), r, _sma(220), _sma(70), _sma(45), s(8, minimum=6), s(3, minimum=2), s(4, minimum=3), s(2, minimum=1))
+                    fill_surf = self._slider_surface_cache.get(fill_key)
+                    if fill_surf is None:
+                        fill_surf = pygame.Surface((fill_w, bar_h), pygame.SRCALPHA)
+                        pygame.draw.rect(fill_surf, (*fill_color, _sma(220)), fill_surf.get_rect(), border_radius=r)
+                        # üst parlak vurgu
+                        hl_f = pygame.Surface((max(1, fill_w - s(8, minimum=6)), s(3, minimum=2)), pygame.SRCALPHA)
+                        hl_f.fill((255, 255, 255, _sma(70)))
+                        fill_surf.blit(hl_f, (s(4, minimum=3), s(2, minimum=1)))
+                        # hafif glow overlay
+                        glow_c = tuple(min(255, c + 55) for c in fill_color)
+                        pygame.draw.rect(fill_surf, (*glow_c, _sma(45)), fill_surf.get_rect(), border_radius=r)
+                        if len(self._slider_surface_cache) > 128:
+                            self._slider_surface_cache.clear()
+                        self._slider_surface_cache[fill_key] = fill_surf
                     self.screen.blit(fill_surf, bar_rect.topleft)
 
                 # Knob – glow + dış halka + iç daire + vurgu nokta
@@ -4667,10 +4702,16 @@ class TabbedSettingsScreen:
                 is_active = selected or (self._slider_drag_active and self._slider_drag_key == key)
                 if is_active:
                     glow_pad = s(6, minimum=4)
-                    glow_surf = pygame.Surface((knob_r * 2 + glow_pad * 2, knob_r * 2 + glow_pad * 2), pygame.SRCALPHA)
-                    for gi, ga in enumerate([20, 40, 60]):
-                        gr = knob_r + glow_pad - gi * s(2, minimum=1)
-                        pygame.draw.circle(glow_surf, (*fill_color, ga), (knob_r + glow_pad, knob_r + glow_pad), gr)
+                    glow_key = ('knob_glow', int(getattr(self, '_ui_cache_generation', 0)), knob_r, glow_pad, tuple(fill_color), s(2, minimum=1))
+                    glow_surf = self._slider_surface_cache.get(glow_key)
+                    if glow_surf is None:
+                        glow_surf = pygame.Surface((knob_r * 2 + glow_pad * 2, knob_r * 2 + glow_pad * 2), pygame.SRCALPHA)
+                        for gi, ga in enumerate([20, 40, 60]):
+                            gr = knob_r + glow_pad - gi * s(2, minimum=1)
+                            pygame.draw.circle(glow_surf, (*fill_color, ga), (knob_r + glow_pad, knob_r + glow_pad), gr)
+                        if len(self._slider_surface_cache) > 128:
+                            self._slider_surface_cache.clear()
+                        self._slider_surface_cache[glow_key] = glow_surf
                     self.screen.blit(glow_surf, (knob_x - knob_r - glow_pad, rect.centery - knob_r - glow_pad))
                 pygame.draw.circle(self.screen, fill_color, (knob_x, rect.centery), knob_r, 2)
                 knob_inner = (255, 255, 255) if is_active else (200, 212, 230)

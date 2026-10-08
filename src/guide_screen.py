@@ -1367,8 +1367,60 @@ class GuideScreen:
         self._draw_tutorial_button()
         self._draw_back_button()
 
+    def _skeleton_cached_surface(self, key, build):
+        """OP-022: guide iskelet yüzeyleri (sekme glow/zemin, maskot paneli,
+        buton glow/zemin, sekme numarası) için lazy önbellek — kare başına
+        Surface/Font.render tahsisini kaldırır. Anahtar boyut/durum/renk/
+        scale_key taşıdığı için ölçek veya tema değişimi otomatik yeni
+        anahtar üretir (yüzeyler metin içermez; numara rakamdır)."""
+        cache = getattr(self, '_skeleton_surface_cache', None)
+        if cache is None:
+            cache = {}
+            self._skeleton_surface_cache = cache
+        surf = cache.get(key)
+        if surf is None:
+            surf = build()
+            if len(cache) > 96:
+                cache.clear()
+            cache[key] = surf
+        return surf
+
+    def _build_tab_glow_surface(self, size):
+        glow_surf = pygame.Surface(size, pygame.SRCALPHA)
+        pygame.draw.rect(glow_surf, (*retro_style.primary[:3], 40), glow_surf.get_rect(), border_radius=12)
+        return glow_surf
+
+    def _build_tab_bg_surface(self, size, bg_color, state_key, scale):
+        tab_surf = pygame.Surface(size, pygame.SRCALPHA)
+        pygame.draw.rect(tab_surf, bg_color, tab_surf.get_rect(), border_radius=12)
+        if state_key in (0, 1):
+            highlight_depth = min(self._s(15, minimum=10, scale=scale), tab_surf.get_height() // 4)
+            for y in range(highlight_depth):
+                h_alpha = int(25 * (1 - y / max(1, highlight_depth)))
+                pygame.draw.line(tab_surf, (255, 255, 255, h_alpha), (0, y), (tab_surf.get_width(), y))
+        return tab_surf
+
+    def _build_mascot_panel_surface(self, size):
+        panel_surf = pygame.Surface(size, pygame.SRCALPHA)
+        pygame.draw.rect(panel_surf, (16, 24, 40, 175), panel_surf.get_rect(), border_radius=14)
+        return panel_surf
+
+    def _build_btn_glow_surface(self, size, accent_color):
+        glow_surf = pygame.Surface(size, pygame.SRCALPHA)
+        pygame.draw.rect(glow_surf, (*accent_color[:3], 35), glow_surf.get_rect(), border_radius=12)
+        return glow_surf
+
+    def _build_btn_bg_surface(self, size, bg_color):
+        btn_surf = pygame.Surface(size, pygame.SRCALPHA)
+        pygame.draw.rect(btn_surf, bg_color, btn_surf.get_rect(), border_radius=12)
+        return btn_surf
+
     def _draw_tab_panel(self, panel_width: int, height: int, tab_start_y: int):
         scale = self._ui_scale()
+        # OP-022: boyutlar ölçekle lineer ama farklı _s minimumları aynı
+        # (w, h)'yı farklı highlight derinliğiyle üretebilir — scale_key
+        # (içerik imzası deseni) anahtar çarpışmasını keser.
+        scale_key = int(round(scale * 1000))
         tabs = self._get_tabs()
         tab_height = self._s(64, minimum=48, scale=scale)
         gap = self._s(8, minimum=6, scale=scale)
@@ -1385,10 +1437,11 @@ class GuideScreen:
             
             if is_selected:
                 glow_rect = tab_rect.inflate(self._s(8, minimum=6, scale=scale), self._s(8, minimum=6, scale=scale))
-                glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(glow_surf, (*retro_style.primary[:3], 40), glow_surf.get_rect(), border_radius=12)
+                # OP-022: sekme glow'u önbellekten — aynı SRCALPHA fill+blit.
+                glow_key = ('tab_glow', scale_key, glow_rect.width, glow_rect.height, tuple(retro_style.primary[:3]))
+                glow_surf = self._skeleton_cached_surface(glow_key, lambda: self._build_tab_glow_surface(glow_rect.size))
                 self.screen.blit(glow_surf, glow_rect.topleft)
-                
+
                 bg_color = (30, 40, 65, 220)
                 border_color = retro_style.primary
             elif is_hovered:
@@ -1397,16 +1450,13 @@ class GuideScreen:
             else:
                 bg_color = (18, 25, 42, 180)
                 border_color = (60, 75, 100)
-            
-            tab_surf = pygame.Surface(tab_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(tab_surf, bg_color, tab_surf.get_rect(), border_radius=12)
-            
-            highlight_depth = min(self._s(15, minimum=10, scale=scale), tab_rect.height // 4)
-            if is_selected or is_hovered:
-                for y in range(highlight_depth):
-                    h_alpha = int(25 * (1 - y / max(1, highlight_depth)))
-                    pygame.draw.line(tab_surf, (255, 255, 255, h_alpha), (0, y), (tab_rect.width, y))
-            
+
+            # OP-022: sekme zemini (bg + 15 satırlık highlight degrade döngüsü)
+            # (boyut, durum, scale) anahtarlı önbelleğe bir kez çizilir — durum
+            # renkleri sabit, highlight derinliği (w, h, scale)'den deterministik.
+            state_key = 0 if is_selected else (1 if is_hovered else 2)
+            tab_key = ('tab_bg', scale_key, tab_rect.width, tab_rect.height, state_key)
+            tab_surf = self._skeleton_cached_surface(tab_key, lambda: self._build_tab_bg_surface(tab_rect.size, bg_color, state_key, scale))
             self.screen.blit(tab_surf, tab_rect.topleft)
             pygame.draw.rect(self.screen, border_color, tab_rect, 2, border_radius=12)
             
@@ -1417,7 +1467,12 @@ class GuideScreen:
             
             num_font = self._font(14, bold=True, minimum=10, scale=scale)
             num_color = retro_style.accent if is_selected else retro_style.text_muted
-            num_surf = num_font.render(str(i + 1), True, num_color)
+            # OP-022: sekme numarası Font.render tahsisi de kare başınaydı —
+            # (rakam, renk, font) anahtarlı önbellek (font retro_style'tan
+            # önbellekli nesne, _combo_popup_cache deyimiyle aynı).
+            num_text = str(i + 1)
+            num_key = ('tab_num', num_text, tuple(num_color), num_font)
+            num_surf = self._skeleton_cached_surface(num_key, lambda: num_font.render(num_text, True, num_color))
             self.screen.blit(num_surf, (tab_rect.x + self._s(16, minimum=12, scale=scale), tab_rect.y + self._s(8, minimum=5, scale=scale)))
             
             text_color = retro_style.text_primary if is_selected else retro_style.text_secondary
@@ -1437,8 +1492,9 @@ class GuideScreen:
             return
 
         panel_rect = pygame.Rect(self._s(16, minimum=12, scale=scale), top_y, panel_width, available_height)
-        panel_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(panel_surf, (16, 24, 40, 175), panel_surf.get_rect(), border_radius=14)
+        # OP-022: maskot panel zemini önbellekten — sabit renk, boyut+scale anahtarlı.
+        panel_key = ('mascot_panel', int(round(scale * 1000)), panel_rect.width, panel_rect.height)
+        panel_surf = self._skeleton_cached_surface(panel_key, lambda: self._build_mascot_panel_surface(panel_rect.size))
         self.screen.blit(panel_surf, panel_rect.topleft)
         pygame.draw.rect(self.screen, (70, 90, 120), panel_rect, 2, border_radius=14)
 
@@ -1512,10 +1568,12 @@ class GuideScreen:
         accent_color: Tuple[int, int, int],
     ):
         scale = self._ui_scale()
+        scale_key = int(round(scale * 1000))
         if is_hovered:
             glow_rect = btn_rect.inflate(self._s(10, minimum=8, scale=scale), self._s(10, minimum=8, scale=scale))
-            glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(glow_surf, (*accent_color[:3], 35), glow_surf.get_rect(), border_radius=12)
+            # OP-022: buton glow'u önbellekten (renk anahtarda — tema güvenli).
+            glow_key = ('btn_glow', scale_key, glow_rect.width, glow_rect.height, tuple(accent_color[:3]))
+            glow_surf = self._skeleton_cached_surface(glow_key, lambda: self._build_btn_glow_surface(glow_rect.size, accent_color))
             self.screen.blit(glow_surf, glow_rect.topleft)
             bg_color = (35, 45, 70, 220)
             border_color = accent_color
@@ -1523,8 +1581,9 @@ class GuideScreen:
             bg_color = (25, 32, 52, 200)
             border_color = (80, 100, 130)
 
-        btn_surf = pygame.Surface(btn_rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(btn_surf, bg_color, btn_surf.get_rect(), border_radius=12)
+        # OP-022: buton zemini önbellekten — (boyut, durum, scale) anahtarlı.
+        btn_key = ('btn_bg', scale_key, btn_rect.width, btn_rect.height, 1 if is_hovered else 0)
+        btn_surf = self._skeleton_cached_surface(btn_key, lambda: self._build_btn_bg_surface(btn_rect.size, bg_color))
         self.screen.blit(btn_surf, btn_rect.topleft)
         pygame.draw.rect(self.screen, border_color, btn_rect, 2, border_radius=12)
 

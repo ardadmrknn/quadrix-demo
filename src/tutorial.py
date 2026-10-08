@@ -2,6 +2,7 @@ import pygame
 import random
 import os
 import math
+import re as _re
 
 _compute_line_sweep_progress_speed = None
 
@@ -434,6 +435,33 @@ class TutorialMode(Game):
         if total_count <= 0:
             return 0
         return (total_count * size) + ((total_count - 1) * gap)
+
+    def _get_tutorial_dot_glow_surface(self, radius: int, color) -> pygame.Surface:
+        radius = max(1, int(radius))
+        color_key = tuple(color[:3]) if isinstance(color, (tuple, list)) else color
+        cache = getattr(self, '_tutorial_dot_glow_cache', None)
+        if cache is None:
+            cache = {}
+            self._tutorial_dot_glow_cache = cache
+        key = (radius, color_key)
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+        surf = pygame.Surface((radius * 6, radius * 6), pygame.SRCALPHA)
+        pygame.draw.circle(surf, (*color_key, 40), (radius * 3, radius * 3), radius * 3)
+        cache[key] = surf
+        if len(cache) > 24:
+            cache.clear()
+            cache[key] = surf
+        return surf
+
+    def _hub_desc_language(self) -> str:
+        """Ders açıklaması memo anahtarı için aktif dil (fonksiyon-içi import)."""
+        try:
+            from .localization import get_language  # type: ignore
+        except ImportError:
+            from localization import get_language
+        return str(get_language() or 'en')
 
     def _get_left_gameplay_reserve_width(self) -> int:
         ui_scale = self._tutorial_modal_scale(min_scale=0.70, max_scale=1.18)
@@ -1369,7 +1397,7 @@ class TutorialMode(Game):
         if max_width <= 0:
             return [text]
 
-        import re as _re
+        # OP-063: _re modül başından (import re as _re); fonksiyon içi import yok.
         def _repl(m):
             return _re.sub(r'\s', '__SPC__', m.group(0))
         text_processed = _re.sub(r'\[[^\]]*\]', _repl, text)
@@ -2497,7 +2525,7 @@ class TutorialMode(Game):
         Tuş etiketleri (örn. [LEFT / A]) yeşil rehber kutusunda göze daha net ve
         hoş gelsin diye sıcak amber renkte gösterilir.
         """
-        import re as _re
+        # OP-063: _re modül başından (import re as _re).
         segments = _re.split(r'(\[[^\]]*\])', str(line))
         cursor_x = int(x)
         for seg in segments:
@@ -5360,21 +5388,33 @@ class TutorialMode(Game):
             # Glow
             if hover:
                 glow_r = arrow_rect.inflate(s(10, minimum=6), s(10, minimum=6))
-                glow_s = pygame.Surface(glow_r.size, pygame.SRCALPHA)
-                pygame.draw.rect(glow_s, (*retro_style.primary[:3], 44), glow_s.get_rect(), border_radius=outer_radius + 4)
+                glow_s = self._get_rounded_rect_surface(glow_r.size, (*retro_style.primary[:3], 44), border_radius=outer_radius + 4)
                 self.screen.blit(glow_s, glow_r.topleft)
 
-            # Outer capsule
+            # Outer capsule + iç inset panel kompoziti: kare başına yeniden
+            # üretilmesin — (boyut, hover, inset, radius) anahtarlı küçük
+            # önbellek (v2 deseni).
             btn_alpha = 208 if hover else 170
             fill_c = (24, 32, 52) if hover else (14, 22, 38)
-            btn_s = pygame.Surface(arrow_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(btn_s, (*fill_c, btn_alpha), btn_s.get_rect(), border_radius=outer_radius)
-
-            # Inner inset panel (daha pürüzsüz görünüm)
-            inner_rect = btn_s.get_rect().inflate(-s(6, minimum=4), -s(6, minimum=4))
+            inner_inset_x = s(6, minimum=4)
+            inner_inset_y = s(6, minimum=4)
             inner_radius = max(8, outer_radius - s(4, minimum=2))
-            inner_c = (28, 38, 62, 226 if hover else 188)
-            pygame.draw.rect(btn_s, inner_c, inner_rect, border_radius=inner_radius)
+            arrow_cache = getattr(self, '_hub_arrow_btn_cache', None)
+            if arrow_cache is None:
+                arrow_cache = {}
+                self._hub_arrow_btn_cache = arrow_cache
+            btn_key = (arrow_rect.width, arrow_rect.height, hover,
+                       inner_inset_x, inner_inset_y, inner_radius)
+            btn_s = arrow_cache.get(btn_key)
+            if btn_s is None:
+                btn_s = self._get_rounded_rect_surface(arrow_rect.size, (*fill_c, btn_alpha), border_radius=outer_radius).copy()
+                # Inner inset panel (daha pürüzsüz görünüm)
+                inner_rect = btn_s.get_rect().inflate(-inner_inset_x, -inner_inset_y)
+                inner_c = (28, 38, 62, 226 if hover else 188)
+                pygame.draw.rect(btn_s, inner_c, inner_rect, border_radius=inner_radius)
+                if len(arrow_cache) > 16:
+                    arrow_cache.clear()
+                arrow_cache[btn_key] = btn_s
             self.screen.blit(btn_s, arrow_rect.topleft)
 
             # Border
@@ -5439,8 +5479,7 @@ class TutorialMode(Game):
             # Glow (sadece aktif kart — offset~0)
             if abs(offset_x) < 0.15 and not is_locked:
                 glow_r = card_rect.inflate(14, 14)
-                glow_s = pygame.Surface(glow_r.size, pygame.SRCALPHA)
-                pygame.draw.rect(glow_s, (*card_accent[:3], 30), glow_s.get_rect(), border_radius=14)
+                glow_s = self._get_rounded_rect_surface(glow_r.size, (*card_accent[:3], 30), border_radius=14)
                 self.screen.blit(glow_s, glow_r.topleft)
 
             # Panel
@@ -5451,8 +5490,7 @@ class TutorialMode(Game):
             # ── Başlık bandı ──
             band_h = s(50)
             band_rect = pygame.Rect(card_rect.x + 2, card_rect.y + 2, card_rect.width - 4, band_h)
-            band_bg = pygame.Surface(band_rect.size, pygame.SRCALPHA)
-            band_bg.fill((8, 12, 30, 180))
+            band_bg = self._get_solid_alpha_surface(band_rect.size, (8, 12, 30, 180))
             self.screen.blit(band_bg, band_rect.topleft)
             pygame.draw.line(self.screen, (*card_accent[:3], 80),
                              (band_rect.x + s(8), band_rect.bottom),
@@ -5467,8 +5505,7 @@ class TutorialMode(Game):
             num_bg_size = max(num_surf.get_width(), num_surf.get_height()) + s(10)
             num_bg_rect = pygame.Rect(band_rect.x + s(10), band_rect.y + (band_h - num_bg_size) // 2,
                                       num_bg_size, num_bg_size)
-            num_bg_s = pygame.Surface(num_bg_rect.size, pygame.SRCALPHA)
-            num_bg_s.fill((15, 20, 45, 200))
+            num_bg_s = self._get_solid_alpha_surface(num_bg_rect.size, (15, 20, 45, 200))
             self.screen.blit(num_bg_s, num_bg_rect.topleft)
             pygame.draw.rect(self.screen, (*card_accent[:3], 160), num_bg_rect, 1, border_radius=6)
             self.screen.blit(num_surf, (
@@ -5597,10 +5634,8 @@ class TutorialMode(Game):
             cx = dots_cx - dots_total_w // 2 + di * dot_gap + dot_gap // 2
             if di == current_chapter_index:
                 pygame.draw.circle(self.screen, retro_style.primary, (cx, dots_y), dot_r)
-                # Aktif dot glow
-                glow_s = pygame.Surface((dot_r * 6, dot_r * 6), pygame.SRCALPHA)
-                pygame.draw.circle(glow_s, (*retro_style.primary[:3], 40),
-                                   (dot_r * 3, dot_r * 3), dot_r * 3)
+                # Aktif dot glow (v2'den taşınan önbellekli helper)
+                glow_s = self._get_tutorial_dot_glow_surface(dot_r, retro_style.primary)
                 self.screen.blit(glow_s, (cx - dot_r * 3, dots_y - dot_r * 3))
             else:
                 pygame.draw.circle(self.screen, retro_style.text_muted, (cx, dots_y), dot_r - 1)
@@ -5670,15 +5705,13 @@ class TutorialMode(Game):
                 # Seçili ders glow
                 if is_selected:
                     sel_glow = row_rect.inflate(8, 8)
-                    sel_gs = pygame.Surface(sel_glow.size, pygame.SRCALPHA)
-                    pygame.draw.rect(sel_gs, (*retro_style.primary[:3], 35), sel_gs.get_rect(), border_radius=12)
+                    sel_gs = self._get_rounded_rect_surface(sel_glow.size, (*retro_style.primary[:3], 35), border_radius=12)
                     self.screen.blit(sel_gs, sel_glow.topleft)
 
                 # Ders kartı
                 row_alpha = 200 if is_selected else 150
                 row_fill = (28, 35, 55) if is_selected else (18, 24, 40)
-                row_s = pygame.Surface(row_rect.size, pygame.SRCALPHA)
-                row_s.fill((*row_fill, row_alpha))
+                row_s = self._get_solid_alpha_surface(row_rect.size, (*row_fill, row_alpha))
                 self.screen.blit(row_s, row_rect.topleft)
 
                 # Border
@@ -5717,19 +5750,33 @@ class TutorialMode(Game):
 
                 # Açıklama (kompakt değilse) — tek satıra sığacak şekilde,
                 # taşarsa "…" ile kısaltılır (yarıda kesik görünmez).
+                # Sarma + kısaltma döngüsü kare başına tekrar etmesin diye
+                # sonuç Surface'ü (ders, font, genişlik, dil) anahtarıyla
+                # memo'lanır; dil değişimi yeni anahtar üretir.
                 if not compact:
-                    lesson_desc = self._lesson_description(lesson)
                     desc_max_w = row_rect.width - s(32)
-                    desc_lines = self._wrap_text(lesson_desc, tiny_font, desc_max_w, max_lines=1)
-                    if desc_lines:
-                        desc_text = desc_lines[0]
-                        # Tek satıra sığmayan açıklama varsa "…" ekle.
-                        full_first = self._wrap_text(lesson_desc, tiny_font, desc_max_w, max_lines=2)
-                        if len(full_first) > 1 and desc_text == full_first[0]:
-                            while desc_text and tiny_font.size(desc_text + '…')[0] > desc_max_w:
-                                desc_text = desc_text[:-1].rstrip()
-                            desc_text = (desc_text + '…') if desc_text else desc_lines[0]
-                        desc_surf = tiny_font.render(desc_text, True, retro_style.text_muted)
+                    desc_memo = getattr(self, '_hub_desc_memo', None)
+                    if desc_memo is None:
+                        desc_memo = {}
+                        self._hub_desc_memo = desc_memo
+                    desc_key = (lesson_id, id(tiny_font), desc_max_w, self._hub_desc_language())
+                    desc_surf = desc_memo.get(desc_key)
+                    if desc_surf is None:
+                        lesson_desc = self._lesson_description(lesson)
+                        desc_lines = self._wrap_text(lesson_desc, tiny_font, desc_max_w, max_lines=1)
+                        if desc_lines:
+                            desc_text = desc_lines[0]
+                            # Tek satıra sığmayan açıklama varsa "…" ekle.
+                            full_first = self._wrap_text(lesson_desc, tiny_font, desc_max_w, max_lines=2)
+                            if len(full_first) > 1 and desc_text == full_first[0]:
+                                while desc_text and tiny_font.size(desc_text + '…')[0] > desc_max_w:
+                                    desc_text = desc_text[:-1].rstrip()
+                                desc_text = (desc_text + '…') if desc_text else desc_lines[0]
+                            desc_surf = tiny_font.render(desc_text, True, retro_style.text_muted)
+                            if len(desc_memo) > 32:
+                                desc_memo.clear()
+                            desc_memo[desc_key] = desc_surf
+                    if desc_surf is not None:
                         self.screen.blit(desc_surf, (text_x, row_rect.y + s(28)))
 
                 # Yıldız + durum
@@ -5801,8 +5848,7 @@ class TutorialMode(Game):
         # Başlık bandı
         header_h = s(42)
         dh_rect = pygame.Rect(detail_rect.x + 2, detail_rect.y + 2, detail_rect.width - 4, header_h)
-        dh_bg = pygame.Surface(dh_rect.size, pygame.SRCALPHA)
-        dh_bg.fill((8, 12, 30, 180))
+        dh_bg = self._get_solid_alpha_surface(dh_rect.size, (8, 12, 30, 180))
         self.screen.blit(dh_bg, dh_rect.topleft)
         pygame.draw.line(self.screen, (90, 170, 220, 90),
                          (dh_rect.x + s(12), dh_rect.bottom),
@@ -5843,8 +5889,7 @@ class TutorialMode(Game):
         if type_label:
             type_surf = tiny_font.render(type_label, True, (150, 210, 255))
             type_bg = pygame.Rect(pad_x, badge_y, type_surf.get_width() + s(14), badge_h)
-            tb = pygame.Surface(type_bg.size, pygame.SRCALPHA)
-            tb.fill((30, 60, 95, 200))
+            tb = self._get_solid_alpha_surface(type_bg.size, (30, 60, 95, 200))
             self.screen.blit(tb, type_bg.topleft)
             pygame.draw.rect(self.screen, (90, 160, 220, 150), type_bg, 1, border_radius=6)
             self.screen.blit(type_surf, (type_bg.x + s(7), type_bg.centery - type_surf.get_height() // 2))
@@ -5857,8 +5902,7 @@ class TutorialMode(Game):
             dur_text = t('tutorial_meta_duration', seconds=duration_seconds, default=f'~{duration_seconds} sn')
             dur_surf = tiny_font.render(dur_text, True, (255, 220, 140))
             dur_bg = pygame.Rect(next_badge_x, badge_y, dur_surf.get_width() + s(14), badge_h)
-            db = pygame.Surface(dur_bg.size, pygame.SRCALPHA)
-            db.fill((60, 50, 25, 200))
+            db = self._get_solid_alpha_surface(dur_bg.size, (60, 50, 25, 200))
             self.screen.blit(db, dur_bg.topleft)
             pygame.draw.rect(self.screen, (220, 180, 90, 150), dur_bg, 1, border_radius=6)
             self.screen.blit(dur_surf, (dur_bg.x + s(7), dur_bg.centery - dur_surf.get_height() // 2))

@@ -289,19 +289,38 @@ MAIN_MENU_TITLE_LOGO_PATH_CANDIDATES = [
 AVATAR_IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.bmp', '.webp')
 
 
+# OP-028: dil-epoch'lu modül cache — sekmeler her kare yeniden inşa
+# edilmesin. Dönen liste çağıranlarca yalnız okunur (mutasyon yok —
+# doğrulandı); dil değişimi yeni epoch anahtarı üretir.
+_CONTROL_TABS_CACHE: dict = {}
+_CONTROL_ACTIONS_CACHE: dict = {}
+
+
 def get_control_tabs():
     """Yerelleştirilmiş kontrol sekmeleri"""
-    return [
+    from localization import get_language
+    lang = str(get_language() or 'en')
+    cached = _CONTROL_TABS_CACHE.get(lang)
+    if cached is not None:
+        return cached
+    tabs = [
         ('single_player', t('tab_single_player')),
         ('pvp.player1', t('tab_pvp_player1')),
         ('pvp.player2', t('tab_pvp_player2')),
         ('gamepad', t('tab_gamepad')),
     ]
+    _CONTROL_TABS_CACHE[lang] = tabs
+    return tabs
 
 
 def get_control_actions():
     """Yerelleştirilmiş kontrol eylemleri"""
-    
+    from localization import get_language
+    lang = str(get_language() or 'en')
+    cached = _CONTROL_ACTIONS_CACHE.get(lang)
+    if cached is not None:
+        return cached
+
     single_player_actions = [
         ('move_left', t('ctrl_move_left')),
         ('move_right', t('ctrl_move_right')),
@@ -314,7 +333,7 @@ def get_control_actions():
         ('pause', t('ctrl_pause')),
     ]
     
-    return {
+    actions = {
         'single_player': single_player_actions,
         'pvp.player1': [
             ('move_left', t('ctrl_move_left')),
@@ -335,6 +354,8 @@ def get_control_actions():
             ('hold', t('ctrl_hold')),
         ],
     }
+    _CONTROL_ACTIONS_CACHE[lang] = actions
+    return actions
 
 
 def get_mode_music_entries():
@@ -7085,13 +7106,32 @@ class ControlSettingsScreen:
         py = (height - ph) // 2
         panel = pygame.Rect(px, py, pw, ph)
 
-        # Gölge
-        shadow = pygame.Surface((pw + 10, ph + 10), pygame.SRCALPHA)
-        pygame.draw.rect(shadow, (0, 0, 0, 60), shadow.get_rect(), border_radius=16)
+        # Gölge — OP-023: panel gölgesi ve zemini (pw, ph) anahtarlı önbellek;
+        # her ikisi de deterministik (sabit renk/yarıçap), settings'in
+        # _panel_bg_cache kuşak deseninin karşılığı (boyut anahtarı ölçek/
+        # çözünürlük değişimini kapsar; yüzeyler metin içermez).
+        controls_cache = getattr(self, '_controls_surface_cache', None)
+        if controls_cache is None:
+            controls_cache = {}
+            self._controls_surface_cache = controls_cache
+        shadow_key = ('shadow', pw, ph)
+        shadow = controls_cache.get(shadow_key)
+        if shadow is None:
+            shadow = pygame.Surface((pw + 10, ph + 10), pygame.SRCALPHA)
+            pygame.draw.rect(shadow, (0, 0, 0, 60), shadow.get_rect(), border_radius=16)
+            if len(controls_cache) > 64:
+                controls_cache.clear()
+            controls_cache[shadow_key] = shadow
         self.screen.blit(shadow, (px + 5, py + 5))
         # Arka plan
-        panel_surf = pygame.Surface(panel.size, pygame.SRCALPHA)
-        panel_surf.fill((12, 16, 32, 235))
+        panel_key = ('panel', pw, ph)
+        panel_surf = controls_cache.get(panel_key)
+        if panel_surf is None:
+            panel_surf = pygame.Surface(panel.size, pygame.SRCALPHA)
+            panel_surf.fill((12, 16, 32, 235))
+            if len(controls_cache) > 64:
+                controls_cache.clear()
+            controls_cache[panel_key] = panel_surf
         self.screen.blit(panel_surf, panel.topleft)
         pygame.draw.rect(self.screen, (60, 70, 100), panel, 2, border_radius=14)
         pygame.draw.line(self.screen, (80, 140, 220), (px + 2, py + 1), (px + pw - 2, py + 1), 1)
@@ -7118,12 +7158,19 @@ class ControlSettingsScreen:
             rect = pygame.Rect(tx, tab_y, tab_width, tab_h)
             self.tab_rects.append(rect)
             is_active = (idx == self.active_tab)
-            # Tab arka plan
-            tab_bg = pygame.Surface(rect.size, pygame.SRCALPHA)
-            if is_active:
-                tab_bg.fill((35, 55, 90, 220))
-            else:
-                tab_bg.fill((20, 28, 48, 160))
+            # Tab arka plan — OP-023: (boyut, aktif) anahtarlı önbellek
+            # (settings _tab_surf_cache deseninin karşılığı).
+            tab_key = ('tab_bg', rect.width, rect.height, is_active)
+            tab_bg = controls_cache.get(tab_key)
+            if tab_bg is None:
+                tab_bg = pygame.Surface(rect.size, pygame.SRCALPHA)
+                if is_active:
+                    tab_bg.fill((35, 55, 90, 220))
+                else:
+                    tab_bg.fill((20, 28, 48, 160))
+                if len(controls_cache) > 64:
+                    controls_cache.clear()
+                controls_cache[tab_key] = tab_bg
             self.screen.blit(tab_bg, rect.topleft)
             # Alt çizgi (aktif)
             if is_active:
@@ -7171,11 +7218,19 @@ class ControlSettingsScreen:
             else:
                 key_label = self._format_key_label(value)
 
-            # Satır arka planı (ayarlar paneli stili)
-            bg_alpha = 180 if selected else 130
-            bg_color = (28, 38, 60) if selected else (18, 24, 42)
-            row_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
-            row_surf.fill((*bg_color, bg_alpha))
+            # Satır arka planı (ayarlar paneli stili) — OP-023: (boyut,
+            # selected) anahtarlı önbellek; seçim durumu anahtarın parçası
+            # (MD planı). Klip bölgesi yalnız blit konumunu etkiler.
+            row_key = ('row_bg', rect.width, rect.height, selected)
+            row_surf = controls_cache.get(row_key)
+            if row_surf is None:
+                bg_alpha = 180 if selected else 130
+                bg_color = (28, 38, 60) if selected else (18, 24, 42)
+                row_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
+                row_surf.fill((*bg_color, bg_alpha))
+                if len(controls_cache) > 64:
+                    controls_cache.clear()
+                controls_cache[row_key] = row_surf
             self.screen.blit(row_surf, rect.topleft)
 
             if selected:
