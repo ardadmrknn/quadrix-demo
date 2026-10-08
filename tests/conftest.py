@@ -263,6 +263,13 @@ def _purge_leaked_test_stubs(*, skip_pygame: bool = False) -> None:
 	# import eden sonraki dosya gerçek pygame ile taze yükler.
 	for heavy_name in (
 		'board', 'pieces', 'coop_board',
+		# game.py de module-level ``import pygame`` + EffectSurfaceCache
+		# tüketicisidir (bayat-binding sınıfı — v2 conftest'te purge
+		# listesindedir), ancak demo'da BİLİNÇLİ olarak düşürülmez:
+		# test_game_solid_alpha_* string-form monkeypatch('game.xxx')
+		# deseni modülün koşum fazında sys.modules'ta kalmasına güvenir;
+		# purge gelirse taze import farklı bir game nesnesi verir ve yama
+		# görünmez olur (ölçüldü: 2 test düşüyor, 2026-10-08).
 		'pvp_game', 'src.pvp_game',
 		'coop_game', 'src.coop_game',
 		'online_pvp_game', 'src.online_pvp_game',
