@@ -547,9 +547,13 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
     if k_prtsc is not None and (now_ms - state.get('last_prtsc_probe_ms', -10_000)) >= 120:
         state['last_prtsc_probe_ms'] = now_ms
         try:
+            # get_pressed() pgScancodeWrapper döndürür: K_* keycode indeksini
+            # SDL_GetScancodeFromKey ile scancode yuvasına çevirir. len()=512
+            # scancode sayısıdır — keycode'a karşı uzunluk guard'ı
+            # K_PRINTSCREEN'i (0x40000016) her zaman reddeder, algılamayı
+            # öldürürdü.
             keys = pygame.key.get_pressed()
-            if 0 <= int(k_prtsc) < len(keys):
-                prtsc_down = bool(keys[int(k_prtsc)])
+            prtsc_down = bool(keys[int(k_prtsc)])
         except Exception:
             prtsc_down = bool(state.get('prtsc_was_down', False))
 

@@ -8,6 +8,18 @@
   kare degil ~120 ms alt-ornekleme; 220 ms debounce penceresi icinde
   ornek; ara karelerde son ornek degeri korunur (was_down erken dusmez).
 
+RAM DERSI (2026-10-08, VDS 7.9 GiB OOM, exit 137): bu dosyanin eski
+fake'i ``[False] * (int(k_prtsc) + 8)`` idi; ``pygame.K_PRINTSCREEN``
+bir SDL2 KEYCODE'dur (1073741894 = 0x40000016) → dev liste ~8.6 GiB →
+tek-surec paket koşumları OOM kill yiyordu. Gercek ``get_pressed()``
+donuşu pgScancodeWrapper'dir: K_* keycode indeksleri
+``SDL_GetScancodeFromKey`` ile scancode'a cevrilir; ``len()``=512
+scancode sayisidir, keycode ile kiyaslanamaz. Bu yuzden (a) fake wrapper
+semantigini taklit eder, (b) kaynaktaki ``0 <= k < len(keys)`` guard'i
+KALDIRILDI — guard K_PRINTSCREEN'i her zaman reddedip OP-034 prtsc
+algilamayi oluyordu (game_modes_extra'daki ``keys[kc]`` once-dene deseni
+zaten dogruydu).
+
 Modül importları gövde içinde; main importu SDL dummy altında güvenli
 (modül düzeyi display kurmuyor — doğrulandı).
 """
@@ -53,6 +65,27 @@ class _FakeSettingsManager:
         if key == 'steam_overlay_gl':
             return self._value
         return default
+
+
+class _FakePressedKeys:
+    """pgScancodeWrapper taklidi: K_* keycode indekslerini kabul eder.
+
+    Gerçek get_pressed() 512 scancode'lu durum demetini sarmalar ve
+    ``keys[keycode]`` sorgusunu SDL_GetScancodeFromKey ile scancode
+    yuvasına çevirir. Düz liste taklidi RAM bombasıydı (bkz. modül
+    docstring'i); bu sınıf keycode kümesiyle üyelik döndürür.
+    """
+
+    _SCANCODE_COUNT = 512  # SDL_NUM_SCANCODES (SDL2 ABI)
+
+    def __init__(self, pressed_keycodes=()):
+        self._pressed = {int(k) for k in pressed_keycodes}
+
+    def __getitem__(self, keycode):
+        return int(keycode) in self._pressed
+
+    def __len__(self):
+        return self._SCANCODE_COUNT
 
 
 def test_gl_mode_cache_hits_skip_lookup(monkeypatch):
@@ -107,9 +140,7 @@ def test_prtsc_probe_is_subsampled_and_edge_survives(monkeypatch):
 
     def _fake_get_pressed():
         probe_calls[0] += 1
-        keys = [False] * (int(k_prtsc) + 8)
-        keys[int(k_prtsc)] = key_down[0]
-        return keys
+        return _FakePressedKeys([k_prtsc] if key_down[0] else ())
 
     monkeypatch.setattr(pygame.key, 'get_pressed', _fake_get_pressed)
 
@@ -154,3 +185,29 @@ def test_prtsc_probe_is_subsampled_and_edge_survives(monkeypatch):
     finally:
         if hasattr(main._maybe_recover_windows_display, '_state'):
             delattr(main._maybe_recover_windows_display, '_state')
+
+
+def test_real_get_pressed_accepts_keycode_index():
+    """Sözleşme kilidi: gerçek get_pressed K_* keycode indeksini kabul eder.
+
+    prtsc algılama, pgScancodeWrapper'ın keycode→scancode dönüşümüne
+    dayanır. pygame bir gün bu dönüşümü kaldırırsa (IndexError başlar),
+    algılamanın event tabanına taşınması gerekir — bu test o kopuşu
+    bağırır.
+    """
+    import pygame
+
+    if not pygame.get_init():
+        pygame.init()
+    if not pygame.display.get_init():
+        pygame.display.init()
+    if pygame.display.get_surface() is None:
+        pygame.display.set_mode((320, 240))
+
+    keys = pygame.key.get_pressed()
+    assert keys is not None, 'get_pressed dummy sürücüde çalışmalı'
+    assert len(keys) == 512, 'SDL2 scancode tablosu 512 girişli olmalı'
+    k_prtsc = int(pygame.K_PRINTSCREEN)
+    assert k_prtsc >= 512, 'K_PRINTSCREEN keycode scancode aralığına sığmamalı'
+    # KeyCode indeksi wrapper tarafından scancode'a çevrilmeli: IndexError yok.
+    assert keys[k_prtsc] in (0, 1), 'keycode indeksi kabul edilmeli (dönüşüm çalışıyor)'
