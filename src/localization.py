@@ -11,7 +11,9 @@ Yeni dil eklemek için:
 import importlib.util
 import json
 import os
+import sys
 import threading
+import time
 
 # Desteklenen diller (ISO 639-1 kodları)
 SUPPORTED_LANGUAGES = ['tr', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ja', 'zh', 'ko']
@@ -31392,10 +31394,18 @@ _ensure_language_fallback('ko', ('en', 'tr'))
 # Aktif dil (varsayılan Türkçe)
 _current_language = DEFAULT_LANGUAGE
 
-# localization.py dosyası değiştiğinde runtime'da otomatik yenileme
+# localization.py dosyası değiştiğinde runtime'da otomatik yenileme.
+# OP-002: (1) paketlenmiş (PyInstaller) koşulda geliştirici özelliği olan
+# hot-reload varsayılan kapalı — üretim derlemesinde her t() çağrısına
+# mtime stat'i düşmez; (2) kaynak koşulunda bile mtime kontrolü 0.5 s
+# monotonic throttle ile sınırlı (t() her karede onlarca kez çağrılıyor).
+if getattr(sys, 'frozen', False):
+    os.environ.setdefault('TETRIS_LOCALIZATION_HOT_RELOAD', '0')
 _HOT_RELOAD_ENABLED = os.getenv('TETRIS_LOCALIZATION_HOT_RELOAD', '1') != '0'
 _HOT_RELOAD_LOCK = threading.Lock()
 _LOCALIZATION_FILE = os.path.abspath(__file__)
+_HOT_RELOAD_CHECK_INTERVAL_S = 0.5
+_last_hotreload_check = 0.0
 
 
 def _safe_mtime(path: str) -> float | None:
@@ -31431,17 +31441,30 @@ def _load_fresh_translations_from_file() -> dict[str, dict] | None:
         return None
 
 
-def refresh_localization_if_changed(force: bool = False) -> bool:
+def refresh_localization_if_changed(force: bool = False, *, bypass_throttle: bool = False) -> bool:
     """Dosya değiştiyse localization tablosunu anlık yenile.
+
+    Args:
+        force: True ise mtime karşılaştırmasını atlayip dosyayı yeniden yükle.
+        bypass_throttle: True ise 0.5 s throttle'ini atla (mtime kontrolü
+            yapılır; seyrek, kullanıcı tetiklemeli çağrılar için).
 
     Returns:
         True: tablo yenilendi
         False: değişiklik yok veya yenileme başarısız
     """
-    global TRANSLATIONS, _last_known_mtime
+    global TRANSLATIONS, _last_known_mtime, _last_hotreload_check
 
     if not _HOT_RELOAD_ENABLED:
         return False
+
+    # OP-002: t() her karede çok kez çağrıldığından mtime stat'ini 0.5 s'de
+    # bir ile sınırla. force (açık yeniden yükleme) throttle'i aşar.
+    if not force and not bypass_throttle:
+        _now = time.monotonic()
+        if (_now - _last_hotreload_check) < _HOT_RELOAD_CHECK_INTERVAL_S:
+            return False
+        _last_hotreload_check = _now
 
     current_mtime = _safe_mtime(_LOCALIZATION_FILE)
     if current_mtime is None:
@@ -31479,7 +31502,7 @@ def refresh_localization_if_changed(force: bool = False) -> bool:
 def set_language(lang_code: str) -> bool:
     """Dili değiştir. Başarılıysa True döner."""
     global _current_language
-    refresh_localization_if_changed()
+    refresh_localization_if_changed(bypass_throttle=True)
     if lang_code in SUPPORTED_LANGUAGES:
         _current_language = lang_code
         return True
@@ -31488,6 +31511,45 @@ def set_language(lang_code: str) -> bool:
 def get_language() -> str:
     """Aktif dili döndür"""
     return _current_language
+
+# OP-011: dil başına düz (flat) anahtar→metin tablosu. get_text'in iç içe
+# .get zinciri Python'da argümandan ÖNCE değerlendirildiğinden dil
+# isabetinde bile en içteki expr her çağrıda tam çalışıyordu. Flat değer
+# VARLIK semantiğiyle türetilir (boş string ve None DEĞER olarak korunur
+# — or zinciri KULLANILMAZ). İki sentinel eski zincirin düşüş
+# ayrımını korur: _NO_LANG = anahtar tabloda VAR ama lang/en/tr değerinin
+# hiçbiri yok (default-or-key + kwargs formatlanır); anahtar tabloda hiç
+# yoksa flat'te de yoktur (default-or key, kwargs UYGULANMAZ — eski
+# davranış). Kimlik-invalidasyon: hot-reload TRANSLATIONS globalini
+# YENİDEN bağlar → tablolar düşer (yerinde mutasyon taraması: tüm
+# mutasyon noktaları import anında ya da yeniden bağlamadan hemen sonra
+# — lazy kuruluma göre sıralı; v2 paritesi).
+_NO_LANG = object()
+_ABSENT = object()
+_flat_text_tables: dict = {}
+_flat_text_tables_source = None
+
+
+def _get_flat_text_table(lang: str) -> dict:
+    global _flat_text_tables, _flat_text_tables_source
+    source = TRANSLATIONS
+    if _flat_text_tables_source is not source:
+        _flat_text_tables = {}
+        _flat_text_tables_source = source
+    flat = _flat_text_tables.get(lang)
+    if flat is None:
+        flat = {}
+        for key, entry in source.items():
+            if lang in entry:
+                flat[key] = entry[lang]
+            elif 'en' in entry:
+                flat[key] = entry['en']
+            elif 'tr' in entry:
+                flat[key] = entry['tr']
+            else:
+                flat[key] = _NO_LANG
+        _flat_text_tables[lang] = flat
+    return flat
 
 def get_text(key: str, default: str = None, **kwargs) -> str:
     """Verilen anahtar için çevrilmiş metni döndür.
@@ -31501,20 +31563,23 @@ def get_text(key: str, default: str = None, **kwargs) -> str:
         Çevrilmiş metin
     """
     refresh_localization_if_changed()
-    if key in TRANSLATIONS:
-        # Aktif dilde ara, yoksa EN'ye düş, yoksa TR'ye düş
-        text = TRANSLATIONS[key].get(
-            _current_language, 
-            TRANSLATIONS[key].get('en', TRANSLATIONS[key].get('tr', default or key))
-        )
-        # Format parametreleri varsa uygula
-        if kwargs:
-            try:
-                text = text.format(**kwargs)
-            except (KeyError, ValueError):
-                pass
-        return text
-    return default or key
+    # OP-011: düz tablo araması — dil isabetinde tek dict erişimi.
+    text = _get_flat_text_table(_current_language).get(key, _ABSENT)
+    if text is _ABSENT:
+        # Anahtar tabloda HİÇ yok: default-or-key kwargs UYGULANMADAN döner
+        # (eski `return default or key` dalı — birebir).
+        return default or key
+    if text is _NO_LANG:
+        # Anahtar tabloda VAR ama lang/en/tr değerlerinin hiçbiri yok:
+        # eski zincirin iç-düşüşü (default or key) — kwargs uygulanır.
+        text = default or key
+    # Format parametreleri varsa uygula
+    if kwargs:
+        try:
+            text = text.format(**kwargs)
+        except (KeyError, ValueError):
+            pass
+    return text
 
 def t(key: str, default: str = None, **kwargs) -> str:
     """Kısa alias - get_text için"""
