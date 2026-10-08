@@ -536,15 +536,22 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
         should_recover = True
         recover_reason = 'focus'
 
-    prtsc_down = False
+    # OP-034: get_pressed (~512 baytlık dizi tahsisi) her kare DEĞİL ~120 ms
+    # alt-örnekleme — 220 ms debounce penceresi içinde en az bir örnek;
+    # PrintScreen basma süresi yakalama tetiği için pratikte yeterlidir
+    # (MD: davranışsal zamanlama, görsel değil). Edge/pending mantığı
+    # örnekleme karelerinde koşar; ara karelerde son örnek değeri korunur
+    # (was_down erken düşmez → recover anı eski sınıfta kalır).
+    prtsc_down = bool(state.get('prtsc_was_down', False))
     k_prtsc = getattr(pygame, 'K_PRINTSCREEN', None)
-    if k_prtsc is not None:
+    if k_prtsc is not None and (now_ms - state.get('last_prtsc_probe_ms', -10_000)) >= 120:
+        state['last_prtsc_probe_ms'] = now_ms
         try:
             keys = pygame.key.get_pressed()
             if 0 <= int(k_prtsc) < len(keys):
                 prtsc_down = bool(keys[int(k_prtsc)])
         except Exception:
-            prtsc_down = False
+            prtsc_down = bool(state.get('prtsc_was_down', False))
 
     if prtsc_down and not state['prtsc_was_down']:
         state['pending_prtsc_recover_ms'] = now_ms + 220
@@ -686,9 +693,28 @@ def _apply_screen_to_targets(new_screen, *targets):
         _sync_target_screen(nested_avatar_editor)
 
 
+# OP-034: GL modu çözümü revizyon-anahtarlı cache — her kare env sorgusu +
+# ayar okuma + string normalize tekrarı yok. Anahtar: (settings_manager
+# kimliği, OP-001 revizyon sayacı, env değeri). set('steam_overlay_gl', ...)
+# OP-001 sayacını artırır → cache otomatik düşer; env değişimi anahtara girer.
+_GL_MODE_CACHE = {'sm_id': None, 'rev': None, 'env': None, 'mode': 'auto'}
+
+
 def _get_steam_overlay_gl_mode(settings_manager=None) -> str:
     """Return normalized Steam overlay GL mode: auto|off|force."""
-    raw_value = os.environ.get('QUADRIX_STEAM_OVERLAY_GL')
+    raw_env = os.environ.get('QUADRIX_STEAM_OVERLAY_GL')
+    sm_id = id(settings_manager) if settings_manager is not None else 0
+    rev = None
+    if settings_manager is not None:
+        try:
+            rev = settings_manager.settings_revision
+        except Exception:
+            rev = None
+    cache = _GL_MODE_CACHE
+    if cache['sm_id'] == sm_id and cache['rev'] == rev and cache['env'] == raw_env:
+        return cache['mode']
+
+    raw_value = raw_env
     if raw_value is None and settings_manager is not None:
         try:
             raw_value = settings_manager.get('steam_overlay_gl', 'auto')
@@ -697,10 +723,17 @@ def _get_steam_overlay_gl_mode(settings_manager=None) -> str:
 
     mode = str(raw_value or 'auto').strip().lower()
     if mode in ('0', 'false', 'off', 'disable', 'disabled', 'none'):
-        return 'off'
-    if mode in ('1', 'true', 'on', 'force', 'forced', 'enable', 'enabled'):
-        return 'force'
-    return 'auto'
+        mode = 'off'
+    elif mode in ('1', 'true', 'on', 'force', 'forced', 'enable', 'enabled'):
+        mode = 'force'
+    else:
+        mode = 'auto'
+
+    cache['sm_id'] = sm_id
+    cache['rev'] = rev
+    cache['env'] = raw_env
+    cache['mode'] = mode
+    return mode
 
 
 def _get_overlay_backend(settings_manager=None) -> str:

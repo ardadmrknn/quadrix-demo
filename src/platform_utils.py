@@ -2206,16 +2206,21 @@ def _blit_canvas_to_display() -> None:
             pygame.Rect(0, 0, real_w, by) if by > 0 else None,
             pygame.Rect(0, by + bh, real_w, real_h - (by + bh)) if by > 0 else None,
         )
+        # OP-009: siyah bant fill'leri geometri cache-MISS dalında BİR KEZ
+        # çalışır (resize / canvas swap / display recovery sonrası). Band
+        # pikselleri flip'ler arasında kalıcıdır — display yüzeyine bantlara
+        # yazan başka yol yok (grep denetimi: yalnız merkez subsurface scale
+        # + fallback blit yazar; gl_compat/sdl2_overlay get_display_surface
+        # erişimleri salt okuma). Her kare ~2x(bant_w x real_h) anlamsız
+        # fill bandwidth'i kalktı (4K/WideArena letterbox; v2 paritesi).
+        if fills[0] is not None:
+            _real_display_surface.fill((0, 0, 0), fills[0])
+            _real_display_surface.fill((0, 0, 0), fills[1])
+        if fills[2] is not None:
+            _real_display_surface.fill((0, 0, 0), fills[2])
+            _real_display_surface.fill((0, 0, 0), fills[3])
         _blit_letterbox_cache = (cache_key, sub, *fills)
     _, _sub, _fill_left, _fill_right, _fill_top, _fill_bottom = _blit_letterbox_cache
-
-    # Siyah bantları doldur (Tüm ekranı doldurmak yerine sadece boş yan bantları doldur - 4K ekranlarda yüksek performans sağlar)
-    if _fill_left is not None:
-        _real_display_surface.fill((0, 0, 0), _fill_left)
-        _real_display_surface.fill((0, 0, 0), _fill_right)
-    if _fill_top is not None:
-        _real_display_surface.fill((0, 0, 0), _fill_top)
-        _real_display_surface.fill((0, 0, 0), _fill_bottom)
 
     # Canvas'ı doğrudan display subsurface'ine ölçekle (Geçici Surface tahsisini ve kopyalamayı önler)
     try:
@@ -3046,14 +3051,38 @@ def _patched_event_get(eventtype=None, pump=True, exclude=None):
     except Exception:
         _sdl2_mouse_active = False
 
-    events = [normalize_window_close_event(e) for e in events]
+    # OP-032/OP-053: Alt+F4→QUIT dönüşümü yalnız KEYDOWN'da iş görebilir
+    # (is_alt_f4_event diğer tüm türlere no-op döner). Eski düzen HER kare,
+    # erken-çıkış yolu dahil, kuyruktaki HER event için bir
+    # normalize_window_close_event çağrısı yapıyor ve devre-tamir yolunda
+    # AYNI çağrıyı ikinci kez tekrarlıyordu. Artık normalizasyon tek geçişte
+    # ve yalnız KEYDOWN'a koşullu — MOUSEMOTION gibi yoğun türler fonksiyon
+    # çağrısı ödemez, davranış birebir korunur (c5e8e33 Alt+F4 semantiği
+    # erken-çıkış yolunda da yaşar).
+    _keydown_type = pygame.KEYDOWN
+    # Eski getattr düzeni .type özniteliği olmayan sahte event nesnelerine
+    # sessizdi (test stub'ları, JSON'dan türeyen kodlar); düz e.type bunları
+    # AttributeError ile patlatırdı. Aynı sessizliği koruyan yedekli sarma.
+    try:
+        events = [
+            normalize_window_close_event(e) if e.type == _keydown_type else e
+            for e in events
+        ]
+    except AttributeError:
+        events = [
+            normalize_window_close_event(e)
+            if getattr(e, 'type', None) == _keydown_type
+            else e
+            for e in events
+        ]
     if not _sdl2_mouse_active and (not _software_scale_active or _virtual_blit_rect is None):
         return events
 
     patched = []
     for event in events:
         try:
-            event = normalize_window_close_event(event)
+            # OP-032: ikinci normalize kaldırıldı — comprehension yukarıda
+            # kuyruğu zaten tek kez normalize etti (idempotent no-op'tu).
             etype = event.type
             if etype in (
                 pygame.MOUSEBUTTONDOWN,

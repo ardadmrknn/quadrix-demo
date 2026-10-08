@@ -41,6 +41,30 @@ class _LRUCache:
 _RAW_IMAGE_CACHE = _LRUCache(max_items=96)
 _SCALED_IMAGE_CACHE = _LRUCache(max_items=192)
 
+# OP-033: iki kademeli anahtar — isabet yolunda exists/resolve syscall'ı
+# YOK; MISS'te tam çözüm (_normalize_path) yapılıp ucuz normpath anahtarına
+# bağlanır. Aynı dosyanın farklı yazımları fast-map'te ayrı satır tutabilir
+# (ek bellek sınırlı; ham cache anahtarı ÇÖZÜLMÜŞ yol ile tek girdide
+# birleşir).
+_FAST_PATH_CACHE: "OrderedDict[str, str]" = OrderedDict()
+_FAST_PATH_CACHE_MAX = 512
+
+
+def _resolved_path_for(path: Union[str, os.PathLike]) -> str:
+    """Ucuz kademe: normpath string anahtarı cache'lenmiş çözümü döndürür.
+
+    Isabet yolunda yalnız string işlemi (syscall yok). MISS'te tam
+    çözüm + bağlama (LRU sınırlı).
+    """
+    fast_key = os.path.normpath(str(path))
+    resolved = _FAST_PATH_CACHE.get(fast_key)
+    if resolved is None:
+        resolved = _normalize_path(path)
+        _FAST_PATH_CACHE[fast_key] = resolved
+        while len(_FAST_PATH_CACHE) > _FAST_PATH_CACHE_MAX:
+            _FAST_PATH_CACHE.popitem(last=False)
+    return resolved
+
 
 def _get_root_dir() -> Path:
     """PyInstaller-safe kök dizin (frozen: _MEIPASS, source: proje kökü)."""
@@ -84,7 +108,7 @@ def load_image(
         smoothscale: True ise pygame.transform.smoothscale kullan
     """
 
-    norm_path = _normalize_path(path)
+    norm_path = _resolved_path_for(path)
     raw_key = (norm_path, bool(convert_alpha), bool(convert))
 
     raw = _RAW_IMAGE_CACHE.get(raw_key)
@@ -131,3 +155,5 @@ def clear_image_cache() -> None:
     """Tüm image cache'lerini temizle."""
     _RAW_IMAGE_CACHE.clear()
     _SCALED_IMAGE_CACHE.clear()
+    # OP-033: fast-path eşlemesi de düşer (ilk yükleme yeniden tam çözüm yapar).
+    _FAST_PATH_CACHE.clear()
