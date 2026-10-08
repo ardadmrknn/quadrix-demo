@@ -361,6 +361,100 @@ ACHIEVEMENTS = {
 }
 
 
+def _compute_progress_spec(achievement_id):
+    """Return (stat_key, target, is_boolean) for achievements we can quantify.
+
+    OP-048: bu zincir eski AchievementManager._progress_spec_for gövdesinin
+    birebir kopyasıdır (davranış korunur); yalnızca saf hale getirildi ve
+    import zamanında _PROGRESS_SPEC_TABLE'a döküldü.
+    """
+    if achievement_id == "first_game":
+        return ("total_games", 1, False)
+    if achievement_id == "first_line":
+        return ("total_lines", 1, False)
+    if achievement_id == "first_tetris":
+        return ("total_tetrises", 1, False)
+    if achievement_id == "pvp_first_win":
+        return ("pvp_wins", 1, False)
+
+    match = re.match(r"^score_(\d+)(k)?$", achievement_id)
+    if match:
+        base = int(match.group(1))
+        target = base * 1000 if match.group(2) else base
+        return ("max_score", target, False)
+
+    match = re.match(r"^lines_(\d+)$", achievement_id)
+    if match:
+        return ("max_lines", int(match.group(1)), False)
+
+    match = re.match(r"^tetris_(\d+)$", achievement_id)
+    if match:
+        return ("total_tetrises", int(match.group(1)), False)
+
+    match = re.match(r"^level_(\d+)$", achievement_id)
+    if match:
+        return ("max_level", int(match.group(1)), False)
+
+    match = re.match(r"^games_(\d+)$", achievement_id)
+    if match:
+        return ("total_games", int(match.group(1)), False)
+
+    match = re.match(r"^combo_(\d+)$", achievement_id)
+    if match:
+        return ("max_combo", int(match.group(1)), False)
+
+    match = re.match(r"^pvp_(\d+)_wins$", achievement_id)
+    if match:
+        return ("pvp_wins", int(match.group(1)), False)
+
+    match = re.match(r"^campaign_stars_(\d+)$", achievement_id)
+    if match:
+        return ("campaign_total_stars", int(match.group(1)), False)
+
+    if achievement_id == "campaign_level50_3star":
+        return ("campaign_level_50_stars", 3, False)
+
+    if achievement_id == "campaign_level100_3star":
+        return ("campaign_level_100_stars", 3, False)
+
+    # ── Mod-bazlı başarımlar ──────────────────────────────────────────
+    if achievement_id == "sprint_sub60":
+        return ("sprint_best_time", 240, False)
+    if achievement_id == "sprint_sub45":
+        return ("sprint_best_time", 200, False)
+    if achievement_id == "ultra_50k":
+        return ("ultra_max_score", 10000, False)
+    if achievement_id == "ultra_100k":
+        return ("ultra_max_score", 15000, False)
+    if achievement_id == "survival_5min":
+        return ("survival_max_time", 300, False)
+    if achievement_id == "survival_10min":
+        return ("survival_max_time", 600, False)
+    if achievement_id == "cascade_chain_10":
+        return ("cascade_max_chain", 10, False)
+    if achievement_id == "hardcore_level10":
+        return ("hardcore_max_level", 10, False)
+    if achievement_id == "daily_7_streak":
+        return ("daily_max_streak", 7, False)
+    if achievement_id == "daily_30_streak":
+        return ("daily_max_streak", 30, False)
+    if achievement_id == "wide_200_lines":
+        return ("wide_max_lines", 200, False)
+
+    return None
+
+
+# OP-048: ACHIEVEMENTS statiktir (runtime mutasyonu yok), dolayısıyla
+# tanımlı başarımların ilerleme spec'i import zamanında bir kez hesaplanır.
+# indicate_steam_progress / get_achievement_progress sıcak yollarında artık
+# en fazla 10 regex denemesi yerine tek sözlük araması çalışır. Tablo dışı
+# (beklenmedik) id'ler için zincir yedek olarak korunur.
+_PROGRESS_SPEC_TABLE = {
+    ach_id: _compute_progress_spec(ach_id)
+    for ach_id in ACHIEVEMENTS
+}
+
+
 def get_achievement_name(achievement_id: str) -> str:
     """Başarı ismini yerelleştirilmiş olarak döndür"""
     key = f'ach_{achievement_id}_name'
@@ -901,81 +995,17 @@ class AchievementManager:
         return None
 
     def _progress_spec_for(self, achievement_id):
-        """Return (stat_key, target, is_boolean) for achievements we can quantify."""
-        if achievement_id == "first_game":
-            return ("total_games", 1, False)
-        if achievement_id == "first_line":
-            return ("total_lines", 1, False)
-        if achievement_id == "first_tetris":
-            return ("total_tetrises", 1, False)
-        if achievement_id == "pvp_first_win":
-            return ("pvp_wins", 1, False)
+        """Return (stat_key, target, is_boolean) for achievements we can quantify.
 
-        match = re.match(r"^score_(\d+)(k)?$", achievement_id)
-        if match:
-            base = int(match.group(1))
-            target = base * 1000 if match.group(2) else base
-            return ("max_score", target, False)
-
-        match = re.match(r"^lines_(\d+)$", achievement_id)
-        if match:
-            return ("max_lines", int(match.group(1)), False)
-
-        match = re.match(r"^tetris_(\d+)$", achievement_id)
-        if match:
-            return ("total_tetrises", int(match.group(1)), False)
-
-        match = re.match(r"^level_(\d+)$", achievement_id)
-        if match:
-            return ("max_level", int(match.group(1)), False)
-
-        match = re.match(r"^games_(\d+)$", achievement_id)
-        if match:
-            return ("total_games", int(match.group(1)), False)
-
-        match = re.match(r"^combo_(\d+)$", achievement_id)
-        if match:
-            return ("max_combo", int(match.group(1)), False)
-
-        match = re.match(r"^pvp_(\d+)_wins$", achievement_id)
-        if match:
-            return ("pvp_wins", int(match.group(1)), False)
-
-        match = re.match(r"^campaign_stars_(\d+)$", achievement_id)
-        if match:
-            return ("campaign_total_stars", int(match.group(1)), False)
-
-        if achievement_id == "campaign_level50_3star":
-            return ("campaign_level_50_stars", 3, False)
-
-        if achievement_id == "campaign_level100_3star":
-            return ("campaign_level_100_stars", 3, False)
-
-        # ── Mod-bazlı başarımlar ──────────────────────────────────────────
-        if achievement_id == "sprint_sub60":
-            return ("sprint_best_time", 240, False)
-        if achievement_id == "sprint_sub45":
-            return ("sprint_best_time", 200, False)
-        if achievement_id == "ultra_50k":
-            return ("ultra_max_score", 10000, False)
-        if achievement_id == "ultra_100k":
-            return ("ultra_max_score", 15000, False)
-        if achievement_id == "survival_5min":
-            return ("survival_max_time", 300, False)
-        if achievement_id == "survival_10min":
-            return ("survival_max_time", 600, False)
-        if achievement_id == "cascade_chain_10":
-            return ("cascade_max_chain", 10, False)
-        if achievement_id == "hardcore_level10":
-            return ("hardcore_max_level", 10, False)
-        if achievement_id == "daily_7_streak":
-            return ("daily_max_streak", 7, False)
-        if achievement_id == "daily_30_streak":
-            return ("daily_max_streak", 30, False)
-        if achievement_id == "wide_200_lines":
-            return ("wide_max_lines", 200, False)
-
-        return None
+        OP-048: import zamanında dökülmüş _PROGRESS_SPEC_TABLE ilk bakıştır;
+        tabloya girmeyen (beklenmedik) id'ler için eski saf zincir yedektir.
+        """
+        spec = _PROGRESS_SPEC_TABLE.get(achievement_id)
+        if spec is not None:
+            return spec
+        if achievement_id in _PROGRESS_SPEC_TABLE:
+            return None  # tanımlı ama ölçülemeyen başarım (eski davranış: None)
+        return _compute_progress_spec(achievement_id)
 
     def get_achievement_progress(self, achievement_id):
         """Return progress fields for UI.
