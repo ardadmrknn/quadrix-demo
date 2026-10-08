@@ -392,7 +392,11 @@ def test_poll_only_binding_on_dpad_dir_suppresses_natural_direction():
     assert 'down' in manager._get_overridden_dpad_dirs()
 
     # restart da poll-only: D-pad Up'a bağlanınca 'up' bastırılır.
+    # OP-031: _get_overridden_dpad_dirs artık _bindings_rev sözleşmesiyle
+    # memoize — doğrudan _bindings ataması sonrası rev bump şart (üretim
+    # yolları 644/748 bump'lar; burada test harness'i aynı sözleşmeye uyar).
     manager._bindings = {'restart': {'button': 11}}
+    manager._bindings_rev = getattr(manager, '_bindings_rev', 0) + 1
     assert 'up' in manager._get_overridden_dpad_dirs()
 
 

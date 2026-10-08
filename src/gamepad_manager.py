@@ -94,6 +94,26 @@ WINDOWS_XINPUT_RAW_BUTTON_TO_CANONICAL = {
     10: CONTROLLER_BUTTON_GUIDE,
 }
 
+# OP-046: PlayStation DirectInput/Bluetooth ham buton eşlemesi modül sabiti
+# (eskiden _normalize_playstation_raw_button her çağrıda bu literal'i yeniden
+# kuruyordu; buton döngüsü pad başına kare başına ~15 kez çağırıyordu).
+# Windows DirectInput / DS4 / DualSense Bluetooth ham eşlemesi:
+# Square=0, Cross=1, Circle=2, Triangle=3, L1=4, R1=5, L2=6, R2=7, Share=8,
+# Options=9, L3=10, R3=11, PS=12
+PLAYSTATION_DINPUT_RAW_BUTTON_TO_CANONICAL = {
+    1: 0,   # Cross -> A (0)
+    2: 1,   # Circle -> B (1)
+    0: 2,   # Square -> X (2)
+    3: 3,   # Triangle -> Y (3)
+    4: 9,   # L1 -> LShoulder (9)
+    5: 10,  # R1 -> RShoulder (10)
+    8: 4,   # Share/Select -> Back (4)
+    9: 6,   # Options/Start -> Start (6)
+    10: 7,  # L3 -> LStickClick (7)
+    11: 8,  # R3 -> RStickClick (8)
+    12: 5,  # PS Button -> Guide (5)
+}
+
 # GP-006: Steam Input action snapshot buton adları → canonical SDL buton
 # indeksleri. _SteamInputJoystick bu harita üzerinden get_button() sağlar.
 _STEAM_INPUT_BUTTON_INDEX = {
@@ -378,6 +398,45 @@ DPAD_TO_KEY = {
     'right': pygame.K_RIGHT,
 }
 
+# D-pad buton indeksi → yön (SDL evrensel gamepad düzeneği). OP-030/031:
+# bu tablo ve DPAD_DIR_TO_ACTION daha önce 3 ayrı yöntemde her çağrıda
+# yeniden inşa ediliyordu; tek gerçeklik olarak modül sabitine taşındı.
+DPAD_BTN_TO_DIR = {
+    11: 'up', 12: 'down', 13: 'left', 14: 'right',
+}
+
+# D-pad yönü → doğal oyun aksiyonu. Bastırma kararı (_get_overridden_dpad_dirs)
+# ve buton-yolu çift tetikleme filtresi (_generate_button_events) AYNI tabloyu
+# paylaşmalı; tablolar ayrışırsa ölü-girdi bug'ı geri döner (GP-001).
+DPAD_DIR_TO_ACTION = {
+    'up': 'rotate',
+    'down': 'soft_drop',
+    'left': 'move_left',
+    'right': 'move_right',
+}
+
+# D-pad/stick ok-tuşu → aksiyon haritaları (bağlama göre seçilir).
+# Yalnız okunur: çağıranlar .get kullanır, mutasyon yasağına tabidir.
+DPAD_KEY_ACTION_MAP_GAME = {
+    pygame.K_LEFT: 'move_left',
+    pygame.K_RIGHT: 'move_right',
+    pygame.K_DOWN: 'soft_drop',
+    pygame.K_UP: 'rotate',
+}
+DPAD_KEY_ACTION_MAP_MENU = {
+    pygame.K_LEFT: 'menu_left',
+    pygame.K_RIGHT: 'menu_right',
+    pygame.K_DOWN: 'menu_down',
+    pygame.K_UP: 'menu_up',
+}
+
+# Menü bağlamında buton → aksiyon çakışma çözümüne giren aksiyon kümesi.
+MENU_BUTTON_ACTIONS_LIST = [
+    'menu_confirm', 'menu_back', 'pause',
+    'menu_tab_next', 'menu_tab_prev',
+    'editor_secondary', 'editor_delete',
+]
+
 # Oyun aksiyonu → Klavye tuşu eşlemesi
 ACTION_TO_KEY = {
     # Hareket aksiyonlari: varsayilan olarak D-pad/sol stick uretir (asagidaki
@@ -490,6 +549,10 @@ class GamepadState:
     controller: Optional[object] = None
     gamepad_type: str = GamepadType.UNKNOWN
     name: str = ''
+    # OP-046: isim küçük-harfli biçimi kayıt anında bir kez hesaplanır;
+    # _normalize_raw_button_index pad başına kare başına ~15 kez .lower()
+    # çağırmıyordu. Testlerin isimsiz GamepadState'leri için '' kalır.
+    name_lower: str = ''
     guid: str = ''
     instance_id: Optional[int] = None
     device_index: int = -1
@@ -965,16 +1028,19 @@ class GamepadManager:
             if existing is not None and isinstance(existing.joystick, _SteamInputJoystick):
                 existing.joystick.update_snapshot(snapshot)
                 existing.name = existing.joystick.get_name()
+                existing.name_lower = existing.name.lower()
                 existing.gamepad_type = self._detect_type(existing.joystick)
                 continue
 
             joystick = _SteamInputJoystick(snapshot, key)
             gp_type = self._detect_type(joystick)
+            _si_name = joystick.get_name()
             state = GamepadState(
                 joystick=joystick,
                 controller=joystick,
                 gamepad_type=gp_type,
-                name=joystick.get_name(),
+                name=_si_name,
+                name_lower=_si_name.lower(),
                 guid=joystick.get_guid(),
                 instance_id=key,
                 device_index=key,
@@ -1118,6 +1184,7 @@ class GamepadManager:
                 controller=controller,
                 gamepad_type=gp_type,
                 name=name,
+                name_lower=name.lower(),
                 guid=guid,
                 instance_id=self._get_joystick_instance_id(js),
                 device_index=device_index,
@@ -1230,28 +1297,13 @@ class GamepadManager:
     def _normalize_playstation_raw_button(self, raw_index: int, name: str) -> int:
         """Ham PlayStation joystick buton indekslerini standart SDL layout'una eşler."""
         # Windows DirectInput veya macOS ham Bluetooth modlarında buton indeksleri farklılık gösterir.
-        # Standart SDL GameController düzeni: A=0 (Cross), B=1 (Circle), X=2 (Square), Y=3 (Triangle), 
+        # Standart SDL GameController düzeni: A=0 (Cross), B=1 (Circle), X=2 (Square), Y=3 (Triangle),
         # Back=4 (Share), Guide=5 (PS), Start=6 (Options), L3=7, R3=8, L1=9, R1=10
-        
-        # Yaygın kablosuz / kablolu ham PlayStation eşleme tabloları
-        # 1. Standart Windows DirectInput / DS4 / DualSense Bluetooth ham eşlemesi:
-        # Square=0, Cross=1, Circle=2, Triangle=3, L1=4, R1=5, L2=6, R2=7, Share=8, Options=9, L3=10, R3=11, PS=12
-        dinput_map = {
-            1: 0,   # Cross -> A (0)
-            2: 1,   # Circle -> B (1)
-            0: 2,   # Square -> X (2)
-            3: 3,   # Triangle -> Y (3)
-            4: 9,   # L1 -> LShoulder (9)
-            5: 10,  # R1 -> RShoulder (10)
-            8: 4,   # Share/Select -> Back (4)
-            9: 6,   # Options/Start -> Start (6)
-            10: 7,  # L3 -> LStickClick (7)
-            11: 8,  # R3 -> RStickClick (8)
-            12: 5,  # PS Button -> Guide (5)
-        }
-        
-        # Eğer isim veya cihaz PlayStation olarak tanımlanmışsa ve dinput_map içinde indeks varsa eşle
-        return dinput_map.get(raw_index, raw_index)
+
+        # Eğer isim veya cihaz PlayStation olarak tanımlanmışsa ve eşleme içinde indeks varsa eşle.
+        # OP-046: tablo modül sabitine taşındı (PLAYSTATION_DINPUT_RAW_BUTTON_TO_CANONICAL);
+        # eski davranışın birebir aynısı döner.
+        return PLAYSTATION_DINPUT_RAW_BUTTON_TO_CANONICAL.get(raw_index, raw_index)
 
     def _normalize_raw_button_index(self, gp: Optional[GamepadState], raw_button_index: int) -> int:
         try:
@@ -1261,18 +1313,22 @@ class GamepadManager:
 
         if gp is None:
             return raw_index
-            
+
         gp_type = getattr(gp, 'gamepad_type', GamepadType.UNKNOWN)
-        gp_name = getattr(gp, 'name', '').lower()
-        
+
         if gp_type == GamepadType.XBOX or gp_type == GamepadType.UNKNOWN:
             return WINDOWS_XINPUT_RAW_BUTTON_TO_CANONICAL.get(raw_index, raw_index)
-            
+
         if gp_type == GamepadType.PLAYSTATION:
             # Sadece ham joystick modundaysak (Controller nesnesi yoksa) normalizasyon uygula
             if getattr(gp, 'controller', None) is None:
+                # OP-046: isim yalnızca bu dalda gereklidir; kayıt anında
+                # hesaplanmış name_lower okunur (eski nesneler için yedekle
+                # .lower()). XBOX/UNKNOWN padlerde artık kare başına .lower()
+                # çalışmaz.
+                gp_name = getattr(gp, 'name_lower', '') or getattr(gp, 'name', '').lower()
                 return self._normalize_playstation_raw_button(raw_index, gp_name)
-                
+
         return raw_index
 
     def _read_button_states(self, gp: GamepadState) -> Dict[int, bool]:
@@ -1497,12 +1553,7 @@ class GamepadManager:
             return False
 
         # Yön -> Karşılık gelen aksiyon eşleşmesi
-        dir_to_action = {
-            'up': 'rotate',
-            'down': 'soft_drop',
-            'left': 'move_left',
-            'right': 'move_right'
-        }
+        dir_to_action = DPAD_DIR_TO_ACTION
 
         # Eğer bu yöne atanmış aksiyon (rebind edilmiş buton) şu an basılıysa doğrudan True dön.
         # Cihaz-kapsamlı çağrıda kısayol de aynı cihaza bakar (is_action_pressed
@@ -2419,6 +2470,42 @@ class GamepadManager:
             pass
         return button_actions
 
+    def _resolve_menu_button_actions(self) -> dict:
+        """Menü bağlamı buton → kazanan aksiyon haritası (OP-030).
+
+        Oyun-bağlamı çözümüyle AYNI sözleşme: _bindings_rev değişmedikçe
+        harita kare başına yeniden inşa edilmez. Harita yalnızca
+        _bindings'tan türetilir; bağlam anahtar GEREKMEZ (menü aksiyon
+        listesi sabittir, bağlamı _generate_button_events seçer).
+        Çağıranlar sonucu yalnız okur (mutasyon yok) — cache'li dict
+        doğrudan dönebilir.
+        """
+        rev = getattr(self, '_bindings_rev', 0)
+        cached = getattr(self, '_resolved_menu_buttons_cache', None)
+        if cached is not None and getattr(self, '_resolved_menu_buttons_rev', -1) == rev:
+            return cached
+        button_actions_map: dict[int, list[str]] = {}
+        for action in MENU_BUTTON_ACTIONS_LIST:
+            binding = self._bindings.get(action, {})
+            for btn in self._iter_button_indices(binding):
+                if btn not in button_actions_map:
+                    button_actions_map[btn] = []
+                button_actions_map[btn].append(action)
+
+        button_actions = {}
+        for btn, actions in button_actions_map.items():
+            if len(actions) == 1:
+                button_actions[btn] = actions[0]
+            else:
+                sorted_actions = sorted(actions, key=lambda a: MENU_ACTION_PRIORITY.get(a, 0), reverse=True)
+                button_actions[btn] = sorted_actions[0]
+        try:
+            self._resolved_menu_buttons_cache = button_actions
+            self._resolved_menu_buttons_rev = rev
+        except Exception:
+            pass
+        return button_actions
+
     def _generate_button_events(self, gp: GamepadState) -> List[pygame.event.Event]:
         """Buton basılma/bırakılma olaylarını üret.
         Bağlama göre (game/menu) B butonu farklı davranır.
@@ -2439,35 +2526,14 @@ class GamepadManager:
             # üretmez.
             button_actions = self._resolve_game_button_actions()
         else:
-            # Menü: buton → aksiyon eşlemesi (çakışma çözümü ile)
-            menu_actions_list = [
-                'menu_confirm', 'menu_back', 'pause',
-                'menu_tab_next', 'menu_tab_prev',
-                'editor_secondary', 'editor_delete',
-            ]
-            button_actions_map = {}
-            for action in menu_actions_list:
-                binding = self._bindings.get(action, {})
-                for btn in self._iter_button_indices(binding):
-                    if btn not in button_actions_map:
-                        button_actions_map[btn] = []
-                    button_actions_map[btn].append(action)
+            # Menü: buton → aksiyon eşlemesi (çakışma çözümü ile).
+            # OP-030: çözüm artık _resolve_menu_button_actions içinde
+            # _bindings_rev sözleşmesiyle memoize — kare başına yeniden
+            # inşa edilmez.
+            button_actions = self._resolve_menu_button_actions()
 
-            button_actions = {}
-            for btn, actions in button_actions_map.items():
-                if len(actions) == 1:
-                    button_actions[btn] = actions[0]
-                else:
-                    sorted_actions = sorted(actions, key=lambda a: MENU_ACTION_PRIORITY.get(a, 0), reverse=True)
-                    button_actions[btn] = sorted_actions[0]
-
-        dpad_btn_to_dir = {11: 'up', 12: 'down', 13: 'left', 14: 'right'}
-        dir_to_action = {
-            'up': 'rotate',
-            'down': 'soft_drop',
-            'left': 'move_left',
-            'right': 'move_right'
-        }
+        dpad_btn_to_dir = DPAD_BTN_TO_DIR
+        dir_to_action = DPAD_DIR_TO_ACTION
 
         for btn_idx, action in button_actions.items():
             if action is None:
@@ -2759,16 +2825,22 @@ class GamepadManager:
     def _get_overridden_dpad_dirs(self) -> set:
         """D-Pad butonları (11-14) başka bir eyleme atanmışsa veya
         ilgili hareket eylemine başka bir buton atanmışsa o yönün ok-tuşu eventini bastır."""
+        # OP-031: sonuç yalnızca _bindings'tan türetilir (DPAD sabitleri +
+        # _resolve_game_button_actions + binding taramaları). Oyun-bağlamı
+        # çözümüyle AYNI _bindings_rev sözleşmesiyle memoize: metod pad
+        # başına 2+ kez/kare çağrılıyordu (dpad + stick + yön sorgusu),
+        # her çağrıda üç taramayı yeniden koşuyordu. Çağıranlar kümeyi
+        # yalnızca üyelik testiyle okur (mutasyon taraması temiz) —
+        # cache'li set doğrudan dönebilir.
+        rev = getattr(self, '_bindings_rev', 0)
+        cached = getattr(self, '_dpad_overridden_cache', None)
+        if cached is not None and getattr(self, '_dpad_overridden_rev', -1) == rev:
+            return cached
         overridden = set()
-        dpad_btn_to_dir = {11: 'up', 12: 'down', 13: 'left', 14: 'right'}
+        dpad_btn_to_dir = DPAD_BTN_TO_DIR
 
         # Her bir yönün karşılık geldiği oyun içi hareket/döndürme eylemi
-        dir_to_action = {
-            'up': 'rotate',
-            'down': 'soft_drop',
-            'left': 'move_left',
-            'right': 'move_right'
-        }
+        dir_to_action = DPAD_DIR_TO_ACTION
 
         # 1) D-pad yön butonuna (11-14) bağlı aksiyonların KAZANANI (GP-001
         # öncelik çözümü — _resolve_game_button_actions ile AYNI karar) doğal
@@ -2810,6 +2882,8 @@ class GamepadManager:
             if buttons and not any(btn == btn_code for btn in buttons):
                 overridden.add(btn_dir)
 
+        self._dpad_overridden_cache = overridden
+        self._dpad_overridden_rev = rev
         return overridden
 
     def _generate_repeat_pulses(
@@ -2933,12 +3007,7 @@ class GamepadManager:
         # _event_matches_action sözleşmesi bu damgayı okur; klavye
         # binding remap'i gamepad girdisini düşürmez.
         in_game = (self._context == self.CONTEXT_GAME)
-        action_map = {
-            pygame.K_LEFT: 'move_left' if in_game else 'menu_left',
-            pygame.K_RIGHT: 'move_right' if in_game else 'menu_right',
-            pygame.K_DOWN: 'soft_drop' if in_game else 'menu_down',
-            pygame.K_UP: 'rotate' if in_game else 'menu_up',
-        }
+        action_map = DPAD_KEY_ACTION_MAP_GAME if in_game else DPAD_KEY_ACTION_MAP_MENU
 
         # D-pad X ekseni (sol/sağ)
         if dx != pdx:
@@ -3042,12 +3111,7 @@ class GamepadManager:
         in_game = (self._context == self.CONTEXT_GAME)
         suppressed = self._get_overridden_dpad_dirs() if in_game else set()
 
-        action_map = {
-            pygame.K_LEFT: 'move_left' if in_game else 'menu_left',
-            pygame.K_RIGHT: 'move_right' if in_game else 'menu_right',
-            pygame.K_DOWN: 'soft_drop' if in_game else 'menu_down',
-            pygame.K_UP: 'rotate' if in_game else 'menu_up',
-        }
+        action_map = DPAD_KEY_ACTION_MAP_GAME if in_game else DPAD_KEY_ACTION_MAP_MENU
 
         # ── X Ekseni ──
         if stick.digital_x != stick.prev_digital_x:
