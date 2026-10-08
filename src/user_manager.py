@@ -2,6 +2,7 @@
 from copy import deepcopy
 import json
 import os
+import time
 from datetime import datetime, date
 
 try:
@@ -110,6 +111,13 @@ class UserManager:
         self.users = {}
         self.current_user = None
         self._ach_cache = {}  # Cache: {username: (mtime, set_of_unlocked_ids)}
+        # OP-004: hold istatistiği sıcak yolu (saniyede birden çok) tüm
+        # users.json'ı her seferinde yazmıyor — dirty + ~2 s debounce
+        # (settings_manager.flush_if_due deyimi). Bellek içi sayaç anında
+        # güncel; yalnız disk kalıcılık anı gecikir.
+        self._users_dirty = False
+        self._users_last_change = time.monotonic()
+        self._users_flush_debounce_seconds = 2.0
         self.load_users()
 
     def _profile_root_dir(self) -> str:
@@ -327,6 +335,9 @@ class UserManager:
                 data['current_user'] = self.current_user
             atomic_write_json(self.users_file, data, indent=4, ensure_ascii=False)
             self._save_current_user_state()
+            # OP-004: gerçek yazım dirty'yi sıfırlar — flush_users_if_due
+            # ve oyun sonu update_user_stats yazımları çifte yazmasın.
+            self._users_dirty = False
         except Exception as e:
             print(f"Kullanıcılar kaydedilirken hata: {e}")
 
@@ -571,7 +582,30 @@ class UserManager:
             profile['hold_piece_counts'] = counts
         counts[piece_name] = int(counts.get(piece_name, 0) or 0) + 1
         self._touch_profile(user)
+        # OP-004: sıcak yol disk yazımını ertele — sayaç bellekte anında
+        # güncel (okuyanlar aynı değeri görür). Ana döngüdeki
+        # flush_users_if_due ~2 s'de bir toplu yazar; oyun sonu
+        # update_user_stats ve kapanış force flush nihai yazımı garanti eder.
+        self._users_dirty = True
+        self._users_last_change = time.monotonic()
+
+    def flush_users_if_due(self, force=False):
+        """Debounced users.json yazımını uygun anda diske yaz (OP-004).
+
+        settings_manager.flush_if_due deyiminin aynası. `force=True`
+        (temiz çıkış / restart) debounce'u bypass eder ama dirty YOKSA
+        yazmaz — gereksiz save tetiklemez.
+        """
+        if not getattr(self, '_users_dirty', False):
+            return False
+        if not force:
+            now = time.monotonic()
+            last_change = getattr(self, '_users_last_change', now)
+            debounce = getattr(self, '_users_flush_debounce_seconds', 2.0) or 0.0
+            if (now - last_change) < debounce:
+                return False
         self.save_users()
+        return True
 
     def get_user_by_steam_id(self, steam_id: str) -> str | None:
         """Steam ID ile kullanıcı adını bul (persona adı değişse bile çalışır)."""

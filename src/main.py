@@ -2811,6 +2811,17 @@ def main():
             settings_manager.save_settings()
         except Exception:
             pass
+        # OP-003: debounced başarı/istatistik yazımı da restart'a taşınmalı.
+        try:
+            if achievement_manager is not None:
+                achievement_manager.flush_achievements_if_due(force=True)
+        except Exception:
+            pass
+        # OP-004: debounced users.json yazımı da restart'a taşınmalı.
+        try:
+            user_manager.flush_users_if_due(force=True)
+        except Exception:
+            pass
 
         # Yeni süreç başlat.
         try:
@@ -5242,8 +5253,33 @@ def main():
             settings_manager.flush_if_due()
         except Exception:
             pass
+        # OP-003: debounced başarı/istatistik yazımı (satır-temizleme sıcak
+        # yolu artık her seferinde disk+Steam yazmıyor). Profil yoksa None.
+        if achievement_manager is not None:
+            try:
+                achievement_manager.flush_achievements_if_due()
+            except Exception:
+                pass
+        # OP-004: debounced users.json yazımı (hold istatistiği sıcak yolu).
+        try:
+            user_manager.flush_users_if_due()
+        except Exception:
+            pass
 
         # FPS limitleme frame başında uygulanıyor.
+
+    # OP-003: temiz çıkışta debounced başarı/istatistik yazımını garantiye
+    # al (debounce'u bypass eden force flush; dirty yoksa yazmaz).
+    if achievement_manager is not None:
+        try:
+            achievement_manager.flush_achievements_if_due(force=True)
+        except Exception:
+            pass
+    # OP-004: temiz çıkışta debounced users.json yazımını garantiye al.
+    try:
+        user_manager.flush_users_if_due(force=True)
+    except Exception:
+        pass
 
     # ── macOS: erken shutdown sinyali (merkezi) ────────────────────────
     # Hangi handler running=False yaparsa yapsın, worker thread'lere

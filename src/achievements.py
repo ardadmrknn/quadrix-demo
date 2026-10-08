@@ -3,6 +3,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -664,6 +665,12 @@ class AchievementManager:
             'campaign_level_100_stars': 0,
         }
         self.new_achievements = []  # Yeni açılan başarılar (gösterim için)
+        # OP-003: satır-temizleme sıcak yolunda her seferinde disk + Steam
+        # yazımını engelleyen dirty/debounce durumu (settings_manager.flush_if_due
+        # deyimiyle aynı). Yeni başarım anında yazılır (toast anı korunur).
+        self._dirty = False
+        self._last_change_monotonic = time.monotonic()
+        self._flush_debounce_seconds = 2.0
         self.load()
 
     def grant_unclaimed_rewards(self):
@@ -855,12 +862,46 @@ class AchievementManager:
 
         # Başarıları kontrol et
         self.check_achievements()
-        self.save()
 
-        # İstatistikleri Steam'e senkronla
-        self.sync_stats_to_steam()
-        
+        # OP-003: sıcak yol (satır-temizleme) disk + Steam yazımını
+        # debounce'a alır. YENİ başarım açıldıysa anında yaz — toast/Steam
+        # unlock anı öncekiyle birebir. Değişiklik yalnız istatistikse:
+        # dirty işaretle; ana döngüdeki flush_achievements_if_due ~2 s'de
+        # bir toplu yazar. Koşulsuz dirty: çağıran (ör. online_pvp
+        # game-over) stats'ı doğrudan mutasyona uğrattıysa save amacıyla
+        # buraya gelir.
+        if self.new_achievements:
+            self.save()
+            self.sync_stats_to_steam()
+        else:
+            self._dirty = True
+            self._last_change_monotonic = time.monotonic()
+
         return self.new_achievements
+
+    def flush_achievements_if_due(self, force=False):
+        """Debounced başarı/istatistik yazımını uygun anda diske ve Steam'e yaz.
+
+        settings_manager.flush_if_due deyiminin aynası: `_dirty` +
+        ~2 s debounce. Ana döngü her karede debounce'lu çağırır; temiz
+        çıkış / restart yolları `force=True` ile bypass eder. `force=True`
+        yalnız dirty varken yazar — gereksiz save tetiklemez.
+        """
+        if not getattr(self, '_dirty', False):
+            return False
+        if not force:
+            now = time.monotonic()
+            last_change = getattr(self, '_last_change_monotonic', now)
+            debounce = getattr(self, '_flush_debounce_seconds', 2.0) or 0.0
+            if (now - last_change) < debounce:
+                return False
+        # Önce temizle: save/sync başarısız olsa bile her karede
+        # sonsuz yeniden deneme döngüsüne girmesin (nihai yazım oyun
+        # sonu ve kapanış yollarında garanti).
+        self._dirty = False
+        self.save()
+        self.sync_stats_to_steam()
+        return True
     
     def check_achievements(self):
         """Tüm başarıları kontrol et"""
