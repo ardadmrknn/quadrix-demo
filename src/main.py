@@ -2284,6 +2284,28 @@ def main():
     credits_screen = CreditsScreen(screen)
     extras_screen = ExtrasScreen(screen, user_manager)  # Ekstralar menüsü
     store_screen = StoreScreen(screen, user_manager=user_manager, settings_manager=settings_manager)
+    # Mağaza İLK GİRİŞ karesinin soğuk-önbellek maliyetini (DALGA A ölçümü
+    # B-A1: her girişte ~0.3-0.5s'lik tek kare takılması) başlangıca taşı.
+    # draw() önbelleklerini ilk görünür kareden ÖNCE, pencere henüz siyahken
+    # geçici bir yüzeye doldur; render mantığı değişmez, maliyet mağaza
+    # anından buraya alınır (pixel-identical; statik render probe ile
+    # doğrulandı — canlı arka plan katmanı bir kare evrilir, oyun içinde
+    # zaten her kare akan bir katmandır).
+    # Bilinçli takas: bu prewarm splash'ten önce koşar — maliyet görünür bir
+    # splash'ın ardında değil, siyah pencere süresine eklenir; ilk görünür
+    # kare o kadar gecikir, mağazadaki takılma gider.
+    try:
+        _store_prewarm_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        store_screen.screen = _store_prewarm_surface
+        try:
+            store_screen.draw()
+        finally:
+            store_screen.screen = screen
+            # Hata yolunda da tam boyutlu SRCALPHA yüzeyi main() lokalinde
+            # oturum boyunca GC'de kalmasın — referans her yoldan düşsün.
+            _store_prewarm_surface = None
+    except Exception:
+        pass
     user_selection_screen = UserSelectionScreen(screen, user_manager)
     user_management_screen = UserManagementScreen(screen, user_manager)
     graphics_menu = None  # Grafikler menüsü
@@ -3386,7 +3408,20 @@ def main():
     def _handle_store(delta_ms):
         nonlocal running, state
 
-        for event in pygame.event.get():
+        # B-A1 donma ayırtımı: event.get ve handle_input sürelerini ayrı
+        # fazlara yaz; draw maliyeti toplu handler_ms içinde kalır. Donmanın
+        # draw fazlarının DIŞINDA kaldığı kanıtlandı; geriye event pompası
+        # veya input yolu kalıyor.
+        _poll_t0 = time.perf_counter()
+        _store_events = pygame.event.get()
+        try:
+            perf_telemetry.record_phase(
+                'store', 'store_event_poll_ms', (time.perf_counter() - _poll_t0) * 1000.0
+            )
+        except Exception:
+            pass
+        _input_t0 = time.perf_counter()
+        for event in _store_events:
             if event.type == pygame.QUIT:
                 running = False
             if _check_fullscreen_toggle(event):
@@ -3394,6 +3429,12 @@ def main():
             action = store_screen.handle_input(event)
             if action == 'back':
                 state = 'menu'
+        try:
+            perf_telemetry.record_phase(
+                'store', 'store_input_ms', (time.perf_counter() - _input_t0) * 1000.0
+            )
+        except Exception:
+            pass
         store_screen.draw()
         return True
 
@@ -5102,7 +5143,22 @@ def main():
         _handler_started = time.perf_counter() if perf_telemetry.is_enabled() else None
         did_draw = bool(handler(delta_ms))
         if _handler_started is not None:
-            perf_telemetry.record_phase(_perf_frame_state, 'handler_ms', (time.perf_counter() - _handler_started) * 1000.0)
+            _handler_ms = (time.perf_counter() - _handler_started) * 1000.0
+            perf_telemetry.record_phase(_perf_frame_state, 'handler_ms', _handler_ms)
+            # Tek karelik büyük takılmalar toplu istatistikte kayboluyor; olay
+            # düzeyinde kaydet (B-A1 mağaza donma takibi için). Atıf handler'ın
+            # ÇAĞRILDIĞI state'e yapılır (_perf_frame_state kare başında
+            # alındı; state handler içinde değişebilir).
+            if _handler_ms > 150.0:
+                try:
+                    perf_telemetry.record_event(
+                        'slow_handler',
+                        state=_perf_frame_state,
+                        next_state=state,
+                        ms=round(_handler_ms, 1),
+                    )
+                except Exception:
+                    pass
 
         # Handler içinde (popup/modal) display yeniden oluşturulmuş olabilir.
         # Ana screen referansını ve bağlı ekranları tek noktadan senkronize et.
