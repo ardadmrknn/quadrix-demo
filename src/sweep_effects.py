@@ -385,7 +385,6 @@ class SweepCatState:
         stance half (paw planted, drifts backward as the body advances). Values
         are normalised; callers scale them to pixels by sprite height.
         """
-        import math
 
         t = (int(leg_phase) % 8) / 8.0
         if t < 0.5:
@@ -411,8 +410,6 @@ class SweepCatState:
         phase_index: int,
     ) -> pygame.Surface:
         """Compose one articulated walk frame from the scaled static sprite."""
-        import math
-
         x_norms = list(profile.get('x_norms') or [])
         hip_y = int(max(0.0, min(1.0, profile.get('leg_top_norm', 0.70))) * sh)
         hip_y = max(1, min(sh - 2, hip_y))
@@ -496,8 +493,6 @@ class SweepCatState:
         because it clears the lower footprint before re-blitting, avoiding the
         vertical-smear artefact, while still selling a basic stride.
         """
-        import math
-
         out = pygame.Surface((sw, sh), pygame.SRCALPHA)
         body_cut = max(1, int(sh * 0.66))
         leg_h = max(1, sh - body_cut)
@@ -876,7 +871,6 @@ def draw_line_sweep_band(
 
     # Dikey Dilimleme (Vertical Slicing) ile Dalgalandırma
     band = pygame.Surface(rect.size, pygame.SRCALPHA)
-    import math
     elapsed = pygame.time.get_ticks() / 1000.0
     slice_w = 2
     for sx in range(0, rect.width, slice_w):

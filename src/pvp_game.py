@@ -3,7 +3,9 @@ import pygame
 import random
 import math
 import sys
+import time
 import os
+from dataclasses import replace
 from pathlib import Path
 from board import Board
 from pieces import Piece, create_piece_by_index, SHAPES, get_piece_spawn_y, skip_hidden_rows
@@ -568,7 +570,14 @@ class PvPGame:
         """Pause/exit karartma yüzeyini bounded efekt cache'inden al."""
         width, height = max(1, int(size[0])), max(1, int(size[1]))
         return self._effect_surface_cache.get_filled_surface((width, height), (0, 0, 0, 185))
-    
+
+    def _get_grounded_glow_surface(self, block_size, alpha: int) -> pygame.Surface:
+        """Zemin parça glow yüzeyini bounded efekt cache'inden al (OP-007)."""
+        if getattr(self, '_effect_surface_cache', None) is None:
+            self._effect_surface_cache = EffectSurfaceCache()
+        size = (max(1, int(block_size)), max(1, int(block_size)))
+        return self._effect_surface_cache.get_filled_surface(size, (255, 255, 255, alpha))
+
     def apply_theme_to_pieces(self):
         """Tema + blok stili görünümünü mevcut parçalara uygula (ana oyun temeli)."""
         for piece in (
@@ -3423,7 +3432,6 @@ class PvPGame:
         if not self.board1.is_valid_position(self.current_piece1):
             self.current_piece1.x += 1
             # Duvar çarpma sarsıntısı (Debounced)
-            import pygame
             now = pygame.time.get_ticks()
             last_bump = getattr(self, '_last_p1_left_bump_time', 0)
             if now - last_bump > 180:
@@ -3445,7 +3453,6 @@ class PvPGame:
         if not self.board1.is_valid_position(self.current_piece1):
             self.current_piece1.x -= 1
             # Duvar çarpma sarsıntısı (Debounced)
-            import pygame
             now = pygame.time.get_ticks()
             last_bump = getattr(self, '_last_p1_right_bump_time', 0)
             if now - last_bump > 180:
@@ -3467,7 +3474,6 @@ class PvPGame:
         if not self.board2.is_valid_position(self.current_piece2):
             self.current_piece2.x += 1
             # Duvar çarpma sarsıntısı (Debounced)
-            import pygame
             now = pygame.time.get_ticks()
             last_bump = getattr(self, '_last_p2_left_bump_time', 0)
             if now - last_bump > 180:
@@ -3489,7 +3495,6 @@ class PvPGame:
         if not self.board2.is_valid_position(self.current_piece2):
             self.current_piece2.x -= 1
             # Duvar çarpma sarsıntısı (Debounced)
-            import pygame
             now = pygame.time.get_ticks()
             last_bump = getattr(self, '_last_p2_right_bump_time', 0)
             if now - last_bump > 180:
@@ -4764,8 +4769,7 @@ class PvPGame:
                         ratio = min(1.0, max(0.0, lock_timer / effective_delay))
                         alpha = int(ratio * 150)
                         if alpha > 0:
-                            glow_surf = pygame.Surface((int(block_size), int(block_size)), pygame.SRCALPHA)
-                            glow_surf.fill((255, 255, 255, alpha))
+                            glow_surf = self._get_grounded_glow_surface(block_size, alpha)
                             self.screen.blit(glow_surf, (int(block_x), int(block_y)))
 
         # ===== SATIR TEMİZLEME EFEKTLERİ (ANA OYUNLA BİREBİR AYNI) =====
@@ -4981,8 +4985,8 @@ class PvPGame:
             _tint_a = int(_ot[3] * bg_alpha) if bg_alpha < 1.0 else _ot[3]
             if _tint_a > 0:
                 try:
-                    from dataclasses import replace as _dc_replace
-                    apply_outer_tint(self.screen, _dc_replace(self.mode_skin, outer_tint=(*_ot[:3], _tint_a)))
+                    # OP-063: replace modül başından; fonksiyon içi import yok.
+                    apply_outer_tint(self.screen, replace(self.mode_skin, outer_tint=(*_ot[:3], _tint_a)))
                 except Exception:
                     apply_outer_tint(self.screen, self.mode_skin)
         
@@ -5496,7 +5500,6 @@ class PvPGame:
 
         if is_active:
             # Yanıp sönen cursor
-            import time
             cursor_visible = int(time.time() * 2) % 2 == 0
             if cursor_visible:
                 display += '|'

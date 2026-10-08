@@ -24,6 +24,7 @@ from block_skin_assets import get_equipped_block_appearance
 from board import Board
 from pieces import Piece, SHAPE_NAMES, create_piece_by_index, create_piece_by_name, get_piece_spawn_y, skip_hidden_rows
 from constants import *
+import constants as _constants_mod  # OP-050: DEBUG_MODE runtime'da ayarlardan güncellenir; değer kopyası bayatlar
 from das_controller import DasController
 from sound import SoundManager
 from score_manager import ScoreManager
@@ -886,6 +887,29 @@ class Game:
             key,
             render_inline_action_text_surface(text, label_text, action, font, color),
         )
+
+    def _resolve_hold_label_text(self) -> str:
+        """Hold HUD etiket metnini memo'yla çöz (OP-029).
+
+        t() + parantez-kesme + rstrip zinciri dil ve anahtara göre sabittir;
+        kare başına yeniden koşmasın. Dil değişimi yeni anahtar üretir.
+        """
+        cache = getattr(self, '_hud_label_text_cache', None)
+        if cache is None:
+            cache = {}
+            self._hud_label_text_cache = cache
+        lang = str(get_language() or 'en')
+        cached = cache.get(('hold', lang))
+        if cached is None:
+            hold_label_text = str(t('hold', default='Saklanan (C):')).strip()
+            if '(' in hold_label_text:
+                hold_label_text = hold_label_text.split('(', 1)[0].strip()
+            hold_label_text = hold_label_text.rstrip(':').strip()
+            if not hold_label_text:
+                hold_label_text = str(t('hold', default='Saklanan')).rstrip(':').strip() or 'Saklanan'
+            cached = hold_label_text
+            cache[('hold', lang)] = cached
+        return cached
 
     def _get_solid_alpha_surface(self, size: tuple[int, int], color) -> pygame.Surface:
         """Belirtilen boyut ve renkte katı alfa yüzeyini önbellekten döndürür (salt-okunur blit için)."""
@@ -2960,7 +2984,6 @@ class Game:
         if not self.board.is_valid_position(self.current_piece):
             self.current_piece.x += 1
             # Sola çarpma sarsıntısını tetikle (Debounced)
-            import pygame
             now = pygame.time.get_ticks()
             last_bump = getattr(self, '_last_left_bump_time', 0)
             if now - last_bump > 180:
@@ -2981,7 +3004,6 @@ class Game:
         if not self.board.is_valid_position(self.current_piece):
             self.current_piece.x -= 1
             # Sağa çarpma sarsıntısını tetikle (Debounced)
-            import pygame
             now = pygame.time.get_ticks()
             last_bump = getattr(self, '_last_right_bump_time', 0)
             if now - last_bump > 180:
@@ -4707,17 +4729,23 @@ class Game:
                     game_mode=self.game_mode,
                 )
                 # Yeni başarıları bildirim listesine ekle
-                print(f"[DEBUG] Yeni başarılar: {new_achievements}")
+                # OP-050: her başarı açılışında koşulsuz stdout I/O yapma;
+                # yalnızca debug modda yaz. Modül referansı üzerinden okunur
+                # (main.py DEBUG_MODE'yi runtime'da güncelleyebilir).
+                if _constants_mod.DEBUG_MODE:
+                    print(f"[DEBUG] Yeni başarılar: {new_achievements}")
                 for ach_id in new_achievements:
                     achievement = self.achievement_manager.get_achievement(ach_id)
-                    print(f"[DEBUG] Başarı bilgisi: {achievement}")
+                    if _constants_mod.DEBUG_MODE:
+                        print(f"[DEBUG] Başarı bilgisi: {achievement}")
                     if achievement:
                         self.achievement_notifications.append({
                             'achievement': achievement,
                             'time': pygame.time.get_ticks(),
                             'alpha': 255
                         })
-                        print(f"[DEBUG] Bildirim eklendi! Toplam: {len(self.achievement_notifications)}")
+                        if _constants_mod.DEBUG_MODE:
+                            print(f"[DEBUG] Bildirim eklendi! Toplam: {len(self.achievement_notifications)}")
                         self.sound.play('tetris')  # Başarı sesi (tetris sesi güzel)
                         print(f"Başarı Açıldı: {achievement['name']} - {achievement['description']}")
         
@@ -5217,8 +5245,9 @@ class Game:
             _tint_a = int(_ot[3] * bg_alpha) if bg_alpha < 1.0 else _ot[3]
             if _tint_a > 0:
                 try:
-                    from dataclasses import replace as _dc_replace
-                    apply_outer_tint(self.screen, _dc_replace(ui_skin, outer_tint=(*_ot[:3], _tint_a)))
+                    # OP-063: modül başındaki 'from dataclasses import replace'
+                    # kullanılır; fonksiyon içi import kare başına maliyet ödemiyor.
+                    apply_outer_tint(self.screen, replace(ui_skin, outer_tint=(*_ot[:3], _tint_a)))
                 except Exception:
                     apply_outer_tint(self.screen, ui_skin)
         
@@ -5687,12 +5716,7 @@ class Game:
 
         hold_label_font = retro_style.get_font(max(12, int(18 * hud_scale)))
         hold_binding_label = _compact_action_label('hold', pygame.K_c)
-        hold_label_text = str(t('hold', default='Saklanan (C):')).strip()
-        if '(' in hold_label_text:
-            hold_label_text = hold_label_text.split('(', 1)[0].strip()
-        hold_label_text = hold_label_text.rstrip(':').strip()
-        if not hold_label_text:
-            hold_label_text = str(t('hold', default='Saklanan')).rstrip(':').strip() or 'Saklanan'
+        hold_label_text = self._resolve_hold_label_text()
         hold_label = self._cached_inline_action_text_surface(
             hold_label_text,
             hold_binding_label,

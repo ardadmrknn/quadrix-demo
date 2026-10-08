@@ -24,6 +24,14 @@ from typing import Any, Callable
 
 from leaderboard_rank_utils import rerank_entries_for_local_subset
 
+# OP-050: debug kapısı. constants.DEBUG_MODE runtime'da ayarlardan
+# güncellenebildiğinden (main.py) değer kopyası değil modül referansı
+# okunur; köprü tek başına da yüklenebildiğinden import korumalıdır.
+try:
+    import constants as _constants_mod
+except Exception:  # pragma: no cover - standalone köprü kullanımı
+    _constants_mod = None
+
 # ---------------------------------------------------------------------------
 # DLL yükleyici
 # ---------------------------------------------------------------------------
@@ -1768,7 +1776,14 @@ def sync_stats_to_steam(stats: dict) -> int:
         print("[Steam] İstatistik StoreStats başarısız; yeniden denenecek.")
         return 0
     if count > 0:
-        print(f"[Steam] {count} istatistik için kayıt isteği kabul edildi.")
+        # OP-050: satır temizleme yolunda koşulsuz stdout I/O yapma;
+        # yalnızca debug modda yaz (hata mesajları kapısız kalır).
+        try:
+            _debug_on = bool(_constants_mod is not None and _constants_mod.DEBUG_MODE)
+        except Exception:
+            _debug_on = False
+        if _debug_on:
+            print(f"[Steam] {count} istatistik için kayıt isteği kabul edildi.")
     return count
 
 

@@ -333,11 +333,25 @@ def get_mode_skin(mode: str | None) -> ModeSkin:
     return _SKINS.get(key, _SKINS["classic"])
 
 
+# OP-029: (dil, skin.key) anahtarlı mini cache — her kare HUD bandında
+# başlık/alt başlık t() çözümü yeniden koşmasın. Dil değişimi yeni anahtar.
+_LOCALIZED_SKIN_TITLE_CACHE: dict = {}
+
+
 def get_localized_skin_title(skin: ModeSkin) -> str:
     """Skin başlığını yerelleştirilmiş olarak döndürür."""
     key = f"skin_{skin.key}_title"
+    from localization import get_language
+    cache_key = (str(get_language() or 'en'), skin.key, 'title')
+    cached = _LOCALIZED_SKIN_TITLE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     translated = t(key)
-    return translated if translated != key else skin.title
+    result = translated if translated != key else skin.title
+    if len(_LOCALIZED_SKIN_TITLE_CACHE) > 64:
+        _LOCALIZED_SKIN_TITLE_CACHE.clear()
+    _LOCALIZED_SKIN_TITLE_CACHE[cache_key] = result
+    return result
 
 
 def get_localized_skin_subtitle(skin: ModeSkin) -> str:
@@ -345,8 +359,17 @@ def get_localized_skin_subtitle(skin: ModeSkin) -> str:
     if not skin.subtitle:
         return ""
     key = f"skin_{skin.key}_subtitle"
+    from localization import get_language
+    cache_key = (str(get_language() or 'en'), skin.key, 'subtitle')
+    cached = _LOCALIZED_SKIN_TITLE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     translated = t(key)
-    return translated if translated != key else skin.subtitle
+    result = translated if translated != key else skin.subtitle
+    if len(_LOCALIZED_SKIN_TITLE_CACHE) > 64:
+        _LOCALIZED_SKIN_TITLE_CACHE.clear()
+    _LOCALIZED_SKIN_TITLE_CACHE[cache_key] = result
+    return result
 
 
 def apply_outer_tint(screen: pygame.Surface, skin: ModeSkin, rect: pygame.Rect | tuple[int, int, int, int] | None = None) -> None:

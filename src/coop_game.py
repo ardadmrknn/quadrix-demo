@@ -2131,16 +2131,28 @@ class CoopGame:
             alpha = get_combo_popup_alpha(self.combo_message_time)
             font = getattr(self, 'font_large', None) or retro_style.get_font(max(28, int(cell_size * 1.4)), bold=True)
             msg = str(self.combo_message)
-            shadow = font.render(msg, True, COMBO_POPUP_SHADOW_COLOR)
-            if alpha < 255:
-                shadow.set_alpha(alpha)
+            # OP-016: mesaj başına BİR kez render + cache — kare başına iki
+            # font.render tahsisi kalkar; kare içinde yalnızca set_alpha
+            # (game.py _combo_popup_cache deseni). .copy() yüzeyi paylaşımlı
+            # font cache'inden ayırır ki fade alfası önbelleği kirletmesin;
+            # koşulsuz set_alpha önceki popup'tan kalan bayat alfanın
+            # sıfırlanmasını da garanti eder (mesaj tekrar gösterilirse).
+            # Coop'ta render çıktısı yalnız (msg, font)'a bağlı olduğu için
+            # anahtar board genişliği içermez; blit konumu her kare canlı
+            # hesaplanır.
+            cache_key = (msg, font)
+            cache = getattr(self, '_combo_popup_cache', None)
+            if cache is None or cache[0] != cache_key:
+                shadow = font.render(msg, True, COMBO_POPUP_SHADOW_COLOR).copy()
+                text_surf = font.render(msg, True, get_combo_popup_color(msg)).copy()
+                cache = (cache_key, shadow, text_surf)
+                self._combo_popup_cache = cache
+            _, shadow, text_surf = cache
+            shadow.set_alpha(alpha)
+            text_surf.set_alpha(alpha)
             cx = int(board_offset_x) + int(board_width_px) // 2
             cy = int(board_offset_y) + int(board_height_px) // 3
             self.screen.blit(shadow, shadow.get_rect(center=(cx + 2, cy + 2)))
-            color = get_combo_popup_color(msg)
-            text_surf = font.render(msg, True, color)
-            if alpha < 255:
-                text_surf.set_alpha(alpha)
             self.screen.blit(text_surf, text_surf.get_rect(center=(cx, cy)))
         except Exception:
             pass
@@ -4026,9 +4038,22 @@ class CoopGame:
                     ratio = min(1.0, max(0.0, lock_timer / effective_delay))
                     alpha = int(ratio * 150)
                     if alpha > 0:
-                        glow_surf = pygame.Surface((int(block_size), int(block_size)), pygame.SRCALPHA)
-                        glow_surf.fill((255, 255, 255, alpha))
+                        glow_surf = self._get_grounded_glow_surface(block_size, alpha)
                         self.screen.blit(glow_surf, (int(block_x), int(block_y)))
+
+    def _get_grounded_glow_surface(self, block_size, alpha: int) -> pygame.Surface:
+        """Zemin parça glow yüzeyini bounded efekt cache'inden al (OP-007)."""
+        size = (max(1, int(block_size)), max(1, int(block_size)))
+        cache = getattr(self, '_effect_surface_cache', None)
+        if cache is None:
+            try:
+                from effect_surface_cache import EffectSurfaceCache as _ESC
+                cache = self._effect_surface_cache = _ESC()
+            except Exception:
+                surf = pygame.Surface(size, pygame.SRCALPHA)
+                surf.fill((255, 255, 255, alpha))
+                return surf
+        return cache.get_filled_surface(size, (255, 255, 255, alpha))
 
     def _draw_ghost(self, player: str, ox, oy, cs) -> None:
         piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece

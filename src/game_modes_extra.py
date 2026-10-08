@@ -6,6 +6,7 @@ import contextlib
 import math
 import os
 import sys
+import time
 import random
 from typing import Any, Dict, List, Optional
 
@@ -9810,9 +9811,10 @@ class MysteryMode(Game):
             title_font = fonts.get('panel_header') or fonts.get('large') or fonts.get('small')
             hint_font = fonts.get('small')
 
-            # Karartma katmanı.
-            dim = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
-            dim.fill((0, 0, 0, 150))
+            # Karartma katmanı. — OP-017: kare-başı tam-ekran SRCALPHA + fill
+            # yerine sınırlı LRU katı-alfa önbelleği (v2 muadili zaten bu yolu
+            # kullanıyor — iki repo paritesi).
+            dim = self._get_solid_alpha_surface((active_width, active_height), (0, 0, 0, 150))
             self.screen.blit(dim, (0, 0))
 
             # Grid geometrisi (MysteryCardUI.draw_active_slots_grid ile aynı kurallar).
@@ -9908,9 +9910,9 @@ class MysteryMode(Game):
             board_w_px = self.board.width * cell_size
             board_h_px = self.board.height * cell_size
 
-            # Hafif karartılmış overlay
-            dim = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
-            dim.fill((0, 0, 0, 110))
+            # Hafif karartılmış overlay — OP-017: kare-başı tam-ekran SRCALPHA
+            # + fill yerine sınırlı LRU katı-alfa önbelleği.
+            dim = self._get_solid_alpha_surface((active_width, active_height), (0, 0, 0, 110))
             self.screen.blit(dim, (0, 0))
 
             # Tahta çerçevesi
@@ -9924,8 +9926,8 @@ class MysteryMode(Game):
                 col = 0
             col_x = board_x + col * cell_size
             col_rect = pygame.Rect(col_x, board_y, cell_size, board_h_px)
-            highlight = pygame.Surface((cell_size, board_h_px), pygame.SRCALPHA)
-            highlight.fill((140, 230, 200, 70))
+            # OP-017: sabit renkli sütun vurgusu da aynı LRU yolundan.
+            highlight = self._get_solid_alpha_surface((cell_size, board_h_px), (140, 230, 200, 70))
             self.screen.blit(highlight, col_rect.topleft)
             pygame.draw.rect(self.screen, (170, 255, 220), col_rect, 2)
 
@@ -9943,9 +9945,8 @@ class MysteryMode(Game):
             arrow_top_y = arrow_tip_y - max(12, cell_size // 2)
             half_w = max(7, cell_size // 3)
             try:
-                # Yumuşak nabız efekti
-                import time as _t
-                pulse = (math.sin(_t.time() * 6.0) + 1.0) * 0.5  # 0..1
+                # Yumuşak nabız efekti (OP-063: time modül başından)
+                pulse = (math.sin(time.time() * 6.0) + 1.0) * 0.5  # 0..1
             except Exception:
                 pulse = 1.0
             arrow_color = (
@@ -10029,8 +10030,8 @@ class MysteryMode(Game):
             self._sniper_hover_pos = mouse_pos
             
             # === FULL SCREEN DARK OVERLAY ===
-            dim_overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
-            dim_overlay.fill((0, 0, 0, 120))
+            # OP-017: kare-başı tam-ekran SRCALPHA + fill yerine LRU.
+            dim_overlay = self._get_solid_alpha_surface((active_width, active_height), (0, 0, 0, 120))
             self.screen.blit(dim_overlay, (0, 0))
             
             # === BOARD HIGHLIGHT FRAME ===
@@ -10041,8 +10042,7 @@ class MysteryMode(Game):
                 board_height + 12
             )
             
-            # Animated glow effect
-            import time
+            # Animated glow effect (OP-063: time modül başından)
             glow_intensity = int(abs(math.sin(time.time() * 3)) * 50 + 100)
             
             # Multi-layer glow using retro style colors
@@ -10055,18 +10055,31 @@ class MysteryMode(Game):
             pygame.draw.rect(self.screen, retro_style.primary, board_rect, 3, border_radius=2)
             
             # === GRID OVERLAY FOR BETTER TARGETING ===
-            grid_color = (*retro_style.grid_color, 60)
-            for x in range(self.board.width + 1):
-                line_x = board_x + x * cell_size
-                pygame.draw.line(self.screen, grid_color, 
-                               (line_x, board_y), 
-                               (line_x, board_y + board_height), 1)
-            
-            for y in range(self.board.height + 1):
-                line_y = board_y + y * cell_size
-                pygame.draw.line(self.screen, grid_color, 
-                               (board_x, line_y), 
-                               (board_x + board_width, line_y), 1)
+            # OP-017: game.py _board_grid_cache deseni — çizgiler board-yerel
+            # SRCALPHA yüzeye bir kez çizilir, her kare tek blit. PİKSEL PARİTESİ
+            # probe ile kanıtlandı (probe_op017_grid_parity2.py): self.screen
+            # piksel-alfasızdır (display/convert) ve draw.line RGBA rengin
+            # alfasını yok sayar — mevcut çizgiler bugün opak render ediliyor;
+            # önbellek de aynı opak çizgileri üretir. set_alpha KULLANILMAZ
+            # (probe: her set_alpha varyantı piksel değiştirir → macOS Metal
+            # smoke gereksinimi kökten ortadan kalktı). Yüzey +1px tutulur ki
+            # sağ/alt kenar çizgileri kırpılmasın (game.py grid deseniyle aynı).
+            grid_rgb = tuple(retro_style.grid_color)
+            grid_key = (cell_size, grid_rgb, self.board.width, self.board.height)
+            grid_cache = getattr(self, '_sniper_grid_cache', None)
+            if grid_cache is None or grid_cache[0] != grid_key:
+                grid_surf = pygame.Surface((board_width + 1, board_height + 1), pygame.SRCALPHA)
+                for gx in range(self.board.width + 1):
+                    pygame.draw.line(grid_surf, grid_rgb,
+                                     (gx * cell_size, 0),
+                                     (gx * cell_size, board_height), 1)
+                for gy in range(self.board.height + 1):
+                    pygame.draw.line(grid_surf, grid_rgb,
+                                     (0, gy * cell_size),
+                                     (board_width, gy * cell_size), 1)
+                grid_cache = (grid_key, grid_surf)
+                self._sniper_grid_cache = grid_cache
+            self.screen.blit(grid_cache[1], (board_x, board_y))
             
             # === TARGET CELL HIGHLIGHTING ===
             cell = self._sniper_screen_to_cell(mouse_pos)
@@ -10088,8 +10101,10 @@ class MysteryMode(Game):
                 # === BEYAZ HOVER OVERLAY (her hücrede mouse'un olduğu yer belli olsun) ===
                 hover_pulse = abs(math.sin(time.time() * 3.5)) * 0.5 + 0.5
                 hover_alpha = int(70 + hover_pulse * 70)
-                hover_layer = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
-                hover_layer.fill((255, 255, 255, hover_alpha))
+                # OP-017: fill+blit aynı hesap — yalnız tahsis LRU'ya iner.
+                # hover_alpha 70..140 → hücre boyutu başına ≤71 anahtar (256'lık
+                # LRU içinde rahat). set_alpha KULLANILMAZ (probe kanıtı).
+                hover_layer = self._get_solid_alpha_surface((cell_size, cell_size), (255, 255, 255, hover_alpha))
                 self.screen.blit(hover_layer, target_rect.topleft)
                 pygame.draw.rect(
                     self.screen,
@@ -11241,7 +11256,24 @@ class MysteryMode(Game):
                 config = sm.get_controls().get('card_slots', {}) or {}
             except Exception:
                 config = {}
-        for idx in range(self.card_manager.MAX_CARD_SLOTS):
+        # OP-027: ayar imzası değişmedikçe key_code çözüm dizisi tekrar
+        # koşmasın. İmza config'in hash'lenebilir özeti — invalidasyon kendi
+        # kendine: ayar değişince imza değişir, hotplug/bağlama noktası
+        # aranmaz. Çağıranlar sonucu yalnız okur (mutasyon yok), cache'li
+        # liste doğrudan dönebilir.
+        slot_count = self.card_manager.MAX_CARD_SLOTS
+        sig_parts = []
+        for i in range(slot_count):
+            row = config.get(f'slot_{i + 1}')
+            if isinstance(row, dict):
+                sig_parts.append(tuple(sorted((str(k), str(v)) for k, v in row.items())))
+            else:
+                sig_parts.append((str(row),))
+        sig = tuple(sig_parts)
+        cached = getattr(self, '_slot_keybindings_cache', None)
+        if cached is not None and cached[0] == sig:
+            return cached[1]
+        for idx in range(slot_count):
             keys: set = set()
             row = config.get(f'slot_{idx + 1}')
             for slot in ('primary', 'secondary'):
@@ -11256,6 +11288,7 @@ class MysteryMode(Game):
             if not keys:
                 keys.update(self._DEFAULT_SLOT_KEYCODES[idx])
             resolved.append(keys)
+        self._slot_keybindings_cache = (sig, resolved)
         return resolved
 
     def _slot_index_for_keycode(self, key: int) -> int | None:
@@ -14743,9 +14776,8 @@ class MysteryMode(Game):
         popup_x = max(s(12), (active_width - popup_width) // 2)
         popup_y = max(s(12), (active_height - popup_height) // 2)
 
-        # Arka plan overlay
-        overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 200))
+        # Arka plan overlay — OP-017: LRU katı-alfa (kare-başı tahsis kalkar).
+        overlay = self._get_solid_alpha_surface((active_width, active_height), (0, 0, 0, 200))
         self.screen.blit(overlay, (0, 0))
 
         # Dış glow
@@ -15105,9 +15137,8 @@ class MysteryMode(Game):
         popup_x = max(s(12), (active_width - popup_width) // 2)
         popup_y = max(s(12), (active_height - popup_height) // 2)
         
-        # Arka plan overlay - daha koyu
-        overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 200))
+        # Arka plan overlay - daha koyu — OP-017: LRU katı-alfa (kare-başı tahsis kalkar).
+        overlay = self._get_solid_alpha_surface((active_width, active_height), (0, 0, 0, 200))
         self.screen.blit(overlay, (0, 0))
         
         # Dış glow efekti
