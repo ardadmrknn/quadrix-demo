@@ -50,6 +50,9 @@ def _make_screen():
     # kullanır — iki repo ortak testte ikisi de enjekte edilir.
     scr.font_normal_size = 18
     scr.font_small_size = 14
+    # Aynı oturumda önce koşan bir test pygame.quit() yapmışsa font modülü
+    # kapanır; Font() "font not initialized" verir. init idempotent'tir.
+    pygame.font.init()
     scr.font_normal = pygame.font.Font(None, 18)
     scr.font_small = pygame.font.Font(None, 14)
     scr._should_use_steam_avatar_for_user = lambda user_data, is_active: False
