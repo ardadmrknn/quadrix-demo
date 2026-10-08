@@ -3028,6 +3028,9 @@ def main():
                                     try:
                                         if not settings_manager.get('show_debug_settings', False):
                                             settings_manager.settings['show_debug_settings'] = True
+                                            # OP-001: doğrudan dict yazımı — revizyonu
+                                            # elle bump'la (ana döngü kapısı görsün).
+                                            settings_manager.bump_settings_revision()
                                     except Exception:
                                         pass
                                     try:
@@ -4877,6 +4880,11 @@ def main():
     # Ekran geçiş efekti için state takibi
     _previous_state = state
     _prev_transition_active = False  # PERF telemetrisi: geçiş aktif→pasif kenarı için
+    # OP-001: ana döngü ayar senkronu revizyon kapısı — settings_screen
+    # sync'i yalnız SettingsManager revizyonu değişince çağrılır (kare-başı
+    # çift deepcopy + ~35 ayar okuması kalkar). None → sayaç yoksa (güvensiz
+    # mod) her kare senkron (bayat-ayar riskine kapalı kalmak için).
+    _last_synced_settings_rev = None
     # İlk açılış / tutorial sonrası ana menüde tek seferlik duyuru paneli.
     # 'announcement_seen' bayrağı false ise, oyuncunun ana menüye ilk
     # varışında (ilk açılış VEYA tutorial'dan çıkış) panel bir kez gösterilir.
@@ -5061,8 +5069,13 @@ def main():
 
         # Pause menüsü gibi başka yerlerden ayarlar değişebiliyor.
         # Bu yüzden SettingsScreen cache'ini SettingsManager ile senkron tut.
-        if settings_screen:
+        # OP-001: yalnız ayar revizyonu değişince çağır (set/update/reset/
+        # playlist set* + main.py cheat-yolu bump'lar). Sayaç yoksa (eski
+        # instance) her kare çağır — davranış öncekiyle birebir.
+        _settings_rev = getattr(settings_manager, 'settings_revision', None)
+        if settings_screen and (_settings_rev is None or _settings_rev != _last_synced_settings_rev):
             settings_screen.sync_from_settings_manager()
+            _last_synced_settings_rev = _settings_rev
         
         # Ekran geçiş efektini güncelle
         transition_active = update_screen_transition()

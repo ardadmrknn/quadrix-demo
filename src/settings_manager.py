@@ -406,6 +406,14 @@ class SettingsManager:
         self._dirty = False
         self._last_change_monotonic = now
 
+        # OP-001: monotonik ayar-revizyon sayacı. Gerçek mutasyon yolları
+        # (set/update/reset/playlist set*) artırır; ana döngü yalnız revizyon
+        # değişince sync_from_settings_manager çağırır — kare-başı çift
+        # deepcopy + ~35 ayar okuması kalkar. get yollarındaki idempotent
+        # normalizasyon yazmaları (get_controls, lazy playlist normalize)
+        # sayacı ARTIRMAZ: değer ilk okunuşta zaten normaldir.
+        self.settings_revision = 1
+
     def _get_default_settings_override_path(self) -> str | None:
         """Varsayılan ayar override dosya yolunu döndür."""
         try:
@@ -1118,6 +1126,15 @@ class SettingsManager:
     def gamepad_rumble_enabled(self) -> bool:
         return self.get_gamepad_rumble_level() != 'off'
     
+    def bump_settings_revision(self):
+        """Ayar-revizyon sayacını artır (OP-001, içerik değişim sinyali).
+
+        Yalnız gerçek mutasyon yolları ve modül dışı doğrudan dict
+        yazımları çağırır. `save_settings`/`flush_if_due` artırmaz (disk
+        yazımı içerik değişimi değildir).
+        """
+        self.settings_revision = getattr(self, 'settings_revision', 0) + 1
+
     def set(self, key, value):
         """Ayar değerini güncelle ve kaydet"""
         if key in OBSOLETE_SETTINGS_KEYS:
@@ -1130,6 +1147,7 @@ class SettingsManager:
 
         self._normalize_display_settings_inplace(self.settings)
         self._sync_ui_scale_preset()
+        self.bump_settings_revision()
 
         # Debounced keys: disk yazımını geciktir.
         if key in getattr(self, '_debounced_keys', set()):
@@ -1153,6 +1171,7 @@ class SettingsManager:
         self.settings.update(kwargs)
         self._normalize_display_settings_inplace(self.settings)
         self._sync_ui_scale_preset()
+        self.bump_settings_revision()
 
         debounced_keys = getattr(self, '_debounced_keys', set())
         should_debounce = any(k in debounced_keys for k in kwargs.keys())
@@ -1170,6 +1189,7 @@ class SettingsManager:
         self._normalize_display_settings_inplace(self.settings)
         self._sync_ui_scale_preset()
         self.settings['controls'] = self._merge_controls(self.settings.get('controls', {}))
+        self.bump_settings_revision()
         self.save_settings()
         if constants.DEBUG_MODE:
             print("[SIFIRLANDI] Ayarlar varsayilana sifirlandi")
@@ -1197,6 +1217,7 @@ class SettingsManager:
             overrides[key] = value
         elif key in overrides:
             del overrides[key]
+        self.bump_settings_revision()
         self.save_settings()
 
     def get_music_preference_for_mode(self, mode_key):
@@ -1255,6 +1276,7 @@ class SettingsManager:
         self.settings['menu_music_playlist'] = normalized
         if normalized:
             self.settings['menu_music'] = normalized[0]
+        self.bump_settings_revision()
         self.save_settings()
 
     def get_game_music_playlist(self):
@@ -1270,6 +1292,7 @@ class SettingsManager:
         self.settings['game_music_playlist'] = normalized
         if normalized:
             self.settings['game_music'] = normalized[0]
+        self.bump_settings_revision()
         self.save_settings()
 
     def get_campaign_music_playlist(self):
@@ -1282,6 +1305,7 @@ class SettingsManager:
     def set_campaign_music_playlist(self, playlist):
         normalized = self._normalize_playlist(playlist)
         self.settings['campaign_music_playlist'] = normalized
+        self.bump_settings_revision()
         self.save_settings()
 
     def get_mode_music_playlists(self):
@@ -1311,6 +1335,7 @@ class SettingsManager:
             playlists[key] = normalized
         elif key in playlists:
             del playlists[key]
+        self.bump_settings_revision()
         self.save_settings()
 
     def get_music_playlist_for_mode(self, mode_key):
