@@ -14,11 +14,11 @@ try:
         is_default_block_skin as _is_default_block_skin,
         list_block_skins as _list_block_skins,
     )
-    from .localization import t  # type: ignore
+    from .localization import t, get_language  # type: ignore
     from .platform_utils import normalize_mouse_pos, get_mouse_pos  # type: ignore
     from .renderers.jelly_renderer import draw_jelly_block  # type: ignore
     from .retro_style import retro_style  # type: ignore
-    from .ui_scaling import get_projected_effective_scale  # type: ignore
+    from .ui_scaling import get_projected_effective_scale, is_virtual_canvas_active  # type: ignore
     from .back_button import draw_back_button as _draw_shared_back_button  # type: ignore
 except Exception:
     from block_skin_assets import (
@@ -28,11 +28,11 @@ except Exception:
         is_default_block_skin as _is_default_block_skin,
         list_block_skins as _list_block_skins,
     )
-    from localization import t
+    from localization import t, get_language
     from platform_utils import normalize_mouse_pos, get_mouse_pos
     from renderers.jelly_renderer import draw_jelly_block
     from retro_style import retro_style
-    from ui_scaling import get_projected_effective_scale
+    from ui_scaling import get_projected_effective_scale, is_virtual_canvas_active
     from back_button import draw_back_button as _draw_shared_back_button
 
 try:
@@ -2967,6 +2967,26 @@ class StoreScreen:
         # yalnızca çizimde yerel `accent` kullanılır.
         rarity = self._card_current_rarity(product)
         accent = _CARD_RARITY_ACCENTS.get(rarity, product.accent)
+        # OP-010: gövde tam deterministiktir (zaman/fare girdisi yok — girdiler:
+        # ürün, enderlik, sahiplik durumu, boyut, hero, ölçek, dil). Önizleme
+        # (product_id, rarity, state, boyut, hero, dil, ölçek-temeli) anahtarlı
+        # önbelleğe BİR kez çizilir; hero ve ray her kare yalnızca blit yapar.
+        # _card_icon_cache/_coin_scaled_cache ile aynı lazy-init deyimi.
+        state_key = self._resolve_ownership_state(product)
+        preview_key = (
+            product.product_id, rarity, state_key, rect.width, rect.height, bool(hero),
+            get_language(),
+            round(float(getattr(self, '_draw_scale', 1.0) or 1.0), 4),
+            is_virtual_canvas_active(),
+        )
+        cache = getattr(self, '_card_preview_cache', None)
+        if cache is None:
+            cache = {}
+            self._card_preview_cache = cache
+        cached_preview = cache.get(preview_key)
+        if cached_preview is not None:
+            self.screen.blit(cached_preview, rect.topleft)
+            return
         preview = pygame.Surface(rect.size, pygame.SRCALPHA)
         radius = self._s(14 if hero else 12)
 
@@ -3050,6 +3070,9 @@ class StoreScreen:
         # 5) Accent border + inner highlight (kozmetik önizlemeyle aynı stil).
         pygame.draw.rect(preview, (*accent, 150), preview.get_rect(), 2, border_radius=radius)
         pygame.draw.rect(preview, (255, 255, 255, 22), preview.get_rect().inflate(-2, -2), 1, border_radius=max(1, radius - 1))
+        if len(cache) > 96:
+            cache.clear()
+        cache[preview_key] = preview
         self.screen.blit(preview, rect.topleft)
 
     def _draw_block_product_preview(self, product: StoreProduct, rect: pygame.Rect, *, hero: bool) -> None:
@@ -3186,9 +3209,9 @@ class StoreScreen:
     def _draw_preview_trail(self, surface: pygame.Surface, rect: pygame.Rect, product: StoreProduct) -> None:
         # Soft accent halo behind the trail — kept very subtle so it doesn't
         # mimic the panel-on-panel "bright plate" we deliberately removed.
+        # OP-026: halo yüzeyi boyut+renk+yarıçap anahtarlı önbellekten.
         glow_rect = rect.inflate(self._s(14), self._s(8))
-        glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(glow, (*product.accent, 30), glow.get_rect(), border_radius=self._s(14))
+        glow = self._get_glow_surface(glow_rect.size, (*product.accent, 30), self._s(14))
         surface.blit(glow, glow_rect.topleft)
 
         # Pass the same phase the cat preview uses so the flag overlays
@@ -3271,10 +3294,36 @@ class StoreScreen:
         pygame.draw.rect(thumb_surf, (126, 168, 238, 180), thumb_surf.get_rect(), border_radius=track_width // 2)
         self.screen.blit(thumb_surf, thumb_rect.topleft)
 
+    def _get_glow_surface(self, size: tuple[int, int], color, border_radius: int) -> pygame.Surface:
+        """OP-026: yumuşak halo yüzeyini boyut+renk+yarıçap anahtarlı önbellekten.
+
+        Üretim birebir aynı: SRCALPHA yüzey + tek köşe-yarıçaplı draw.rect;
+        yalnızca tahsis önbelleğe iner. _card_icon_cache ile aynı lazy-init
+        deyimi, >96 clear üst sınırı (_preview_backdrop_cache ile aynı).
+        """
+        width, height = max(1, int(size[0])), max(1, int(size[1]))
+        color = tuple(color)
+        radius = max(0, int(border_radius))
+        key = (width, height, color, radius)
+        cache = getattr(self, '_glow_surface_cache', None)
+        if cache is None:
+            cache = {}
+            self._glow_surface_cache = cache
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+        glow = pygame.Surface((width, height), pygame.SRCALPHA)
+        pygame.draw.rect(glow, color, glow.get_rect(), border_radius=radius)
+        if len(cache) > 96:
+            cache.clear()
+        cache[key] = glow
+        return glow
+
     def _draw_soft_glow(self, rect: pygame.Rect, color: tuple[int, int, int], *, alpha: int, padding: int) -> None:
         glow_rect = rect.inflate(padding * 2, padding * 2)
-        glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(glow, (*color, alpha), glow.get_rect(), border_radius=self._s(18))
+        # OP-026: her çağrıda (tab glow, kart satırı glow'ları) taze Surface
+        # yerine boyut+renk+yarıçap anahtarlı önbellek yüzeyi.
+        glow = self._get_glow_surface(glow_rect.size, (*color, alpha), self._s(18))
         self.screen.blit(glow, glow_rect.topleft)
 
     def _product_title(self, product: StoreProduct) -> str:
