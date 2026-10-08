@@ -5853,7 +5853,7 @@ class OnlinePvPGame:
         effective_lobby_list = self._get_lobby_entries_for_display()
 
         count_font = _rs.get_font(s(12, minimum=9), bold=False)
-        count_text = count_font.render(str(len(effective_lobby_list)), True, _rs.text_primary)
+        count_text = render_text(count_font, str(len(effective_lobby_list)), True, _rs.text_primary)
         count_pad_x = s(10)
         count_pad_y = s(5)
         count_rect = pygame.Rect(
@@ -5880,8 +5880,8 @@ class OnlinePvPGame:
 
         if self._lobby_list_fetching and not debug_lobby_mode:
             dots = '.' * (int(time.time() * 2) % 4)
-            f_txt = _rs.get_font(s(16, minimum=11), bold=False).render(
-                t('searching', 'Aranıyor') + dots, True, _rs.text_secondary)
+            searching_font = _rs.get_font(s(16, minimum=11), bold=False)
+            f_txt = render_text(searching_font, t('searching', 'Aranıyor') + dots, True, _rs.text_secondary)
             self.screen.blit(f_txt, f_txt.get_rect(
                 center=(list_x + list_w // 2, list_y + list_h // 2)))
         elif not effective_lobby_list:
@@ -5890,8 +5890,8 @@ class OnlinePvPGame:
             if self._auto_lobby_refresh_requested:
                 self.screen.blit(e1, e1.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2)))
             else:
-                e2 = _rs.get_font(s(14, minimum=10), bold=False).render(
-                    t('press_find_match', '"Maç Bul" ile arayın'), True, _rs.text_muted)
+                e2_font = _rs.get_font(s(14, minimum=10), bold=False)
+                e2 = render_text(e2_font, t('press_find_match', '"Maç Bul" ile arayın'), True, _rs.text_muted)
                 self.screen.blit(e1, e1.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 - s(10))))
                 self.screen.blit(e2, e2.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 + s(14))))
         else:
@@ -6501,8 +6501,8 @@ class OnlinePvPGame:
         my_color = UIColors.NEON_GREEN if self.my_ready else _rs.text_primary
         opp_color = UIColors.NEON_GREEN if self.opponent_ready else _rs.text_primary
 
-        my_s = nf.render(my_name, True, my_color)
-        opp_s = nf.render(opp_name, True, opp_color)
+        my_s = render_text(nf, my_name, True, my_color)
+        opp_s = render_text(nf, opp_name, True, opp_color)
         self.screen.blit(my_s, my_s.get_rect(center=(my_cx, name_y)))
         self.screen.blit(opp_s, opp_s.get_rect(center=(opp_cx, name_y)))
 
@@ -6645,20 +6645,7 @@ class OnlinePvPGame:
         self._draw_opponent_board(opp_x, board_top, cell_size)
 
         # ─ Combo mesajı (DOUBLE/TRIPLE/QUADRIX) ─
-        if self.my_combo_message_time > 0 and self.my_combo_message:
-            alpha = get_combo_popup_alpha(self.my_combo_message_time)
-            msg_cx = my_x + board_w // 2
-            msg_cy = board_top + board_h // 3
-            msg_font = _rs.get_font(s(28, minimum=18), bold=True)
-            shadow = msg_font.render(self.my_combo_message, True, COMBO_POPUP_SHADOW_COLOR)
-            if alpha < 255:
-                shadow.set_alpha(alpha)
-            self.screen.blit(shadow, shadow.get_rect(center=(msg_cx + 2, msg_cy + 2)))
-            color = get_combo_popup_color(self.my_combo_message)
-            txt = msg_font.render(self.my_combo_message, True, color)
-            if alpha < 255:
-                txt.set_alpha(alpha)
-            self.screen.blit(txt, txt.get_rect(center=(msg_cx, msg_cy)))
+        self._draw_combo_message_overlay(my_x, board_top, board_w, board_h)
 
         # ─ Header paneller (pvp_game stili) ─
         my_name = self._resolve_my_display_name()
@@ -6687,18 +6674,65 @@ class OnlinePvPGame:
         self.screen.blit(vs_text, vs_text.get_rect(center=vs_rect.center))
 
         # Pending garbage göstergesi (Online garbage açıksa görünür)
-        if ONLINE_PVP_GARBAGE_ENABLED and self.pending_garbage > 0:
-            gb_h = min(self.pending_garbage * cell_size, board_h)
-            gb_rect = pygame.Rect(my_x - s(10), board_top + board_h - gb_h, s(6), gb_h)
-            pygame.draw.rect(self.screen, UIColors.NEON_RED, gb_rect, border_radius=3)
-            gb_font = _rs.get_font(s(13, minimum=10))
-            gb_txt = gb_font.render(str(self.pending_garbage), True, UIColors.NEON_RED)
-            self.screen.blit(gb_txt, gb_txt.get_rect(
-                center=(my_x - s(10) + s(3), board_top + board_h - gb_h - s(10))))
+        self._draw_pending_garbage_indicator(my_x, board_top, board_h, cell_size)
 
         # Pause overlay
         if self.paused or self.opponent_paused:
             self._draw_pause_overlay()
+
+    def _draw_combo_message_overlay(self, my_x: int, board_top: int,
+                                    board_w: int, board_h: int) -> None:
+        """Combo mesajı (DOUBLE/TRIPLE/QUADRIX) — game/coop _combo_popup_cache deseni.
+
+        OP-006: mesaj başına BİR kez render + (mesaj, font) anahtarlı önbellek;
+        kare içinde yalnız set_alpha (rasterizasyon yok). .copy() yüzeyi
+        paylaşımlı font önbelleğinden (PatchedFont LRU / HybridFont) ayırır ki
+        fade alfası önbelleği kirletmesin. set_alpha koşulsuzdur: aynı mesaj
+        tekrar gösterilirse önceki popup'ın bayat alfası 255'e döner (eski
+        koşullu desen bunu kaçırırdı).
+        """
+        if not self.my_combo_message or self.my_combo_message_time <= 0:
+            return
+        alpha = get_combo_popup_alpha(self.my_combo_message_time)
+        msg_cx = my_x + board_w // 2
+        msg_cy = board_top + board_h // 3
+        sc = self._ui_scale()
+        s = lambda v, minimum=1: self._sx(v, sc, minimum)
+        msg = self.my_combo_message
+        msg_font = _rs.get_font(s(28, minimum=18), bold=True)
+        cache_key = (msg, msg_font)
+        cache = getattr(self, '_combo_popup_cache', None)
+        if cache is None or cache[0] != cache_key:
+            shadow = msg_font.render(msg, True, COMBO_POPUP_SHADOW_COLOR).copy()
+            txt = msg_font.render(msg, True, get_combo_popup_color(msg)).copy()
+            cache = (cache_key, shadow, txt)
+            self._combo_popup_cache = cache
+        _, shadow, txt = cache
+        shadow.set_alpha(alpha)
+        txt.set_alpha(alpha)
+        self.screen.blit(shadow, shadow.get_rect(center=(msg_cx + 2, msg_cy + 2)))
+        self.screen.blit(txt, txt.get_rect(center=(msg_cx, msg_cy)))
+
+    def _draw_pending_garbage_indicator(self, my_x: int, board_top: int,
+                                        board_h: int, cell_size: int) -> None:
+        """Pending garbage göstergesi (Online garbage açıksa görünür).
+
+        OP-006: etiket render_text (text_cache) yolundan — kare başına ham
+        Font.render yok; değer yalnız çöp gönderim olaylarında değişir.
+        Not: ONLINE_PVP_GARBAGE_ENABLED bugün False — blok üretimde ölü
+        koddur; desen flag açıldığında hazırdır.
+        """
+        if not ONLINE_PVP_GARBAGE_ENABLED or self.pending_garbage <= 0:
+            return
+        sc = self._ui_scale()
+        s = lambda v, minimum=1: self._sx(v, sc, minimum)
+        gb_h = min(self.pending_garbage * cell_size, board_h)
+        gb_rect = pygame.Rect(my_x - s(10), board_top + board_h - gb_h, s(6), gb_h)
+        pygame.draw.rect(self.screen, UIColors.NEON_RED, gb_rect, border_radius=3)
+        gb_font = _rs.get_font(s(13, minimum=10))
+        gb_txt = render_text(gb_font, str(self.pending_garbage), True, UIColors.NEON_RED)
+        self.screen.blit(gb_txt, gb_txt.get_rect(
+            center=(my_x - s(10) + s(3), board_top + board_h - gb_h - s(10))))
 
     # ── Oyuncu Başlık Paneli (pvp_game.py stili) ────────────────
 
@@ -6715,21 +6749,21 @@ class OnlinePvPGame:
         # İsim
         sc = self._ui_scale()
         nf = _rs.get_fitting_font(name, self._sx(22, sc, 14), rect.width - 120)
-        ns = nf.render(name, True, accent_color)
+        ns = render_text(nf, name, True, accent_color)
         self.screen.blit(ns, ns.get_rect(midleft=(rect.x + 16, rect.centery - 8)))
 
         # Skor / satır (sağda)
         sf = _rs.get_font(self._sx(14, sc, 10), bold=False)
-        sc_s = sf.render(f'{t("score", "Skor")} {score:,}'.replace(',', '.'),
-                         True, _rs.text_primary)
-        ln_s = sf.render(f'{t("lines", "Satır")} {lines}', True, _rs.text_primary)
+        sc_s = render_text(sf, f'{t("score", "Skor")} {score:,}'.replace(',', '.'),
+                           True, _rs.text_primary)
+        ln_s = render_text(sf, f'{t("lines", "Satır")} {lines}', True, _rs.text_primary)
         self.screen.blit(sc_s, sc_s.get_rect(midright=(rect.right - 16, rect.centery - 10)))
         self.screen.blit(ln_s, ln_s.get_rect(midright=(rect.right - 16, rect.centery + 10)))
 
         # Kontrol etiketi
         if controls_label:
             cf = _rs.get_font(self._sx(12, sc, 9), bold=False)
-            cs = cf.render(controls_label, True, _rs.text_muted)
+            cs = render_text(cf, controls_label, True, _rs.text_muted)
             self.screen.blit(cs, cs.get_rect(bottomleft=(rect.x + 16, rect.bottom - 8)))
 
     # ── Yardımcı draw metotları ──────────────────────────────────
@@ -6739,9 +6773,9 @@ class OnlinePvPGame:
         if not self.my_piece:
             return
         shape = self.my_piece.get_shape()
-        ghost_surf = pygame.Surface((cell_size - 2, cell_size - 2), pygame.SRCALPHA)
         ghost_color = (*self.my_piece.color[:3], 60)
-        ghost_surf.fill(ghost_color)
+        ghost_surf = self._effect_surface_cache.get_filled_surface(
+            (cell_size - 2, cell_size - 2), ghost_color)
         for row_i, row in enumerate(shape):
             for col_i, cell in enumerate(row):
                 if cell:
