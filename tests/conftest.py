@@ -128,8 +128,15 @@ def _purge_foreign_callable_module(module_names: tuple[str, ...], attr_names: tu
 		if module_obj is None:
 			continue
 		for attr_name in attr_names:
-			value = getattr(module_obj, attr_name, None)
-			owner = getattr(value, "__module__", "")
+			try:
+				value = getattr(module_obj, attr_name, None)
+				owner = getattr(value, "__module__", "")
+			except Exception:
+				# _looks_like_test_stub guard'ıyla aynı gerekçe: tembel
+				# __getattr__'ı istisna fırlatan modülde getattr'ın None
+				# varsayılanı yalnız AttributeError'u yutar; bu öznitelik
+				# atlanır, purge kesilmeden devam eder.
+				continue
 			if callable(value) and owner not in allowed_owners:
 				for module_name in module_names:
 					sys.modules.pop(module_name, None)
@@ -172,7 +179,15 @@ def _purge_leaked_test_stubs(*, skip_pygame: bool = False) -> None:
 			module_obj = sys.modules.get(candidate)
 			if module_obj is None:
 				continue
-			bound_pygame = getattr(module_obj, "pygame", None)
+			try:
+				bound_pygame = getattr(module_obj, "pygame", None)
+			except Exception:
+				# Yukarıdaki guard ile aynı desen: tembel __getattr__ istisna
+				# fırlatırsa (getattr None varsayılanı yalnız AttributeError
+				# yutar) modül gerçek sayılır — bu aday atlanır, döngü
+				# kesilmeden devam eder (purge dayanıklılık vaadi ikinci
+				# döngü için de tamamlanmış olur).
+				continue
 			if (
 				isinstance(bound_pygame, types.ModuleType)
 				and _looks_like_test_stub(bound_pygame)
