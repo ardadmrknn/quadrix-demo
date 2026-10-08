@@ -100,7 +100,16 @@ def _looks_like_test_stub(mod) -> bool:
 	if not isinstance(mod, types.ModuleType):
 		return True
 
-	file_path = getattr(mod, "__file__", None)
+	try:
+		file_path = getattr(mod, "__file__", None)
+	except Exception:
+		# PEP 562 tembel modül __getattr__'ı (örn. pygame.surfarray'ın numpy
+		# yükleyicisi) __file__ erişiminde bile istisna fırlatabilir; getattr
+		# varsayılanı yalnız AttributeError'u yutar. Erişimi istisna veren
+		# modül gerçek pygame parçasıdır: stub sayılmaz, purge döngüsü
+		# kesilmeden devam eder (teardown ERROR bu yüzden kuyrudaki
+		# _reset_ui_scale_preset'i atlatıyordu).
+		return False
 	if not file_path:
 		# ModuleType()/SimpleNamespace ile enjekte edilen stub'lar genelde __file__ taşımaz.
 		return True
@@ -244,6 +253,11 @@ def _purge_leaked_test_stubs(*, skip_pygame: bool = False) -> None:
 		'online_pvp_game', 'src.online_pvp_game',
 		'online_coop_game', 'src.online_coop_game',
 		'game_over_surfaces', 'src.game_over_surfaces',
+		# OP-036 LRU yardımcısı da pygame.Surface çağırır: pygame ailesiyle
+		# birlikte düşmezse koleksiyon sınırında eski pygame örneğine bağlı
+		# kalır — sonraki dosyanın taze pygame'iyle binding uyuşmazlığı
+		# ghost Surface-sayma testlerinin çok-dosya düşüşüne yol açıyordu.
+		'effect_surface_cache', 'src.effect_surface_cache',
 	):
 		sys.modules.pop(heavy_name, None)
 
@@ -478,6 +492,9 @@ def _isolate_test_module_stubs(request: pytest.FixtureRequest):
 		'online_pvp_game', 'src.online_pvp_game',
 		'online_coop_game', 'src.online_coop_game',
 		'game_over_surfaces', 'src.game_over_surfaces',
+		# OP-036 yardımcısı — game_over_surfaces ile aynı kategori
+		# (pygame.Surface çağırır; eski/stub pygame'e bağlanmışsa düşürülmeli).
+		'effect_surface_cache', 'src.effect_surface_cache',
 	):
 		sys.modules.pop(dep, None)
 
