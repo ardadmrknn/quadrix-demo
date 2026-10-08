@@ -635,6 +635,23 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
         except Exception:
             pass
 
+    elif should_recover:
+        # İnceleme düzeltmesi (DALGA C, 2026-10-08): pending bayrakları
+        # yukarıda limiter kararından ÖNCE tüketildiğinden, 900 ms bütçesi
+        # dolmamışken gelen olay burada sessizce KAYBOLUYORDU (prtsc
+        # recover t=300 sonrası Alt+Tab dönüşü t=1120: 820 ms < 900 →
+        # ne set_mode ne pencere-öne-getirme; bozuk display bir sonraki
+        # dış olaya kadar kalırdı). Drop yerine defer: bütçe açıldığı
+        # karede (last+901) tekrar kurulur. set_mode yine en az 900 ms
+        # aralıklı; pending tek yuvalı olduğundan yeniden-kurma döngüsü
+        # kuramsal olarak mümkün değil. set_mode istisnası (yukarıdaki
+        # except) bilinçli olarak tekrar denenmez — retry storm riski.
+        retry_at = state['last_display_recover_ms'] + 901
+        if recover_reason == 'focus':
+            state['pending_focus_recover_ms'] = retry_at
+        else:
+            state['pending_prtsc_recover_ms'] = retry_at
+
     _maybe_recover_windows_display._state = state
     return screen
 

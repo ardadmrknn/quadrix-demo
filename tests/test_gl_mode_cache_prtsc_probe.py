@@ -211,3 +211,89 @@ def test_real_get_pressed_accepts_keycode_index():
     assert k_prtsc >= 512, 'K_PRINTSCREEN keycode scancode aralığına sığmamalı'
     # KeyCode indeksi wrapper tarafından scancode'a çevrilmeli: IndexError yok.
     assert keys[k_prtsc] in (0, 1), 'keycode indeksi IndexError atmamalı (kopuş-algılama kanarya)'
+
+
+def test_recover_event_deferred_when_limiter_budget_busy(monkeypatch):
+    """Limiter bloklarken recover olayı düşmez — bütçe açılınca tekrar kurulur.
+
+    İnceleme bulgusu (DALGA C, 2026-10-08): prtsc recover t=300'de set_mode
+    yaptıktan sonra 900 ms içinde gelen Alt+Tab focus-recover'ı, pending
+    tüketimi limiter kararından ÖNCE yapıldığı için sessizce yutuluyordu
+    (drop). Artık last+901'e ertelenir; bütçe açıldığı karede set_mode ve
+    pencere-öne-getirme gerçekten çalışır.
+    """
+    import pygame
+
+    main = _load_src_main()
+
+    monkeypatch.setattr(main, 'current_platform', 'Windows')
+    monkeypatch.setattr(pygame.display, 'get_active', lambda: True)
+    monkeypatch.setattr(main, '_active_overlay_module', lambda: None)
+
+    clock = [0]
+    monkeypatch.setattr(pygame.time, 'get_ticks', lambda: clock[0])
+    monkeypatch.setattr(pygame.key, 'get_pressed', lambda: _FakePressedKeys())
+
+    create_calls = [0]
+    focus_calls = [0]
+
+    class _ScreenStub:
+        def get_width(self):
+            return 1280
+
+        def get_height(self):
+            return 720
+
+        def get_flags(self):
+            return 0
+
+    def _fake_create_display(*args, **kwargs):
+        create_calls[0] += 1
+        return _ScreenStub()
+
+    def _fake_focus():
+        focus_calls[0] += 1
+
+    monkeypatch.setattr(main, 'create_display', _fake_create_display)
+    monkeypatch.setattr(main, 'request_window_focus', _fake_focus)
+
+    screen = _ScreenStub()
+
+    # Temiz state.
+    if hasattr(main._maybe_recover_windows_display, '_state'):
+        delattr(main._maybe_recover_windows_display, '_state')
+    try:
+        # t=0: ilk çağrı — state kurulur, olay yok.
+        assert main._maybe_recover_windows_display(screen) is screen
+        state = main._maybe_recover_windows_display._state
+        # Senaryo: prtsc recover t=300'de set_mode yaptı → 900 ms bütçesi
+        # t=1201'e kadar meşgul.
+        state['last_display_recover_ms'] = 300
+
+        # t=900: Alt+Tab dönüş kenarı → pending focus recover t=1120'ye.
+        state['display_was_inactive'] = True
+        clock[0] = 900
+        main._maybe_recover_windows_display(screen)
+        state = main._maybe_recover_windows_display._state
+        assert state['pending_focus_recover_ms'] == 1120, 'focus kenarı: now+220'
+
+        # t=1120: pending tüketilir ama 1120-300=820 < 900 → ESKİ davranış
+        # olayı burada yutardı. YENİ davranış: last+901=1201'e ertelenir.
+        clock[0] = 1120
+        result = main._maybe_recover_windows_display(screen)
+        state = main._maybe_recover_windows_display._state
+        assert result is screen, 'limiter bloklarken set_mode çağrılmamalı'
+        assert create_calls[0] == 0
+        assert state['pending_focus_recover_ms'] == 1201, 'defer: last+901'
+
+        # t=1201: bütçe açık → set_mode + pencere-öne-getirme çalışır.
+        clock[0] = 1201
+        result = main._maybe_recover_windows_display(screen)
+        state = main._maybe_recover_windows_display._state
+        assert result is not screen, 'bütçe açılınca yeni display dönmeli'
+        assert create_calls[0] == 1
+        assert focus_calls[0] == 1, 'focus kaynaklı recover pencereyi öne getirir'
+        assert state['pending_focus_recover_ms'] == -1
+    finally:
+        if hasattr(main._maybe_recover_windows_display, '_state'):
+            delattr(main._maybe_recover_windows_display, '_state')
