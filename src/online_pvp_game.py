@@ -509,6 +509,7 @@ class OnlinePvPGame:
 
         # ─── Steam Networking ───
         self.net = SteamNetworking()
+        self._cached_my_name: str | None = None
         self._net_initialized = False
         self._owns_steam_pump_pause = False
         self._network_cleanup_failed = False
@@ -1899,6 +1900,26 @@ class OnlinePvPGame:
         self._status_timer = 2.0
         return True
 
+    def _resolve_my_display_name(self) -> str:
+        """Kendi görünen adını bir kez çözüp sakla (OP-005).
+
+        Kare başı Steamworks persona çağrısı yerine oturum önbelleği;
+        lobby presence probu (~350 ms) önbelleği düşürür, isim
+        değişimi orada yansır. my_steam_id yoksa mevcut 'Sen'
+        fallback'i aynen korunur.
+        """
+        cached = self._cached_my_name
+        if cached is not None:
+            return cached
+        my_steam_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
+        if not my_steam_id:
+            return 'Sen'
+        try:
+            self._cached_my_name = self.net._get_name(my_steam_id)
+        except Exception:
+            self._cached_my_name = str(my_steam_id)
+        return self._cached_my_name
+
     def _promote_to_ready_check(self, opponent_id: int = 0, opponent_name: str = '', play_sound: bool = False):
         normalized_opponent_id = int(opponent_id or getattr(self.net, 'opponent_steam_id', 0) or 0)
         state_changed = self.online_state != OnlineState.READY_CHECK
@@ -1939,6 +1960,9 @@ class OnlinePvPGame:
             return False
 
         my_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
+        # OP-005: presence probunda kendi görünen adını tazele — çözüm
+        # kare başına değil bu proba bağlanır (draw'lar önbellekten okur).
+        self._cached_my_name = None
         opponent_ids = [int(member_id) for member_id in members if int(member_id or 0) and int(member_id or 0) != my_id]
         if not opponent_ids:
             return False
@@ -4375,17 +4399,19 @@ class OnlinePvPGame:
             self.net.tick()
             self._process_messages()
 
-        _has_unknown_lobbies = (
-            bool(self._deferred_lobby_entries)
-            or any(
-                str(l.get('visibility', '') or '').lower() in ('unknown', 'stale_unknown')
-                for l in getattr(self, '_lobby_list', [])
-            )
-        )
+        # OP-044: any() taraması yalnızca LOBBY_MENU + ağ bağlıyken gerekir;
+        # eski sıra bunu durum kapısından ÖNCE her kare hesaplıyordu. Kapı
+        # koşulları kısa devre ile korunur (and zinciri sırası değişmedi).
         if (
             self.online_state == OnlineState.LOBBY_MENU
             and self._net_initialized
-            and _has_unknown_lobbies
+            and (
+                bool(self._deferred_lobby_entries)
+                or any(
+                    str(l.get('visibility', '') or '').lower() in ('unknown', 'stale_unknown')
+                    for l in getattr(self, '_lobby_list', [])
+                )
+            )
         ):
             self._deferred_lobby_refresh_timer = max(
                 0.0,
@@ -6421,7 +6447,7 @@ class OnlinePvPGame:
         self.screen.blit(vs, vs.get_rect(center=(cx, panel.y + s(45))))
 
         # Oyuncu isimleri ve avatarları
-        my_name = self.net._get_name(self.net.my_steam_id) if self.net.my_steam_id else 'Sen'
+        my_name = self._resolve_my_display_name()
         opp_name = self.net.opponent_name or t('opponent', 'Rakip')
 
         col_w = pw // 2 - s(20)
@@ -6635,7 +6661,7 @@ class OnlinePvPGame:
             self.screen.blit(txt, txt.get_rect(center=(msg_cx, msg_cy)))
 
         # ─ Header paneller (pvp_game stili) ─
-        my_name = self.net._get_name(self.net.my_steam_id) if self.net.my_steam_id else 'Sen'
+        my_name = self._resolve_my_display_name()
         opp_name = self.net.opponent_name or t('opponent', 'Rakip')
 
         my_score = self.my_board.score if self.my_board else 0
