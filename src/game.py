@@ -250,6 +250,27 @@ def prewarm_common_mode_entry_backgrounds(settings_manager=None) -> list[str]:
     return prepared_paths
 
 
+# OP-059: firework milestone panelinin skor bazlı renk/mesaj tablosu. Eskiden
+# firework aktifken her karede 13 girişli dict literal yeniden kuruluyordu;
+# tablo içeriği sabittir, modül seviyesine taşındı. (Demo sürümünde mesajlar
+# t() anahtarları değil sabit metinlerdir — v2'deki mesaj-önbelleği gerekmez.)
+MILESTONE_COLORS = {
+    1000: ((0, 220, 255), "İlk Adım!"),           # 1000 - Cyan
+    2000: ((100, 255, 100), "Devam Et!"),         # 2000 - Yeşil
+    4000: ((255, 220, 50), "Harika!"),            # 4000 - Sarı
+    8000: ((255, 150, 50), "Müthiş!"),            # 8000 - Turuncu
+    10000: ((255, 215, 0), "10K Efsane!"),        # 10000 - Altın
+    15000: ((255, 100, 200), "Süpersin!"),        # 15000 - Pembe
+    20000: ((200, 100, 255), "İnanılmaz!"),       # 20000 - Mor
+    25000: ((100, 200, 255), "Ustasın!"),         # 25000 - Açık Mavi
+    30000: ((255, 80, 80), "Ateş!"),              # 30000 - Kırmızı
+    40000: ((150, 255, 150), "Canavar!"),         # 40000 - Açık Yeşil
+    50000: ((255, 200, 100), "50K Legend!"),      # 50000 - Altın Turuncu
+    75000: ((200, 150, 255), "Efsane!"),          # 75000 - Lavanta
+    100000: ((255, 255, 100), "100K BOSS!"),      # 100000 - Parlak Sarı
+}
+
+
 class Game:
     """Ana oyun sınıfı"""
     lock_reset_count = 0
@@ -6101,25 +6122,11 @@ class Game:
             milestone_text = f"{milestone_value:,}".replace(',', '.')
             
             # Skor bazlı renk paleti - Yeni eşiklere göre
-            MILESTONE_COLORS = {
-                1000: ((0, 220, 255), "İlk Adım!"),           # 1000 - Cyan
-                2000: ((100, 255, 100), "Devam Et!"),         # 2000 - Yeşil
-                4000: ((255, 220, 50), "Harika!"),            # 4000 - Sarı
-                8000: ((255, 150, 50), "Müthiş!"),            # 8000 - Turuncu
-                10000: ((255, 215, 0), "10K Efsane!"),        # 10000 - Altın
-                15000: ((255, 100, 200), "Süpersin!"),        # 15000 - Pembe
-                20000: ((200, 100, 255), "İnanılmaz!"),       # 20000 - Mor
-                25000: ((100, 200, 255), "Ustasın!"),         # 25000 - Açık Mavi
-                30000: ((255, 80, 80), "Ateş!"),              # 30000 - Kırmızı
-                40000: ((150, 255, 150), "Canavar!"),         # 40000 - Açık Yeşil
-                50000: ((255, 200, 100), "50K Legend!"),      # 50000 - Altın Turuncu
-                75000: ((200, 150, 255), "Efsane!"),          # 75000 - Lavanta
-                100000: ((255, 255, 100), "100K BOSS!"),      # 100000 - Parlak Sarı
-            }
-            
+            # OP-059: MILESTONE_COLORS modül sabiti (yukarıda); her karede
+            # dict literal yeniden kurulmaz, yalnızca arama yapılır.
             # Milestone değerine göre renk bul
             milestone_color, milestone_msg = ((255, 215, 0), "Muhteşem!")  # Varsayılan
-            
+
             if milestone_value in MILESTONE_COLORS:
                 milestone_color, milestone_msg = MILESTONE_COLORS[milestone_value]
             elif milestone_value > 100000:
