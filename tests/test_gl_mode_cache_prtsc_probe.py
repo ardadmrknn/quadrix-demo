@@ -10,7 +10,7 @@
 
 RAM DERSI (2026-10-08, VDS 7.9 GiB OOM, exit 137): bu dosyanin eski
 fake'i ``[False] * (int(k_prtsc) + 8)`` idi; ``pygame.K_PRINTSCREEN``
-bir SDL2 KEYCODE'dur (1073741894 = 0x40000016) → dev liste ~8.6 GiB →
+bir SDL2 KEYCODE'dur (1073741894 = 0x40000046) → dev liste ~8.6 GiB →
 tek-surec paket koşumları OOM kill yiyordu. Gercek ``get_pressed()``
 donuşu pgScancodeWrapper'dir: K_* keycode indeksleri
 ``SDL_GetScancodeFromKey`` ile scancode'a cevrilir; ``len()``=512
@@ -210,4 +210,4 @@ def test_real_get_pressed_accepts_keycode_index():
     k_prtsc = int(pygame.K_PRINTSCREEN)
     assert k_prtsc >= 512, 'K_PRINTSCREEN keycode scancode aralığına sığmamalı'
     # KeyCode indeksi wrapper tarafından scancode'a çevrilmeli: IndexError yok.
-    assert keys[k_prtsc] in (0, 1), 'keycode indeksi kabul edilmeli (dönüşüm çalışıyor)'
+    assert keys[k_prtsc] in (0, 1), 'keycode indeksi IndexError atmamalı (kopuş-algılama kanarya)'
