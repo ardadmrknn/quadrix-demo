@@ -12,6 +12,7 @@ import math
 import sys
 import os
 from pathlib import Path
+from dataclasses import replace
 
 from coop_board import CoopBoard
 from pieces import Piece, SHAPES, skip_hidden_rows
@@ -3590,9 +3591,8 @@ class CoopGame:
         bsc = self._board_skin_cache
         if bsc.get('skin_id') != skin_id:
             try:
-                from dataclasses import replace as _replace
                 classic = get_mode_skin('classic')
-                board_skin = _replace(
+                board_skin = replace(
                     classic,
                     accent=getattr(skin, 'accent', getattr(classic, 'accent', (0, 210, 255))),
                     panel_border=getattr(skin, 'accent', getattr(classic, 'panel_border', (0, 210, 255))),
@@ -3641,8 +3641,7 @@ class CoopGame:
             _tint_a = int(_ot[3] * bg_alpha) if bg_alpha < 1.0 else _ot[3]
             if _tint_a > 0:
                 try:
-                    from dataclasses import replace as _dc_replace
-                    apply_outer_tint(self.screen, _dc_replace(skin, outer_tint=(*_ot[:3], _tint_a)), visible_outer_rect)
+                    apply_outer_tint(self.screen, replace(skin, outer_tint=(*_ot[:3], _tint_a)), visible_outer_rect)
                 except Exception:
                     apply_outer_tint(self.screen, skin, visible_outer_rect)
 
