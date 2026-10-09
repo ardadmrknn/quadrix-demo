@@ -181,6 +181,25 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
   0.762→0.614 ms/kare (−148 µs), demo 1.302→0.611 (−691 µs, −%53). Parite
   3/3 digest HEAD ile aynı. Birleşik A/B: fail kümeleri birebir (v2 20/4072,
   demo 34/3496) → sıfır yeni hata.
+- **D5 (OP-019) — KAPANDI 2026-10-09 (adres düzeltmesiyle):** v2 `b3369ce` /
+  demo `e8d7293`. Raporun işaret ettiği bölge (tutorial.py:539-676, destek
+  layout/tip paneli) iki repoda da ÜRETİM-ÖLÜ — tek tüketici bir test. Gerçek
+  kare yolu probe'la yeniden haritalandı: `_draw_tutorial_overlay` (2× fit +
+  rozet font shrink) + `_draw_inline_howto_hint` (ilk dersler; 3× wrap +
+  küçültme döngüsü) — cProfile kare-başı ~56 font.size + 4 wrap. Uygulanan
+  (iki repo birebir): tutorial modülünde 3 YERLEŞİM LRU'su (`_wrap_text` 256,
+  değer (font, lines) — id kovuğu; `_fit_wrapped_text_block` 96;
+  `_get_fitting_font` 32); anahtar `text_cache.cache_generation()` nesli
+  (set_font_profile → clear_text_cache kancası; retro_style clear_caches yeni
+  Font'lar üretir) + `get_language()` + girdiler. text_cache'e `cache_generation()`
+  sayacı eklendi. Render'lar zaten PatchedFont'ta; kalan maliyet blit alanı
+  (donanım bağımlı) — kapsam dışı kaydedildi. Kapsam kovuğu:
+  `test_tutorial_text_layout_cache.py` (6 test iki repo) gerçek draw yolu +
+  soğuk/sıcak digest + sıcakta büyümemesi + invalidasyon. Ölçüm (interleaved
+  A/B 6 tur, medyan): v2 −0.902 ms/kare, demo −1.008 ms/kare (ikisi de 6/6
+  negatif; ders-içi donma fazı overlay+howto). Parite: edited == HEAD == soğuk
+  == sıcak digest (4 ağaç; v2/demo digest'leri de eşit). Birleşik A/B: fail
+  kümeleri birebir (v2 20/4078, demo 34/3502) → sıfır yeni hata.
 
 ---
 
