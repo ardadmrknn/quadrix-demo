@@ -205,8 +205,19 @@ def test_resize_icon_disk_fallback_loads_when_emoji_unavailable(monkeypatch):
     emoji_surface None + gerçek asset VAR → ikon diskten yüklenip 16×16
     smoothscale edilir ve süreç-ömrü girişine alınır. Bu yol üretimde
     erişilmez (emoji LRU hit) ama dokümante kilit sözleşmeydi ve D6
-    öncesi testte HİÇ koşmuyordu (inceleme bulgusu)."""
+    öncesi testte HİÇ koşmuyordu (inceleme bulgusu).
+
+    Tam-suite görünürğü: önceki dosyalar pygame.quit() ile display'i
+    kapatabilir; fallback'in convert_alpha'sı mode gerektirdiğinden
+    test kendi önkoşulunu yeniden kurar (dosya preamble'u collection
+    anında set_mode yapar — test runtime'ına kadar teardown edilebilir;
+    üretimde mode her zaman açıktır)."""
     _clear_module_caches()
+    # convert_alpha display mode ister; önceki dosyanın teardown'ı kapatmış olabilir.
+    if not pygame.display.get_init():
+        pygame.display.init()
+    if pygame.display.get_surface() is None:
+        pygame.display.set_mode((320, 240))
     import emoji_renderer
     monkeypatch.setattr(emoji_renderer, 'emoji_surface', lambda *a, **kw: None)
     icon = avatar_module._get_resize_icon()
