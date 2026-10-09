@@ -8,8 +8,9 @@ _compute_line_sweep_progress_speed = None
 
 try:
     from .game import Game  # type: ignore
-    from .localization import t  # type: ignore
+    from .localization import t, get_language  # type: ignore
     from .retro_style import retro_style  # type: ignore
+    from .text_cache import cache_generation  # type: ignore
     from .constants import *  # type: ignore
     from .pieces import create_piece_by_name  # type: ignore
     from .platform_utils import create_display, normalize_mouse_pos, get_mouse_pos  # type: ignore
@@ -44,8 +45,9 @@ try:
     from .sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed  # type: ignore
 except Exception:
     from game import Game
-    from localization import t
+    from localization import t, get_language
     from retro_style import retro_style
+    from text_cache import cache_generation
     from constants import *
     from pieces import create_piece_by_name
     from platform_utils import create_display, normalize_mouse_pos, get_mouse_pos
@@ -105,6 +107,50 @@ try:
 except Exception:  # pragma: no cover - promptfont opsiyonel
     def _resolve_nav_hint_label(keyboard_label, *actions, gpm=None):
         return keyboard_label
+
+
+# ---------------------------------------------------------------------------
+# Metin yerleşim memo'ları (OP-019 / DALGA D5):
+# Ders sırasında sabit kalan overlay/sub/howto metinleri her kare yeniden
+# sarmalanıp ölçülüyordu (kare başına ~56 font.size + 4 _wrap_text çağrısı;
+# ölçüm: v2 probe 2026-10-09). Burada YERLEŞİM (satır listesi + font +
+# ölçüler) tutulur; render yüzeyleri PatchedFont global LRU'sundadır.
+# Anahtar bileşenleri: text_cache nesli (set_font_profile ->
+# clear_text_cache ile artar) + aktif dil (CJK/latin sarma farkı) + girdi.
+# Değerde font referansı yaşar — id() geri dönüşüm tuzağı kesilir
+# (text_cache._MEASURE_CACHE deseni). Dönen satır listeleri PAYLAŞILIR;
+# çağrıcılar yalnız okur (mutasyon taraması: iki repo da temiz).
+_WRAP_LAYOUT_CACHE: dict = {}
+_WRAP_LAYOUT_CACHE_ORDER: list = []
+_WRAP_LAYOUT_CACHE_MAX = 256
+
+_FIT_BLOCK_CACHE: dict = {}
+_FIT_BLOCK_CACHE_ORDER: list = []
+_FIT_BLOCK_CACHE_MAX = 96
+
+_FITTING_FONT_CACHE: dict = {}
+_FITTING_FONT_CACHE_ORDER: list = []
+_FITTING_FONT_CACHE_MAX = 32
+
+
+def _layout_cache_get(cache: dict, order: list, key: tuple):
+    """LRU okuma: hit'te anahtarı kuyruğun sonuna taşır."""
+    value = cache.get(key)
+    if value is not None:
+        order.remove(key)
+        order.append(key)
+    return value
+
+
+def _layout_cache_set(cache: dict, order: list, key: tuple, value, max_items: int) -> None:
+    """LRU yazma: kapasite aşımında en eski girişi düşürür."""
+    if key in cache:
+        order.remove(key)
+    cache[key] = value
+    order.append(key)
+    while len(order) > max_items:
+        old_key = order.pop(0)
+        cache.pop(old_key, None)
 
 
 def _tutorial_make_card_ui_font(size, bold=False):
@@ -1391,6 +1437,29 @@ class TutorialMode(Game):
         return 'menu'
 
     def _wrap_text(self, text, font, max_width, max_lines=None):
+        """Metni font ölçümüyle satırlara sarar — memo'lu (OP-019 / D5).
+
+        Aynı (metin, font, genişlik, satır limiti) girdisi ders boyunca her
+        kare yeniden hesaplanıyordu; sonuç artık LRU'dan döner. Dönen liste
+        PAYLAŞILIR — çağrıcı mutasyon yapmamalıdır.
+        """
+        text = str(text or '')
+        if not text or max_width is None or max_width <= 0:
+            return self._wrap_text_uncached(text, font, max_width, max_lines)
+        lang = str(get_language() or 'en').lower()
+        key = (
+            cache_generation(), lang, id(font), text,
+            int(max_width), int(max_lines) if max_lines is not None else None,
+        )
+        cached = _layout_cache_get(_WRAP_LAYOUT_CACHE, _WRAP_LAYOUT_CACHE_ORDER, key)
+        if cached is not None:
+            return cached[1]
+        lines = self._wrap_text_uncached(text, font, max_width, max_lines)
+        _layout_cache_set(_WRAP_LAYOUT_CACHE, _WRAP_LAYOUT_CACHE_ORDER, key,
+                          (font, lines), _WRAP_LAYOUT_CACHE_MAX)
+        return lines
+
+    def _wrap_text_uncached(self, text, font, max_width, max_lines=None):
         text = str(text or '')
         if not text:
             return []
@@ -1483,6 +1552,28 @@ class TutorialMode(Game):
         return (len(lines) * font.get_height()) + (max(0, len(lines) - 1) * line_gap)
 
     def _get_fitting_font(self, text, base_size, max_width, bold=False, min_size=10):
+        """Tek satırlık metne sığan fontu bulur — memo'lu (OP-019 / D5).
+
+        Ders rozeti ("DERS X/Y") gibi kare boyunca sabit metinler her kare
+        yeniden shrink araması yapıyordu; sonuç fontu LRU'dan döner.
+        """
+        text = str(text or '')
+        if not text or max_width is None or max_width <= 0:
+            return self._get_fitting_font_uncached(text, base_size, max_width, bold=bold, min_size=min_size)
+        key = (
+            cache_generation(), str(get_language() or 'en').lower(), text,
+            max(8, int(base_size)), max(1, int(max_width)), bool(bold),
+            max(8, int(min_size)),
+        )
+        cached = _layout_cache_get(_FITTING_FONT_CACHE, _FITTING_FONT_CACHE_ORDER, key)
+        if cached is not None:
+            return cached
+        font = self._get_fitting_font_uncached(text, base_size, max_width, bold=bold, min_size=min_size)
+        _layout_cache_set(_FITTING_FONT_CACHE, _FITTING_FONT_CACHE_ORDER, key,
+                          font, _FITTING_FONT_CACHE_MAX)
+        return font
+
+    def _get_fitting_font_uncached(self, text, base_size, max_width, bold=False, min_size=10):
         fitting_font = getattr(retro_style, 'get_fitting_font', None)
         if callable(fitting_font):
             return fitting_font(text, base_size, max_width, bold=bold, min_size=min_size)
@@ -1496,6 +1587,48 @@ class TutorialMode(Game):
         return font
 
     def _fit_wrapped_text_block(
+        self,
+        text,
+        *,
+        base_size,
+        max_width,
+        max_height=None,
+        bold=False,
+        min_size=10,
+        max_lines=None,
+    ):
+        """Sarma + boyut arama sonucunu döndürür — memo'lu (OP-019 / D5).
+
+        (font, satırlar, line_gap, total_height) yerleşimi girdilerden
+        deterministik türetilir; ders boyunca sabit girdiler LRU'dan döner.
+        Dönen satır listesi PAYLAŞILIR — çağrıcı mutasyon yapmamalıdır.
+        """
+        text = str(text or '')
+        if not text:
+            return self._fit_wrapped_text_block_uncached(
+                text, base_size=base_size, max_width=max_width,
+                max_height=max_height, bold=bold, min_size=min_size,
+                max_lines=max_lines)
+        lang = str(get_language() or 'en').lower()
+        key = (
+            cache_generation(), lang, text,
+            max(8, int(base_size)), max(1, int(max_width or 1)),
+            max(1, int(max_height)) if max_height is not None else None,
+            bool(bold), max(8, int(min_size)),
+            int(max_lines) if max_lines is not None else None,
+        )
+        cached = _layout_cache_get(_FIT_BLOCK_CACHE, _FIT_BLOCK_CACHE_ORDER, key)
+        if cached is not None:
+            return cached
+        result = self._fit_wrapped_text_block_uncached(
+            text, base_size=base_size, max_width=max_width,
+            max_height=max_height, bold=bold, min_size=min_size,
+            max_lines=max_lines)
+        _layout_cache_set(_FIT_BLOCK_CACHE, _FIT_BLOCK_CACHE_ORDER, key,
+                          result, _FIT_BLOCK_CACHE_MAX)
+        return result
+
+    def _fit_wrapped_text_block_uncached(
         self,
         text,
         *,

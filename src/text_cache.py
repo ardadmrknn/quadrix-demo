@@ -50,6 +50,12 @@ _TEXT_CACHE = _LRUCache(max_items=1024)
 # nesnenin aynı adresi alması) keser: girdi yaşadığı sürece id benzersizdir.
 _MEASURE_CACHE = _LRUCache(max_items=1024)
 
+# Önbellek nesli: clear_text_cache her çağrısında artar. Font ölçümüne
+# dayalı ikincil önbellekler (örn. tutorial sarma/fit memo'ları) anahtar
+# bileşeni olarak bu nesleyi taşıyarak profil/dil değişiminde
+# (set_font_profile -> clear_text_cache) otomatik eskiyor.
+_CACHE_GENERATION = 0
+
 # FAZ A5 (ui_text_layout) için ortak LRU ilkelinin kamusal adı.
 LRUCache = _LRUCache
 
@@ -250,6 +256,13 @@ def measure_text_width(font: pygame.font.Font, text: str) -> int:
     return measure_text(font, text)[0]
 
 
+def cache_generation() -> int:
+    """Aktif metin önbelleği nesli (clear_text_cache ile artar)."""
+    return _CACHE_GENERATION
+
+
 def clear_text_cache() -> None:
+    global _CACHE_GENERATION
+    _CACHE_GENERATION += 1
     _TEXT_CACHE.clear()
     _MEASURE_CACHE.clear()
