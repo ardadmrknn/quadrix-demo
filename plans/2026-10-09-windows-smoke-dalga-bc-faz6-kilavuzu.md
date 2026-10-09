@@ -73,6 +73,26 @@ Loglar: `reports\logs\build_stdout.log` / `build_stderr.log`.
 ### Odak A — PrtSc / Alt+Tab / focus-recover (en kritik yeni yol)
 **Ne değişti:** eski kod PrintScreen algılamayı HER ZAMAN reddediyordu (keycode/scancode guard hatası, 0x40000046); C7 ile prtsc yolu ilk kez canlandı. 900 ms set_mode bütçesi tüketilmişken gelen Alt+Tab kurtarma isteği eskiden sessizce KAYBOLUYORDU; artık ~901 ms'ye ertelenir (defer) ve gerçekten çalışır.
 
+> **PrtSc kanıt durumu (2026-10-09, 13:42 TR koşumu):** PrtSc'ye basıldı, gl_debug.log'da
+> `[OLAY] PrintScreen yakalama` satırı GELMEDİ. Kod mantığı testte sağlam (VDS 6/6) ve
+> guard düzeltmesi (05af5b3, 10-08 22:33 UTC) DALGA B prewarm'ından 82 dk SONRA push
+> edildiğinden, Steam build'inin prtsc düzeltmesini içermemiş olması mümkün. Telemetri
+> kaydına git/commit bilgisi işlenmediğinden build'in kod seviyesi veriden okunamıyor.
+> Ayrım testi için **önce A-0'yı koş** (kaynak koşumu, 2 dakika), sonra EXE turu.
+
+**A-0 (yeni — prtsc kırık-katman ayrımı, kaynak koşumu):** Build'den bağımsız, güncel kodla:
+```powershell
+$env:QUADRIX_PERF_TELEMETRY = "1"; $env:QUADRIX_OVERLAY_PERF = "1"
+py main.py
+```
+Ana menüde 2-3 sn bekle, **PrintScreen**'e bas (düz PrtSc — Win+PrtSc değil), 1 sn bekle, kapat.
+`%APPDATA%\quadrix_full\local\gl_debug.log`'da `[OLAY] PrintScreen yakalama` ara:
+- **VARSA:** kod + ortam sağlam → kırık = Steam'deki build eski kod → `git pull` + EXE'yi yeniden derle/yükle, Odak A'yı EXE ile tekrarla.
+- **YOKSA:** kırık = ortam → sırayla kontrol et:
+  1. Windows 11: Ayarlar → Erişilebilirlik → Klavye → **"Print screen tuşuyla ekran yakalamayı aç" KAPALI olmalı** (açıkken Windows tuşu yakalar, SDL'ye keydown hiç gitmez — algı yapısal olarak ölür).
+  2. Dizüstüysen Fn kilidi: bazı klavyelerde PrtSc ancak Fn+PrtSc ile gerçek tuşa düşer.
+  3. Menüde, oyun penceresi ODAKLIYKEN bas (Alt+Tab değil).
+
 1. Oyunu aç, ana menüde kal. **PrintScreen** tuşuna bas.
    - BEKLENEN: ekran 1 anlık kararma/bozulur gibi olur (set_mode), ~220 ms içinde kendini toparlar; oyun kilitlenmez. `gl_debug.log`'da `[OLAY]` prtsc satırı görünür.
    - KÖTÜ: hiç tepki yok + logda prtsc olayı yok (algı yine ölü) ya da siyah/bozuk ekran kalıcı olur.
