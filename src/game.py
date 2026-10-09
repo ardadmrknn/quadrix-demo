@@ -5352,7 +5352,17 @@ class Game:
         # Tahtadaki kilitli parçaları çiz (animasyonlu satır temizleme)
         locked_offset_x = offset_x
         locked_offset_y = offset_y
-        
+
+        # OP-014 (D3): düşme offset'lerini çizim başında tek geçişle dict'e kur —
+        # hücre-başı lineer tarama (dolu hücre × animasyon listesi) yerine dict
+        # erişimi. Değerler draw boyunca dondurulur (mutasyon update() tarafında
+        # yapılır); ilk-eşleşme semantiği _get_block_fall_offset ile birebir.
+        fall_lookup = {}
+        for _fall_anim in self.falling_block_animations:
+            _fall_key = (_fall_anim['row'], _fall_anim['col'])
+            if _fall_key not in fall_lookup:
+                fall_lookup[_fall_key] = _fall_anim['current_offset']
+
         for y in range(self.board_height):  # Dinamik yükseklik
             flash = (y in self.board.last_cleared_lines) and self.line_clear_flash
             for x in range(self.board_width):  # Dinamik genişlik
@@ -5369,8 +5379,8 @@ class Game:
                 block_x = locked_offset_x + x * cell_size + 1
                 block_y = locked_offset_y + y * cell_size + 1
                 
-                # Düşme animasyonu offset'i uygula
-                fall_offset = self._get_block_fall_offset(y, x)
+                # Düşme animasyonu offset'i uygula (OP-014: dict erişimi)
+                fall_offset = fall_lookup.get((y, x), 0)
                 block_y += fall_offset
                 
                 block_size = cell_size - 2
