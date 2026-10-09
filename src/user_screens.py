@@ -1212,9 +1212,14 @@ class UserSelectionScreen:
                 self.state = return_state
                 self._invalidate_avatar_cache()
                 self._avatar_editor_return_state = 'create_new'
+                # Oturum ömrü örnek: editörden çıkınca yüzey cache'leri ve
+                # görüntü referansları bırakılır (D6 inceleme — 4K macOS
+                # doğrudan çizimde ~106 MiB/örnek kalıcı tutulum).
+                self.avatar_editor.release_session_resources()
         elif result == 'cancel':
             self.state = return_state
             self._avatar_editor_return_state = 'create_new'
+            self.avatar_editor.release_session_resources()
         return None
 
     def update(self):
@@ -2377,10 +2382,12 @@ class UserManagementScreen:
             if filepath:
                 self.custom_avatar_path = filepath
                 self.state = 'edit_profile'
-        
+                self.avatar_editor.release_session_resources()
+
         elif result == 'cancel':
             self.state = 'edit_profile'
-        
+            self.avatar_editor.release_session_resources()
+
         return None
     
     def update(self):

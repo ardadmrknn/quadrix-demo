@@ -111,8 +111,12 @@ def _get_bottom_bar_gradient_surface(width: int, denom: float) -> pygame.Surface
 def _get_resize_icon() -> pygame.Surface | None:
     """Resize oku ikonu — süreç başına bir kez (OP-020 / D6).
 
-    Eski yol emoji_surface None dönerse fallback HER KARE dosyadan
-    yüklüyordu (image.load + pathlib.resolve + stat oyun döngüsünde).
+    Fallback yolu display-init'li-ama-set_mode'suz ortamda (probe/pytest
+    deseni) önbelleksizdi: emoji_surface'in convert_alpha'sı bu ortamda
+    hata verip None döner, fallback her çağrıda image.load + stat
+    yapıyordu. Üretimde (set_mode aktif) emoji LRU'su ikonu ilk karede
+    çözümleyip önbelleğe alıyordu — kare-başı disk I/O üretimde yoktu;
+    D6 bu yolu ortamdan bağımsız tek-seferliye indirger.
     """
     # None da önbelleklenir: 'in' denetimi miss'ten ayırt eder (None iken
     # dosya denemesi kare-döngüsünde tekrar etmez).
@@ -581,6 +585,26 @@ class AvatarEditor:
         self._crop_overlay_cache_order = []
         self._preview_cache = {}
         self._preview_cache_order = []
+
+    def release_session_resources(self) -> None:
+        """Editör oturumu kapanınca yüzey cache'lerini bırak (D6 inceleme).
+
+        İki AvatarEditor örneği (user_selection + user_management) oturum
+        ömrü yaşadığından, save/cancel çıkışında bırakılmayan cache'ler 4K
+        doğrudan çizim (macOS) yolunda örnek başına ~106 MiB kalıcı RAM
+        tutuyordu (8×overlay 105.6 MiB + ihmal edilebilir önizleme) —
+        Windows sdl2 tuvali ~21 MiB. Kayıtlı avatar diske (save_avatar) ve
+        asset_manager ham görüntü cache'ine yazıldığından alanların
+        düşürülmesi davranışı değiştirmez; yeniden giriş ilk karede
+        cache'leri taze üretir.
+        """
+        self._clear_image_layout_caches()
+        self.display_image = None
+        self.original_image = None
+        _BG_GRADIENT_CACHE.clear()
+        _BG_GRADIENT_CACHE_ORDER.clear()
+        _BOTTOM_BAR_GRADIENT_CACHE.clear()
+        _BOTTOM_BAR_GRADIENT_CACHE_ORDER.clear()
 
     def _get_crop_overlay_surface(self) -> pygame.Surface:
         """Kırpma-dışı karartma yüzeyi — örnek LRU 8 (OP-020 / D6).
