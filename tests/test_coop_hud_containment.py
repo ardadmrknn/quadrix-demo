@@ -187,17 +187,29 @@ def test_coop_hud_baseline_1366x768_structural_pins():
     # Paneller: bw=640, ox=363, oy=84 (compute_coop_layout üretim değeri).
     assert (r['top_rect'].x, r['top_rect'].y, r['top_rect'].w) == (353, 4, 660)
     assert (r['bot_rect'].x, r['bot_rect'].y, r['bot_rect'].w) == (353, 726, 660)
-    # Yükseklikler içerik-bütçeli: başlık(26) + skor(19) → 55 (eski kodda
-    # bar 50'ydi ve skor satırı 5px taşıyordu); alt bar taban 36.
-    assert r['top_rect'].h == 55
-    assert r['bot_rect'].h == 36
+    # Yükseklikler içerik-bütçeli: üst bar max(zemin 50, içerik) — başlık+
+    # skor stack'i barın DIŞINA taşamaz; alt bar zemin 36. (Eski hata: sabit
+    # 50'lik bar skor satırını taşıyordu.) Mutlak 55/16 değerleri Windows
+    # Segoe UI metrikleriydi; retro_style latin zinciri platform fontuna
+    # düşebildiği için (VDS: DejaVu) yükseklik pin'leri yapısal assert'e
+    # çevrildi — içerik taşması her platformda contains ile yakalanır.
+    assert r['top_rect'].h >= 50
+    assert r['top_rect'].contains(r['title_rect'])
+    assert r['top_rect'].contains(r['score_rect'])
+    assert r['bot_rect'].h >= 36
 
-    # Y-kademeleri: başlık 10'da, skor 10+26+4=40'ta, stat bar.y+4=730,
-    # katkı stat_y + stat_h + 2 = 748'de.
+    # Y-kademeleri: başlık bar üstünden 10'da; skor başlığın altında; stat
+    # bar dibinden +4; katkı stat satırının altında. (Kod konumları FONT
+    # yüksekliğiyle kademeler; render_fit_text yüzeyleri fonttan 2-4 px
+    # uzun olabildiğinden mutlak y pin'i yerine çakışmazlık kilitlenir —
+    # yüzeyler asla üst üste binmez, her platformta tutar.)
     assert r['title_rect'].y == 10
-    assert r['score_rect'].y == 40
-    assert all(sr.y == 730 and sr.h == 16 for sr in r['stat_rects'])
-    assert r['contrib_p1_rect'].y == 748 and r['contrib_p2_rect'].y == 748
+    assert r['score_rect'].y >= r['title_rect'].bottom
+    assert all(sr.y == r['bot_rect'].y + 4 for sr in r['stat_rects'])
+    assert all(sr.h == r['stat_rects'][0].h for sr in r['stat_rects'])
+    stat_bottom = max(sr.bottom for sr in r['stat_rects'])
+    assert r['contrib_p1_rect'].y >= stat_bottom
+    assert r['contrib_p2_rect'].y == r['contrib_p1_rect'].y
 
     # Merkezler: başlık/skor pencere merkezinde (cx=683), katkılar tahta
     # çeyreklerinde (ox+bw*0.25=523, ox+bw*0.75=843).

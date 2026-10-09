@@ -4214,7 +4214,13 @@ class CoopGame:
         # yok); §6.2 sözleşmesi — katkı satırı alt barı aşamaz.
         p1_txt, p2_txt = self._score_contribution_texts()
         contrib_base = self._sx(14, ui, minimum=10)
-        contrib_w = max(120, bw // 2 - self._sx(20, ui, minimum=12))
+        # §6.2 dar-bar bütçesi: 120 tabanı çeyrek segmentin iç bütçesini
+        # aşabiliyordu (bw=150'de bar iç yarısı ~74 px) — katkı rect'leri
+        # barın sol/sağ dışına taşıyordu. Bütçe bar iç yarı genişliğiyle
+        # sınırlanır; geniş tahtalarda değer değişmez (bw=640 → 306 < 319).
+        bar_half_inner = (bw + 20) // 2 - self._sx(16, ui, minimum=10)
+        contrib_w = min(max(120, bw // 2 - self._sx(20, ui, minimum=12)),
+                        bar_half_inner)
         p1_font = retro_style.get_fitting_font(
             p1_txt, contrib_base, contrib_w, bold=False, min_size=9)
         if p1_font.size(p1_txt)[0] > contrib_w:
