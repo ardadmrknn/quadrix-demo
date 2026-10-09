@@ -18,6 +18,7 @@ Bu dosya bu repoda çalışan AI ajanları için **karar rehberidir**. Repo hari
 | Ana giriş | `main.py` (TR), `src/main_en.py` (EN fallback) |
 | Test komutu | `./scripts/test/run_tests.sh -q` |
 | Üst düzey alt sistemler | Tek oyunculu modlar, Mystery (Kart Ustalığı), Campaign + Co-op Campaign, Local PvP/Co-op, Online PvP (Steam P2P), Steam leaderboard + backend proxy, başarımlar, lokalizasyon (11 dil), avatar/profil, Workshop/Atölye |
+| Geliştirme ortamı | **VDS (Ubuntu Linux, python3.12 user-site)** — birincil geliştirme kutusu; Windows EXE ve macOS sürümlerine yönelik düzenlemeler buradan yapılır, ELF/SteamOS derlemesi ikincil önceliktir (bkz. §3.7) |
 
 ---
 
@@ -102,6 +103,7 @@ Görev tipine göre ilk hareket. **Geniş repo turu yapma; aşağıdaki yüzeyde
 - **Doğrulama:** `tests/test_lb_write.py` (yalnızca Windows + Steam açık), `tools/steam_leaderboard_smoke_test.py`.
 
 ### 3.7 Build / packaging
+> **Geliştirme ortamı (2026-10-08):** Birincil geliştirme VDS'te (Ubuntu Linux) yapılır; bu kutu yalnızca ELF/SteamOS derleme makinesi olarak ele alınmaz — **ana odak Windows EXE ve macOS sürümlerine yönelik kod düzenlemeleridir** (perf, çizim, koordinat, davranış). Linux SDL dummy testleri çapraz doğrulama içindir; Windows EXE ve macOS .app paketleme hedef platformlarında kalır (bu kutuda cross-compile yoktur). ELF/SteamOS build desteklenir ama ikincil önceliktir.
 - **Başla:**
   - macOS: `scripts/build/build_macos_app.sh` + `packaging/specs/<*macos*>.spec`
   - Windows: `scripts/build/build_windows_exe.ps1` + `packaging/specs/<*windows*>.spec`
