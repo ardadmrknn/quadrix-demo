@@ -59,9 +59,10 @@ Loglar: `reports\logs\build_stdout.log` / `build_stderr.log`.
   $env:QUADRIX_OVERLAY_PERF   = "1"   # gl_debug.log [PERF]/[HITCH]/[GECIS]/[OLAY] satırları (SDL2 overlay aktifken)
   py main.py
   ```
-- **EXE / Steam koşusu:** telemetri otomatik AÇIK (frozen + Steam runtime algısı). Steam Launch Options env'i strip etse bile güvenilir yol — **sentinel dosya**: `%APPDATA%\quadrix_full\local\PERF_ON.txt` (boş dosya yeterli).
-- Kapatmak istersen: `QUADRIX_PERF_TELEMETRY_DISABLE=1` (en yüksek öncelikli).
-- **Nereye yazar:** JSONL olayları `%APPDATA%\quadrix_full\local\perf\` altında; oyun açılışında konsolda/startup kaydında `telemetry_path` olarak kesin yol yazılır — not al. İnsan-okur özet: `gl_debug.log` içinde `[PERF]`, `[HITCH]` (>=70 ms tek kare), `[GECIS]` (ekran geçiş süresi: süre/kare/ilk_kare/en_kötü_kare), `[OLAY]` (Alt+Tab/PrintScreen odak olayları — A odaklarının kanıtı).
+- **EXE / Steam koşusu:** telemetri otomatik AÇIK (frozen + Steam runtime algısı) — Launch Options env'i strip etse bile `sys.frozen` bayrağı env'e bağlı değildir, kapatamaz. Ekstra garanti istersen **sentinel dosya**: `<veri klasörü>\local\PERF_ON.txt` (boş dosya yeterli; gl_debug.log ile aynı klasör).
+- Kapatmak istersen: `QUADRIX_PERF_TELEMETRY_DISABLE=1` (en yüksek öncelikli — smoke turunda set ETME).
+- **Veri klasörü AppID'ye göre değişir** (src/data_paths.py `_APP_NAME_BY_STEAM_APPID`): playtest 4428040 → `%APPDATA%\quadrix_playtest`, mağaza 4414520 → `quadrix_full`, algılanamayan → `quadrix_full` fallback.
+- **Nereye yazar:** JSONL: `<veri klasörü>\local\perf\perf_telemetry_<oturum>.jsonl` — oyun açılışında konsolda/startup kaydında `telemetry_path` olarak kesin yol yazılır; şüphede kalırsan oyunu aç ve o satırı not al. İnsan-okur özet: `<veri klasörü>\local\gl_debug.log` içinde `[PERF]`, `[HITCH]` (>=70 ms tek kare), `[GECIS]` (ekran geçiş süresi: süre/kare/ilk_kare/en_kötü_kare), `[OLAY]` (Alt+Tab/PrintScreen odak olayları — A odaklarının kanıtı).
 
 ---
 
@@ -135,8 +136,8 @@ Her biri 1-2 dk, "bozulma var mı" gözlemi:
 
 ## 3. Ölçümleri Toplama
 Koşu bitince (telemetri açıkken):
-- JSONL: `%APPDATA%\quadrix_full\local\perf\` — açılıştaki `telemetry_path` konumu.
-- İnsan-okur: `gl_debug.log` — özellikle `[HITCH]`, `[GECIS]`, `[OLAY]` satırları; `slow_handler` JSONL olayı (>=150 ms handler).
+- JSONL: `<veri klasörü>\local\perf\` (Steam playtest koşusunda `%APPDATA%\quadrix_playtest\local\perf\`) — açılıştaki `telemetry_path` konumu.
+- İnsan-okur: `<veri klasörü>\local\gl_debug.log` — özellikle `[HITCH]`, `[GECIS]`, `[OLAY]` satırları; `slow_handler` JSONL olayı (>=150 ms handler).
 - Bana gönderirken: log dosyasının ilgili satırları + hangi odak/adım + gözlemin tarifi yeterli.
 
 ## 4. Hata Bulunursa — Rapor Formatı
