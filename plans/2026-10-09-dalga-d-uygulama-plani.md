@@ -264,6 +264,21 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
      hata). Fix'in tek gövde davranış değişikliği editör ÇIKIŞINDA
      (release), draw yolu elenmedi — digest sabitliği (madde 3) ayrıca
      kanıtı.
+  7. **Tam-suite görünürlük (guard düzeltmesi, fix commit'lerinden
+     sonra yakalandı):** 12-test final ağacın tam-suite bacakları v2
+     21 / demo 35 verdi — tek fazlalık disk-fallback testiydi (10-test
+     ara ağacın birebirliği + izole 12/12 yanıltıcıydı: izole koşum
+     önceki dosyaların teardown'ını hiç üretmez). Kök neden: collection
+     anındaki set_mode önceki 31'er dosyanın
+     `pygame.quit()`/`display.quit()` teardown'ına kadar dayanmaz;
+     fallback `convert_alpha` mode ister (senaryo kanıtı: display.quit()
+     ve tam pygame.quit() altında None üretir; guard'lı yol 16×16).
+     Fix yalnız test: `get_init`/`get_surface` + `set_mode` önkoşulu
+     (gövde dokunulmadı; üretimde mode her zaman açık). Guard'lı
+     tam-suite: v2 20 = 20, demo 34 = 34 BİREBİR. Interleaved probe:
+     medyan v2 −0.319 / demo +0.087 ms/kare (gürültü bandı — draw
+     yolu değişmedi). DERS: izole geçiş tam-suite'i ikame etmez;
+     display-mode gerektiren test kendi önkoşulunu kurar.
 
 ---
 
