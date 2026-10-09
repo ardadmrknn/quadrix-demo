@@ -72,54 +72,100 @@ except Exception:
 # C-extension type immutability bypass:
 # pygame.font.Font'u doğrudan değiştiremeyiz. Bu yüzden subclass türetip
 # pygame.font.Font ve pygame.sysfont.Font referanslarını eziyoruz.
+_font_subclassing_ok = False
 if hasattr(pygame, 'font') and hasattr(pygame.font, 'Font'):
-    class PatchedFont(pygame.font.Font):
+    try:
+        class PatchedFont(pygame.font.Font):
+            def render(self, text, antialias, color, background=None):
+                safe_text = "" if text is None else str(text)
+                try:
+                    color_key = tuple(color)
+                except Exception:
+                    color_key = (255, 255, 255)
+
+                try:
+                    bg_key = tuple(background) if background is not None else None
+                except Exception:
+                    bg_key = None
+
+                key = (id(self), safe_text, bool(antialias), color_key, bg_key)
+                cached = _TEXT_CACHE.get(key)
+                if cached is not None:
+                    return cached.copy()
+
+                rendered = super().render(safe_text, antialias, color, background)
+                _TEXT_CACHE.set(key, rendered)
+                return rendered.copy()
+
+            def render_shared(self, text, antialias, color, background=None) -> pygame.Surface:
+                """Salt-okunur (immutable) blit işlemleri için doğrudan paylaşımlı Surface döndürür."""
+                safe_text = "" if text is None else str(text)
+                try:
+                    color_key = tuple(color)
+                except Exception:
+                    color_key = (255, 255, 255)
+
+                try:
+                    bg_key = tuple(background) if background is not None else None
+                except Exception:
+                    bg_key = None
+
+                key = (id(self), safe_text, bool(antialias), color_key, bg_key)
+                cached = _TEXT_CACHE.get(key)
+                if cached is not None:
+                    return cached
+
+                rendered = super().render(safe_text, antialias, color, background)
+                _TEXT_CACHE.set(key, rendered)
+                return rendered
+
+        _font_subclassing_ok = True
+    except TypeError:
+        # Font VAR ama kalıtılamıyor olabilir: bazı test dosyaları pygame'i
+        # ``Font=lambda *a, **kw: ...`` kalıbıyla stub'lar (test_extras_*).
+        # Lambda tabanını kalıtmak metasınıf çözümünde TypeError fırlatır ve
+        # modül importu — pytest KOLEKSİYONU — kırılırdı. Font referansı
+        # ezilmez; aşağıdaki sade fallback sınıfı kullanılır. Üretimde
+        # gerçek pygame.font.Font bir sınıftır: bu dal asla çalışmaz,
+        # davranış birebir korunur.
+        _font_subclassing_ok = False
+
+if not _font_subclassing_ok:
+    # v2 deseninin demo uyarlaması: kalıtılamaz/eksik Font ortamında
+    # (stub pygame'li testler) sade PatchedFont. render_text_shared,
+    # hasattr(font, 'render_shared') ile yokluğu zaten tolere eder.
+    class PatchedFont:
+        def __init__(self, *args, **kwargs):
+            pass
         def render(self, text, antialias, color, background=None):
-            safe_text = "" if text is None else str(text)
             try:
-                color_key = tuple(color)
-            except Exception:
-                color_key = (255, 255, 255)
-
-            try:
-                bg_key = tuple(background) if background is not None else None
-            except Exception:
-                bg_key = None
-
-            key = (id(self), safe_text, bool(antialias), color_key, bg_key)
-            cached = _TEXT_CACHE.get(key)
-            if cached is not None:
-                return cached.copy()
-
-            rendered = super().render(safe_text, antialias, color, background)
-            _TEXT_CACHE.set(key, rendered)
-            return rendered.copy()
-
-        def render_shared(self, text, antialias, color, background=None) -> pygame.Surface:
-            """Salt-okunur (immutable) blit işlemleri için doğrudan paylaşımlı Surface döndürür."""
-            safe_text = "" if text is None else str(text)
-            try:
-                color_key = tuple(color)
-            except Exception:
-                color_key = (255, 255, 255)
-
-            try:
-                bg_key = tuple(background) if background is not None else None
-            except Exception:
-                bg_key = None
-
-            key = (id(self), safe_text, bool(antialias), color_key, bg_key)
-            cached = _TEXT_CACHE.get(key)
-            if cached is not None:
-                return cached
-
-            rendered = super().render(safe_text, antialias, color, background)
-            _TEXT_CACHE.set(key, rendered)
-            return rendered
+                return pygame.Surface((0, 0))
+            except TypeError:
+                try:
+                    return pygame.Surface()
+                except Exception:
+                    class DummySurface:
+                        def get_size(self):
+                            return (0, 0)
+                        def get_rect(self, **kwargs):
+                            class DummyRect:
+                                def __init__(self):
+                                    self.x = self.y = self.width = self.height = 0
+                                    self.top = self.bottom = self.left = self.right = 0
+                                    self.center = self.centerx = self.centery = (0, 0)
+                                def copy(self):
+                                    return self
+                            return DummyRect()
+                    return DummySurface()
 
 def patch_font() -> None:
     """pygame.font.Font ve sysfont.Font'u PatchedFont ile değiştirir."""
     global pygame
+    if not _font_subclassing_ok:
+        # Kalıtılamaz Font ortamında (stub pygame'li testler) PatchedFont
+        # sade fallback sınıfıdır; stub'ın kendi fake Font'unu ezmek yerine
+        # bilinçli no-op. Üretimde bayrak her zaman True'dur.
+        return
     if hasattr(pygame, "font") and hasattr(pygame.font, "Font"):
         if pygame.font.Font is not PatchedFont:
             pygame.font.Font = PatchedFont
