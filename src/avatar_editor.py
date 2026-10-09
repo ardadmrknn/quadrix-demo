@@ -23,6 +23,120 @@ GREEN = (100, 200, 100)
 RED = (200, 100, 100)
 
 
+# ---------------------------------------------------------------------------
+# Yüzey önbellekleri (OP-020 / DALGA D6):
+# Editör açıkken her kare ~height adet draw.line (4K'ta 2160) + alt bar
+# ~100 satır + kırpma overlay Surface'i + 2 smoothscale + resize ikonu
+# DISK yükleme üretiliyordu (ölçüm: 18.0 ms/kare, SDL dummy — draw.line
+# yalnız %65). Renk formülleri sabit olduğundan arka plan/alt bar
+# (width, boyut) saf fonksiyonudur → modül LRU'su kalıcı yüzey üretir,
+# her kare tek blit. Kırpma-bağımlı overlay/önizleme örnek-düzeyi LRU'dur
+# (sürükleme karesi kendi anahtarıyla miss — bugünkü maliyetiyle üretir;
+# boşta kalan kareler hit). İkon bir kez yüklenir (kare-döngüsünde I/O
+# yasağı). Geometri anahtarları çözünürlük değişimini kapsar; içerik hiç
+# bir kancaya bağlı olmadığından invalidasyon gerekmez (görüntü değişimi
+# load_image'te örnek cache'leri temizlenerek kapanır).
+_BG_GRADIENT_CACHE: dict = {}
+_BG_GRADIENT_CACHE_ORDER: list = []
+_BG_GRADIENT_CACHE_MAX = 4
+
+_BOTTOM_BAR_GRADIENT_CACHE: dict = {}
+_BOTTOM_BAR_GRADIENT_CACHE_ORDER: list = []
+_BOTTOM_BAR_GRADIENT_CACHE_MAX = 4
+
+_RESIZE_ICON_CACHE: dict = {}
+
+
+def _lru_get(cache: dict, order: list, key: tuple):
+    value = cache.get(key)
+    if value is not None:
+        order.remove(key)
+        order.append(key)
+    return value
+
+
+def _lru_set(cache: dict, order: list, key: tuple, value, max_items: int) -> None:
+    if key in cache:
+        order.remove(key)
+    cache[key] = value
+    order.append(key)
+    while len(order) > max_items:
+        old_key = order.pop(0)
+        cache.pop(old_key, None)
+
+
+def _get_bg_gradient_surface(width: int, height: int) -> pygame.Surface:
+    """Tam-ekran dikey gradyan arka planı — LRU 4 (OP-020 / D6).
+
+    İçerik (width, height)'in saf fonksiyonu (renk formülleri sabit);
+    üretimde bir kez çizilir, kare başına tek blit kalır.
+    """
+    key = (int(width), int(height))
+    cached = _lru_get(_BG_GRADIENT_CACHE, _BG_GRADIENT_CACHE_ORDER, key)
+    if cached is not None:
+        return cached
+    surface = pygame.Surface(key)
+    for i in range(key[1]):
+        color_r = int(10 + (i / key[1]) * 15)
+        color_g = int(15 + (i / key[1]) * 20)
+        color_b = int(30 + (i / key[1]) * 25)
+        pygame.draw.line(surface, (color_r, color_g, color_b), (0, i), (key[0], i))
+    _lru_set(_BG_GRADIENT_CACHE, _BG_GRADIENT_CACHE_ORDER, key, surface,
+             _BG_GRADIENT_CACHE_MAX)
+    return surface
+
+
+def _get_bottom_bar_gradient_surface(width: int, denom: float) -> pygame.Surface:
+    """Alt bar gradyanı — LRU 4 (OP-020 / D6).
+
+    Satır sayısı int(denom), alfa eğrisi i/denom — MEVCUT formüllerin
+    birebir kopyası (kesirli ölçekte payda farkı piksel değiştirir; anahtar
+    tam float paydayı taşır).
+    """
+    bar_px = int(denom)
+    key = (int(width), float(denom))
+    cached = _lru_get(_BOTTOM_BAR_GRADIENT_CACHE, _BOTTOM_BAR_GRADIENT_CACHE_ORDER, key)
+    if cached is not None:
+        return cached
+    surface = pygame.Surface((int(width), bar_px))
+    for i in range(bar_px):
+        alpha = 1 - (i / denom)
+        color = (int(20 * alpha), int(25 * alpha), int(40 * alpha))
+        pygame.draw.line(surface, color, (0, i), (int(width), i))
+    _lru_set(_BOTTOM_BAR_GRADIENT_CACHE, _BOTTOM_BAR_GRADIENT_CACHE_ORDER, key,
+             surface, _BOTTOM_BAR_GRADIENT_CACHE_MAX)
+    return surface
+
+
+def _get_resize_icon() -> pygame.Surface | None:
+    """Resize oku ikonu — süreç başına bir kez (OP-020 / D6).
+
+    Eski yol emoji_surface None dönerse fallback HER KARE dosyadan
+    yüklüyordu (image.load + pathlib.resolve + stat oyun döngüsünde).
+    """
+    # None da önbelleklenir: 'in' denetimi miss'ten ayırt eder (None iken
+    # dosya denemesi kare-döngüsünde tekrar etmez).
+    if 'resize_arrow_16' in _RESIZE_ICON_CACHE:
+        return _RESIZE_ICON_CACHE['resize_arrow_16']
+    icon = None
+    try:
+        from emoji_renderer import emoji_surface
+        icon = emoji_surface('↘', 16)
+    except Exception:
+        icon = None
+    if icon is None:
+        try:
+            from pathlib import Path
+            _rp = Path(__file__).resolve().parent.parent / 'assets' / 'emoji' / 'resize_arrow.png'
+            if _rp.exists():
+                icon = pygame.image.load(str(_rp)).convert_alpha()
+                icon = pygame.transform.smoothscale(icon, (16, 16))
+        except Exception:
+            icon = None
+    _RESIZE_ICON_CACHE['resize_arrow_16'] = icon
+    return icon
+
+
 class AvatarEditor:
     """Avatar düzenleme ekranı - resim yükleme ve kırpma"""
     
@@ -106,7 +220,10 @@ class AvatarEditor:
             
             # Sınırları ayarla
             self._clamp_crop()
-            
+
+            # Görüntü değişti — kırpma-bağımlı örnek cache'leri düşür (OP-020 / D6)
+            self._clear_image_layout_caches()
+
             return True
         except Exception as e:
             print(f"Resim yüklenirken hata: {e}")
@@ -269,12 +386,9 @@ class AvatarEditor:
         layout = self._draw_layout = {}
         layout['has_image'] = self.display_image is not None
         
-        # Koyu gradient arka plan
-        for i in range(height):
-            color_r = int(10 + (i / height) * 15)
-            color_g = int(15 + (i / height) * 20)
-            color_b = int(30 + (i / height) * 25)
-            pygame.draw.line(self.screen, (color_r, color_g, color_b), (0, i), (width, i))
+        # Koyu gradient arka plan — (width, height) saf fonksiyonu; kalıcı
+        # yüzeye bir kez üretilir, her kare tek blit (OP-020 / D6).
+        self.screen.blit(_get_bg_gradient_surface(width, height), (0, 0))
         
         # Başlık
         title = self.font_title.render(t('avatar_edit_title'), True, WHITE)
@@ -306,14 +420,10 @@ class AvatarEditor:
             
             layout['crop'] = crop_rect
 
-            # Karanlık overlay (kırpma dışı alan)
-            overlay = pygame.Surface((img_w, img_h), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 120))
-            
-            # Kırpma alanını temizle
-            clear_rect = pygame.Rect(self.crop_x, self.crop_y, self.crop_size, self.crop_size)
-            pygame.draw.rect(overlay, (0, 0, 0, 0), clear_rect)
-            
+            # Karanlık overlay (kırpma dışı alan) — kırpma geometrisi
+            # anahtarlı LRU; sürükleme karesi miss, boşta kalan hit (OP-020 / D6).
+            overlay = self._get_crop_overlay_surface()
+
             self.screen.blit(overlay, (img_x, img_y))
             
             # Kırpma çerçevesi
@@ -348,19 +458,8 @@ class AvatarEditor:
             pygame.draw.rect(self.screen, (255, 200, 0), resize_handle, border_radius=5)
             pygame.draw.rect(self.screen, (255, 255, 100), resize_handle, 3, border_radius=5)
             
-            # Resize ikonu — PNG emoji
-            from emoji_renderer import emoji_surface
-            _resize_ic = emoji_surface('↘', 16) 
-            if _resize_ic is None:
-                # EMOJI_MAP'te yoksa doğrudan dosyadan yükle
-                try:
-                    from pathlib import Path
-                    _rp = Path(__file__).resolve().parent.parent / 'assets' / 'emoji' / 'resize_arrow.png'
-                    if _rp.exists():
-                        _resize_ic = pygame.image.load(str(_rp)).convert_alpha()
-                        _resize_ic = pygame.transform.smoothscale(_resize_ic, (16, 16))
-                except Exception:
-                    pass
+            # Resize ikonu — süreç başına bir kez yüklenir (OP-020 / D6).
+            _resize_ic = _get_resize_icon()
             if _resize_ic:
                 _ir = _resize_ic.get_rect(center=resize_handle.center)
                 self.screen.blit(_resize_ic, _ir)
@@ -386,12 +485,11 @@ class AvatarEditor:
             preview_x = max(preview_x, min(bg_rect.right + 12,
                                            width - preview_size - 10))
             
-            # Kırpılmış alanı al
-            cropped = self.get_cropped_image()
-            if cropped:
-                # SMOOTHSCALE ile kaliteli önizleme
-                preview_img = pygame.transform.smoothscale(cropped, (preview_size, preview_size))
-                
+            # Kırpılmış alanı al — kırpma + önizleme boyutu anahtarlı LRU;
+            # sürükleme karesi miss, boşta kalan hit (OP-020 / D6).
+            preview_img = self._get_preview_surface(preview_size)
+            if preview_img:
+
                 # Önizleme arka plan
                 preview_bg = pygame.Rect(preview_x - 10, preview_y - 10, preview_size + 20, preview_size + 20)
                 layout['preview_bg'] = preview_bg
@@ -425,12 +523,9 @@ class AvatarEditor:
         bottom_bar_y = height - 100
         layout['bottom_bar_y'] = bottom_bar_y
         
-        # Gradient alt bar
-        for i in range(100):
-            alpha = 1 - (i / 100)
-            color = (int(20 * alpha), int(25 * alpha), int(40 * alpha))
-            pygame.draw.line(self.screen, color, (0, bottom_bar_y + i), (width, bottom_bar_y + i))
-        
+        # Gradient alt bar — (width, boyut) saf fonksiyonu; tek blit (OP-020 / D6).
+        self.screen.blit(_get_bottom_bar_gradient_surface(width, 100), (0, bottom_bar_y))
+
         pygame.draw.line(self.screen, (70, 100, 180), (0, bottom_bar_y), (width, bottom_bar_y), 2)
         
         # Kontrol butonları
@@ -479,7 +574,66 @@ class AvatarEditor:
 
         layout['buttons'] = button_rects
         layout['button_labels'] = button_label_rects
-    
+
+    def _clear_image_layout_caches(self) -> None:
+        """Görüntü değişince kırpma-bağımlı yüzey cache'lerini düşür (OP-020 / D6)."""
+        self._crop_overlay_cache = {}
+        self._crop_overlay_cache_order = []
+        self._preview_cache = {}
+        self._preview_cache_order = []
+
+    def _get_crop_overlay_surface(self) -> pygame.Surface:
+        """Kırpma-dışı karartma yüzeyi — örnek LRU 8 (OP-020 / D6).
+
+        İçerik (display boyutu, crop_x, crop_y, crop_size)'un saf
+        fonksiyonu: SRCALPHA fill(0,0,0,120) + kırpma alanının (0,0,0,0)
+        ile temizlenmesi (mevcut deyim birebir). Sürükleme karesi yeni
+        anahtarla miss olur ve bugünkü maliyetiyle üretir; boşta kalan
+        kareler tek blit'e iner.
+        """
+        img_w, img_h = self.display_image.get_size()
+        key = (img_w, img_h, int(self.crop_x), int(self.crop_y), int(self.crop_size))
+        cache = getattr(self, '_crop_overlay_cache', None)
+        if cache is None:
+            cache = self._crop_overlay_cache = {}
+            self._crop_overlay_cache_order = []
+        cached = _lru_get(cache, self._crop_overlay_cache_order, key)
+        if cached is not None:
+            return cached
+        overlay = pygame.Surface((img_w, img_h), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 120))
+        # Kırpma alanını temizle
+        clear_rect = pygame.Rect(self.crop_x, self.crop_y, self.crop_size, self.crop_size)
+        pygame.draw.rect(overlay, (0, 0, 0, 0), clear_rect)
+        _lru_set(cache, self._crop_overlay_cache_order, key, overlay, 8)
+        return overlay
+
+    def _get_preview_surface(self, preview_size: int):
+        """Önizleme yüzeyi — örnek LRU 8 (OP-020 / D6).
+
+        get_cropped_image (kırp + 128'e smoothscale) + preview boyutuna
+        smoothscale zinciri; kırpma geometrisi ve önizleme boyutunun saf
+        fonksiyonu. get_cropped_image yalnız miss yolunda koşar —
+        save_avatar kendi çağrısında her zaman taze üretir.
+        """
+        img_w, img_h = self.display_image.get_size()
+        key = (img_w, img_h, int(self.crop_x), int(self.crop_y),
+               int(self.crop_size), int(preview_size))
+        cache = getattr(self, '_preview_cache', None)
+        if cache is None:
+            cache = self._preview_cache = {}
+            self._preview_cache_order = []
+        cached = _lru_get(cache, self._preview_cache_order, key)
+        if cached is not None:
+            return cached
+        cropped = self.get_cropped_image()
+        if not cropped:
+            return None
+        # SMOOTHSCALE ile kaliteli önizleme
+        preview_img = pygame.transform.smoothscale(cropped, (int(preview_size), int(preview_size)))
+        _lru_set(cache, self._preview_cache_order, key, preview_img, 8)
+        return preview_img
+
     def get_cropped_image(self):
         """Kırpılmış resmi al (orijinal kalitede)"""
         if not self.original_image or not self.display_image:
