@@ -79,6 +79,12 @@ def _install_right_hud_test_stubs(monkeypatch) -> None:
     )
     localization_stub = types.ModuleType('localization')
     localization_stub.t = lambda key, *args, **kwargs: key
+    # OP-029 (91f07be) sonrasi mode_skins.get_localized_skin_title/subtitle
+    # cagri-ani ``from localization import get_language`` yapar; stub yalniz
+    # t saglayinca sag HUD cizim yolu ImportError ile dusuyordu (test 2175b01
+    # dogdugunda get_language bagimliligi yoktu — perf dalgasi kirdi, paket
+    # disinda kaldigi icin fark edilmedi). Gercek imza: get_language() -> str.
+    localization_stub.get_language = lambda: 'en'
 
     monkeypatch.setitem(sys.modules, 'retro_style', retro_style_stub)
     monkeypatch.setitem(sys.modules, 'localization', localization_stub)
