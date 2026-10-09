@@ -136,6 +136,27 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
 
 ---
 
+## 6. Kapanış Günlüğü
+
+- **D1 (OP-063) — KAPANDI 2026-10-09:** v2 `8cd79a0` / demo `0836cdb`. Rapor
+  noktalarının büyük bölümü DALGA B'de (b8b829b) zaten kapanmıştı; kalan kare-yolu
+  nokta coop_game outer_tint + skin cache import'ları. Koşum sırasında 2 pre-existing
+  coop HUD fail'i ayrıca kök-kapatıldı (v2 `4530020` / demo `e4a4ca1`: dar bar katkı
+  bütçesi + platform-kırılgan yükseklik pin'leri; 2547a54 worktree koşumuyla
+  doğuştan kırmızı olduğu kanıtlandı — A/B-stash iki repoda pre-existing kanıtı).
+- **D2 (OP-013) — KAPANDI 2026-10-09 (reçeteden sapma, ölçümle):** v2 `6d50ab0` /
+  demo `a2dfa3e`. Raporun buffer/LRU önermesinin **tahsis kısmı ölçümle çürütüldü**:
+  taze SRCALPHA 6.3 µs (zero-fill'li), reuse-clear 31-40 µs → buffer-reuse +%25-40
+  yavaş ölçüldü, UYGULANMADI; sweep_x = int(progress·travel) kuantası boyut-LRU'yu
+  da iskalar. Uygulanan: shimmer profili (band_w, height) LRU'su — içerik saf
+  fonksiyon, faz yalnız blit konumu (reçetenin bu kısmı geçerliydi) — + dilim
+  döngüsü invariant hoisting + Rect reuse. Kazanım (200 çağrı, 320×60, min-of-5):
+  ülke sabit 255→188 ms (−%26, ~−334 µs/kare), büyüyen 153→134 (−%13), rainbow
+  sabit 372→275. Parite: 9/9 senaryo digest HEAD ile birebir + demo aynı digest.
+  Test: v2 114 / demo 97.
+
+---
+
 *Bağlantılar: rapor §4-6 (madde detayları + öneriler), §8 (metre altyapısı),
 §10 (doğrulanamayanlar); kılavuz `plans/2026-10-09-windows-smoke-dalga-bc-faz6-kilavuzu.md`
 (A-0 talimatı); analiz `reports/telemetry/quadrix_full_windows/ANALIZ_2026-10-09.md`
