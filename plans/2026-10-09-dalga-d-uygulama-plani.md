@@ -154,6 +154,18 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
   ülke sabit 255→188 ms (−%26, ~−334 µs/kare), büyüyen 153→134 (−%13), rainbow
   sabit 372→275. Parite: 9/9 senaryo digest HEAD ile birebir + demo aynı digest.
   Test: v2 114 / demo 97.
+- **D3 (OP-014) — KAPANDI 2026-10-09:** v2 `b865f8d` / demo `c51f30f`. Draw
+  başında tek geçişle (row, col)→offset sözlüğü; `_get_block_fall_offset` ve
+  ilk-eşleşme semantiği korunur (metot testlerde doğrudan çağrılıyor). Kapsam
+  kovuğu: döngüyü süren test YOKTU → `test_game_locked_blocks_fall_offset.py`
+  gerçek `_draw_base_scene` yolunu sürer, HEAD worktree'de de yeşil (parite).
+  Ölçüm: replika −%78-83 (−174…−247 µs/kare); tam ANIM karesi v2 4.298→4.011 /
+  4.192→3.663 ms, demo 3.800→3.566; ANIM-EMPTY delta v2 0.42-0.44→0.19-0.29 ms,
+  demo 0.543→0.208. Birleşik A/B: fail kümeleri HEAD ile birebir (v2 20 / demo
+  34) → sıfır yeni hata. Pre-existing borç kaydı: v2 kümeleri alt-koşumda yeşil
+  (sıra kirliliği); demo store_screen 5 gerçek düşüş da6b9fc'te de kırmızı
+  (DALGA D'den eski, ayrı iş). Gözlem (aday D3b): aynı desen coop_game:4158,
+  pvp_game:4812, online_pvp_game:7533/7670 çizimlerinde.
 
 ---
 
