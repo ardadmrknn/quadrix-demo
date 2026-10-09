@@ -34,7 +34,10 @@ git log --oneline -1
 1. **Kaynak koşusu (ilk tur, hızlı):** telemetri env ile kolay açılır.
    - Ön koşul: Python 3.12 + `py -3.12 -m pip install -e ".[dev]"` (PyInstaller/VS gerekmez).
    - Steam online özellikleri opsiyonel: `steam_net_bridge*.pyd` yoksa oyun açılır, online kapanır.
-2. **EXE koşusu (ikinci tur, tam doğrulama):** frozen build davranışı + telemetri otomatik AÇIK.
+2. **EXE koşusu (ikinci tur, tam doğrulama):** frozen build davranışı + telemetri otomatik AÇIK. EXE'yi Steam'den başlatmanın yolları:
+   - **Tam tur (önerilen — normal yayın akışın):** derlenen yeni build'i ContentBuilder/steamcmd akışınla Steam'e yükle ve Steam'den playtest'i başlat. Gerçek launch ortamı: overlay + Steamworks + Launch Options birebir. Yüklediğin build yeni derlemeyse Steam'deki de yeni koddur — koşumdan önce `git pull` (hedef commit) yapıldığından emin ol.
+   - **Upload'sız hızlı tur:** `dist\Quadrix.exe`'yi Steam'de "Oyun Ekle → Harici Oyun Ekle" ile kütüphaneye ekle ve Steam'den başlat. Overlay (Steam launch ettiği süreci hook eder) ve Steamworks (build `steam_appid.txt`'yi AppID 4428040 ile EXE yanına gömer) yine aktiftir.
+   - **Direkt çift tıklama:** overlay hook edilmez — yalnız Odak A/C/D/G için geçerli; Odak B (overlay) ve E/F (Steam yolları) sınamaz.
 
 ### 1.3 EXE derlemek (ikinci tur için)
 v2 repo kökünden (PowerShell):
