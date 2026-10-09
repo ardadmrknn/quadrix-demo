@@ -79,6 +79,10 @@ steamworks/output/
 .env.*
 backend/.env
 
+# Claude Code local (kişisel izin geçmişi / yerel yollar içerir; ajan
+# tanımları .claude/agents/ kasıtlı olarak repodadır)
+.claude/settings.local.json
+
 # Sunum / pitch ciktilari (yerel uretim)
 local_artifacts/*.pptx
 local_artifacts/~$*.pptx
