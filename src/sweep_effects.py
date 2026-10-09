@@ -873,13 +873,20 @@ def draw_line_sweep_band(
     band = pygame.Surface(rect.size, pygame.SRCALPHA)
     elapsed = pygame.time.get_ticks() / 1000.0
     slice_w = 2
+    # OP-013 (D2): döngü-değişmezleri hoist + Rect nesnesi döngü içinde
+    # yeniden kullanılır (160-320 nesne/kare tahsisi kalkar; piksel akışı
+    # değişmez — Rect içerikleri her adım birebir aynı kurulur).
+    angle_step = 2.0 * math.pi / 120.0
+    elapsed_phase = elapsed * 5.0
+    base_dy = int(wave_amplitude)
+    slice_rect = pygame.Rect(0, 0, slice_w, draw_h)
     for sx in range(0, rect.width, slice_w):
-        angle = (sx * (2.0 * math.pi / 120.0)) - (elapsed * 5.0)
-        dy = int(math.sin(angle) * wave_amplitude) + int(wave_amplitude)
+        angle = (sx * angle_step) - elapsed_phase
+        dy = int(math.sin(angle) * wave_amplitude) + base_dy
 
         # Dilim sınırlarını taşmayacak şekilde clip edelim
-        curr_w = min(slice_w, rect.width - sx)
-        slice_rect = pygame.Rect(sx, 0, curr_w, draw_h)
+        slice_rect.x = sx
+        slice_rect.w = min(slice_w, rect.width - sx)
         band.blit(draw_band, (sx, dy), slice_rect)
 
     # Animated wind-shimmer pass — a soft diagonal highlight that sweeps across
@@ -963,6 +970,37 @@ def _draw_country_flag_band(
         x += tile_w
 
 
+# OP-013 (D2): rüzgâr shimmer profili LRU'su — içerik (band_w, height)'in
+# saf fonksiyonu; faz yalnız blit konumunda. ~115 draw.line çağrısı/kareyi
+# tek önbellek isabetine indirir.
+_shimmer_profile_cache: dict[tuple[int, int], pygame.Surface] = {}
+_SHIMMER_PROFILE_CACHE_MAX = 64
+
+
+def _get_shimmer_profile(band_w: int, height: int) -> pygame.Surface:
+    """(band_w, height) için önbellekteki shimmer profil yüzeyini döndür."""
+    key = (band_w, height)
+    cached = _shimmer_profile_cache.get(key)
+    if cached is not None:
+        return cached
+    surface = pygame.Surface((band_w * 2 + 1, height), pygame.SRCALPHA)
+    for dx in range(-band_w, band_w + 1):
+        falloff = 1.0 - abs(dx) / float(band_w)
+        alpha = int(22 * (falloff ** 2))
+        if alpha > 0:
+            pygame.draw.line(
+                surface,
+                (255, 255, 255, alpha),
+                (dx + band_w, 0),
+                (dx + band_w, height),
+                1,
+            )
+    if len(_shimmer_profile_cache) >= _SHIMMER_PROFILE_CACHE_MAX:
+        _shimmer_profile_cache.pop(next(iter(_shimmer_profile_cache)))
+    _shimmer_profile_cache[key] = surface
+    return surface
+
+
 def _apply_wind_shimmer(band: pygame.Surface, rect: pygame.Rect, phase: int, theme: str) -> None:
     """Soft diagonal highlight that scrolls with phase. Sells the 'wind' feel.
 
@@ -983,12 +1021,11 @@ def _apply_wind_shimmer(band: pygame.Surface, rect: pygame.Rect, phase: int, the
     center_x = int(-band_w + (width + band_w * 2) * progress)
     if center_x + band_w < 0 or center_x - band_w >= width:
         return
-    shimmer = pygame.Surface((band_w * 2 + 1, height), pygame.SRCALPHA)
-    for dx in range(-band_w, band_w + 1):
-        falloff = 1.0 - abs(dx) / float(band_w)
-        alpha = int(22 * (falloff ** 2))
-        if alpha > 0:
-            pygame.draw.line(shimmer, (255, 255, 255, alpha), (dx + band_w, 0), (dx + band_w, height), 1)
+    # OP-013 (D2): profil (band_w, height)'in saf fonksiyonu (~115 çizgi
+    # ve ~0.5 ms/kare) — LRU'ya alınır; faz yalnız blit konumunu belirler,
+    # önbellek anahtarına girmez. Boyutlar bir sweep içinde ~25 kez
+    # değişir; 64 kapasite tekrarlayan sweep'lerde isabet tutar.
+    shimmer = _get_shimmer_profile(band_w, height)
     band.blit(shimmer, (center_x - band_w, 0))
 
 
