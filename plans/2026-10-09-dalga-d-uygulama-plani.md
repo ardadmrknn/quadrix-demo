@@ -166,6 +166,21 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
   (sıra kirliliği); demo store_screen 5 gerçek düşüş da6b9fc'te de kırmızı
   (DALGA D'den eski, ayrı iş). Gözlem (aday D3b): aynı desen coop_game:4158,
   pvp_game:4812, online_pvp_game:7533/7670 çizimlerinde.
+- **D4 (OP-015+059) — KAPANDI 2026-10-09:** v2 `e370366` / demo `d2be513`.
+  OP-059 iki repoda da DALGA D'den önce uygulanmış çıktı. v2'de panel/glow LRU
+  + pulse'sız sabit geometri de zaten modernizasyon içindedir; kalan iş metin
+  bloğuydu → (milestone_value, panel_w, panel_h) anahtarlı
+  `_milestone_text_block_cache` (LRU 8; hit'te rect + 3 blit, gölge alfası
+  üretimde pişirilir). Demo raporun tam hedefiydi: 4 glow →
+  `_get_rounded_rect_surface`; gradyan → maskesiz/kare-köşeli
+  `_get_milestone_panel_surface` (v2 maskeli paneli taşınmaz — köşe görseli);
+  3 render → `_get_milestone_text_surface` (LRU 32). Kapsam kovuğu:
+  `test_game_milestone_panel_cache.py` gerçek draw yolunu sürer; soğuk/sıcak
+  kare-kare digest birebir (mutasyon kovuğu), demo pulse çevrimi 119→100.
+  Ölçüm (interleaved A/B, medyan — sıralı koşum gürültüde yanıltıcı): v2
+  0.762→0.614 ms/kare (−148 µs), demo 1.302→0.611 (−691 µs, −%53). Parite
+  3/3 digest HEAD ile aynı. Birleşik A/B: fail kümeleri birebir (v2 20/4072,
+  demo 34/3496) → sıfır yeni hata.
 
 ---
 
