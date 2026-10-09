@@ -200,6 +200,28 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
   negatif; ders-içi donma fazı overlay+howto). Parite: edited == HEAD == soğuk
   == sıcak digest (4 ağaç; v2/demo digest'leri de eşit). Birleşik A/B: fail
   kümeleri birebir (v2 20/4078, demo 34/3502) → sıfır yeni hata.
+- **D6 (OP-020 avatar editörü) — KAPANDI 2026-10-09:** v2 `b58836d` / demo
+  `eb01fc8` (bu belge güncellemesi ayrı docs-commit). Editör açıkken
+  kare başına 796 (v2) / 821 (demo) draw.line + resize oku için HER KARE
+  disk yükleme (`emoji_surface('↘',16)` None → image.load + stat; raporun
+  görmediği bonus bug) + 2 smoothscale + overlay Surface tahsisi. Uygulanan
+  (iki repo birebir; demo ölçeksiz düzen — bar sabit 100 payda, önizleme
+  150): modül LRU'ları `_get_bg_gradient_surface` (4; (width, height)) ve
+  `_get_bottom_bar_gradient_surface` (4; (width, float(denom)) — kesirli
+  ölçekte payda piksel değiştirir) + `_get_resize_icon()` süreç-ömrü tekil
+  girişi (None sentinel `'in'` denetimiyle — `.get()` tuzağı); örnek LRU'ları
+  overlay (8) ve preview (8; get_cropped_image yalnız miss'te) +
+  load_image'te invalidasyon (display_image yalnız orada set edilir).
+  Kapsam kovuğu: `test_avatar_editor_surface_caches.py` (6 test iki repo):
+  hit kimliği, anahtar duyarlılığı, LRU-4 düşürme, None-sentinel ikon,
+  invalidasyon, soğuk/sıcak digest + sıcakta büyümemesi. Ölçüm (interleaved
+  A/B 6 tur, medyan): v2 −14.975 ms/kare, demo −14.485 ms/kare (6/6 negatif);
+  profil çağrısı 500 karede v2 627.604→129.026, demo 634.095→123.020;
+  draw.line 796/821 → 1, disk I/O → 0 (sıralı v2: 18.004→5.162, −%71).
+  Parite: edited == HEAD == soğuk == sıcak digest (sürükleme karesi dahil;
+  v2 1280×720·0.75 ve 1920×1080·1.0 iki pencere ayrıca). Birleşik A/B:
+  fail kümeleri HEAD ile birebir (v2 20, demo 34; yeni 6'şar test yeşil) →
+  sıfır yeni hata. Kalan maliyet blit alanı — donanım bağımlı, kapsam dışı.
 
 ---
 
