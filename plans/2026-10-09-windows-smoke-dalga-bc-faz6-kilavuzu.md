@@ -35,16 +35,17 @@ git log --oneline -1
    - Ön koşul: Python 3.12 + `py -3.12 -m pip install -e ".[dev]"` (PyInstaller/VS gerekmez).
    - Steam online özellikleri opsiyonel: `steam_net_bridge*.pyd` yoksa oyun açılır, online kapanır.
 2. **EXE koşusu (ikinci tur, tam doğrulama):** frozen build davranışı + telemetri otomatik AÇIK. EXE'yi Steam'den başlatmanın yolları:
-   - **Tam tur (önerilen — normal yayın akışın):** derlenen yeni build'i ContentBuilder/steamcmd akışınla Steam'e yükle ve Steam'den playtest'i başlat. Gerçek launch ortamı: overlay + Steamworks + Launch Options birebir. Yüklediğin build yeni derlemeyse Steam'deki de yeni koddur — koşumdan önce `git pull` (hedef commit) yapıldığından emin ol.
+   - **Tam tur (önerilen — normal yayın akışın):** derlenen yeni build'i ContentBuilder/steamcmd akışınla Steam'e yükle (ör. `steamworks/scripts/app_build_full.vdf`) ve Steam'den **ana oyunu** başlat. Gerçek launch ortamı: overlay + Steamworks + Launch Options birebir. Koşumdan önce `git pull` (hedef commit) yapıldığından emin ol. Not: ana oyun yayında olduğundan, her smoke turunda canlı (default) dalın build'ini değiştirmek istemiyorsan build'i bir **beta dalına** yükleyip o daldan oyna — canlı oyuncular etkilenmez.
    - **Upload'sız hızlı tur:** `dist\Quadrix.exe`'yi Steam'de "Oyun Ekle → Harici Oyun Ekle" ile kütüphaneye ekle ve Steam'den başlat. Overlay (Steam launch ettiği süreci hook eder) ve Steamworks (build `steam_appid.txt`'yi AppID 4428040 ile EXE yanına gömer) yine aktiftir.
    - **Direkt çift tıklama:** overlay hook edilmez — yalnız Odak A/C/D/G için geçerli; Odak B (overlay) ve E/F (Steam yolları) sınamaz.
 
 ### 1.3 EXE derlemek (ikinci tur için)
-v2 repo kökünden (PowerShell):
+v2 repo kökünden (PowerShell) — **ana oyun (Full) için `tetris.spec`**:
 ```powershell
-powershell -File .\scripts\build\build_windows_exe.ps1 -Clean -SpecFile 'packaging/specs/tetris_playtest.spec'
+powershell -File .\scripts\build\build_windows_exe.ps1 -Clean -SpecFile 'packaging/specs/tetris.spec'
 Get-Item dist\Quadrix.exe
 ```
+(Playtest turu istersen `packaging/specs/tetris_playtest.spec` — AppID ve veri klasörü farklı olur; bu kılavuz ana oyunu esas alır.)
 Ön koşullar: `py -3.12` çalışıyor; VS2022 (MSVC) + CMake + pybind11; Steamworks SDK `steamworks\sdk\` altında; pip `PyInstaller>=6.20`.
 Derleme sonrası logda şu satırları doğrula (yoksa Steam overlay/ekran görüntüsü frozen'da devre dışı kalır — oyun yine çalışır):
 - `pygame._sdl2 .pyd eklendi: video.cp312-win_amd64.pyd`
@@ -59,10 +60,10 @@ Loglar: `reports\logs\build_stdout.log` / `build_stderr.log`.
   $env:QUADRIX_OVERLAY_PERF   = "1"   # gl_debug.log [PERF]/[HITCH]/[GECIS]/[OLAY] satırları (SDL2 overlay aktifken)
   py main.py
   ```
-- **EXE / Steam koşusu:** telemetri otomatik AÇIK (frozen + Steam runtime algısı) — Launch Options env'i strip etse bile `sys.frozen` bayrağı env'e bağlı değildir, kapatamaz. Ekstra garanti istersen **sentinel dosya**: `<veri klasörü>\local\PERF_ON.txt` (boş dosya yeterli; gl_debug.log ile aynı klasör).
+- **EXE / Steam koşusu: telemetri için elle bir şey yapmana gerek yok — otomatik AÇIK** (frozen + Steam runtime algısı; `src/perf_telemetry.py` `is_enabled`). Launch Options env'i strip etse bile `sys.frozen` bayrağı env'e bağlı değildir, kapatamaz. Ekstra garanti istersen **sentinel dosya**: `%APPDATA%\quadrix_full\local\PERF_ON.txt` (boş dosya yeterli; gl_debug.log ile aynı klasör).
 - Kapatmak istersen: `QUADRIX_PERF_TELEMETRY_DISABLE=1` (en yüksek öncelikli — smoke turunda set ETME).
-- **Veri klasörü AppID'ye göre değişir** (src/data_paths.py `_APP_NAME_BY_STEAM_APPID`): playtest 4428040 → `%APPDATA%\quadrix_playtest`, mağaza 4414520 → `quadrix_full`, algılanamayan → `quadrix_full` fallback.
-- **Nereye yazar:** JSONL: `<veri klasörü>\local\perf\perf_telemetry_<oturum>.jsonl` — oyun açılışında konsolda/startup kaydında `telemetry_path` olarak kesin yol yazılır; şüphede kalırsan oyunu aç ve o satırı not al. İnsan-okur özet: `<veri klasörü>\local\gl_debug.log` içinde `[PERF]`, `[HITCH]` (>=70 ms tek kare), `[GECIS]` (ekran geçiş süresi: süre/kare/ilk_kare/en_kötü_kare), `[OLAY]` (Alt+Tab/PrintScreen odak olayları — A odaklarının kanıtı).
+- **Veri klasörü AppID'ye göre** (src/data_paths.py `_APP_NAME_BY_STEAM_APPID`): ana oyun/mağaza 4414520 → `%APPDATA%\quadrix_full` — algılanamayan durumda fallback de `quadrix_full`, yani **ana oyun turunda klasör her halükârda budur** (playtest 4428040 → `quadrix_playtest`; bu kılavuzda kullanılmıyor).
+- **Nereye yazar:** JSONL: `%APPDATA%\quadrix_full\local\perf\perf_telemetry_<oturum>.jsonl` — oyun açılışında konsolda/startup kaydında `telemetry_path` olarak kesin yol yazılır; şüphede kalırsan oyunu aç ve o satırı not al. İnsan-okur özet: `%APPDATA%\quadrix_full\local\gl_debug.log` içinde `[PERF]`, `[HITCH]` (>=70 ms tek kare), `[GECIS]` (ekran geçiş süresi: süre/kare/ilk_kare/en_kötü_kare), `[OLAY]` (Alt+Tab/PrintScreen odak olayları — A odaklarının kanıtı).
 
 ---
 
@@ -83,7 +84,7 @@ Loglar: `reports\logs\build_stdout.log` / `build_stderr.log`.
 4. Aynı akışı oyun İÇİNDE (parça düşerken) tekrarla: 1-2-3.
 
 ### Odak B — Steam overlay GL modu
-1. Oyunu **Steam üzerinden** başlat (kaynak koşusunda `config\runtime\steam_appid.txt` AppID 4428040; EXE'de zaten).
+1. Oyunu **Steam üzerinden** başlat (kaynak koşusunda `config\runtime\steam_appid.txt` AppID 4414520; EXE'de zaten).
 2. **Shift+Tab** ile overlay'i aç-kapat birkaç kez (menüde ve oyun içinde).
    - BEKLENEN: overlay görünür, oyun donmaz, görüntüde yırtılma/siyah ekran/ters frame yok.
 3. Ayarlarda `steam_overlay_gl` (auto/off/force) değerini DEĞİŞTİR, mağaza-oyun arası bir ekran geçişi yap.
@@ -110,7 +111,7 @@ Loglar: `reports\logs\build_stdout.log` / `build_stderr.log`.
 2. Mod içinde 30 sn oyna, menüye dön, başka moda gir — tekrar eden geçişlerde de akıcı kalmalı.
 
 ### Odak E — Online PvP HUD (OP-006)
-1. Playtest'te online PvP maçına gir (tek taraflıysa lobi ekranı + mümkün olan kadar oyun içi görüş).
+1. Steam'de online PvP maçına gir (tek taraflıysa lobi ekranı + mümkün olan kadar oyun içi görüş).
 2. Combo popup'ları ve HUD başlığını (isim/skor/satır sayısı) izle.
    - BEKLENEN: combo mesajı doğru görünür, fade parlaklığı doğru tazelenir (soluk/yanlış alfa kalıntısı yok); skor/satır güncel.
    - KÖTÜ: popup yanlış alfa ile çizilir, header skoru güncellenmez, popup hiç görünmez.
@@ -136,8 +137,8 @@ Her biri 1-2 dk, "bozulma var mı" gözlemi:
 
 ## 3. Ölçümleri Toplama
 Koşu bitince (telemetri açıkken):
-- JSONL: `<veri klasörü>\local\perf\` (Steam playtest koşusunda `%APPDATA%\quadrix_playtest\local\perf\`) — açılıştaki `telemetry_path` konumu.
-- İnsan-okur: `<veri klasörü>\local\gl_debug.log` — özellikle `[HITCH]`, `[GECIS]`, `[OLAY]` satırları; `slow_handler` JSONL olayı (>=150 ms handler).
+- JSONL: `%APPDATA%\quadrix_full\local\perf\` (ana oyun 4414520; playtest koşumunda `quadrix_playtest`) — açılıştaki `telemetry_path` konumu.
+- İnsan-okur: `%APPDATA%\quadrix_full\local\gl_debug.log` — özellikle `[HITCH]`, `[GECIS]`, `[OLAY]` satırları; `slow_handler` JSONL olayı (>=150 ms handler).
 - Bana gönderirken: log dosyasının ilgili satırları + hangi odak/adım + gözlemin tarifi yeterli.
 
 ## 4. Hata Bulunursa — Rapor Formatı
