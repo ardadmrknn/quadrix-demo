@@ -102,7 +102,11 @@ Risk artan sırada; her madde kendi doğrulama paketiyle atomik kapanır:
 3. Birleşik koşu (mevcut taban: v2 877+, demo 886+ — DALGA C sonrası gerçek sayı
    koşum anında ölçülür)
 4. Ölçüm probe'u (before/after, HEAD worktree vs düzenlenmiş ağaç — C2/C7 deseni;
-   `probe_store_draw_perf.py` / `probe_online_c7_hot_paths.py` modellenir)
+   `probe_store_draw_perf.py` / `probe_online_c7_hot_paths.py` modellenir).
+   D6-inceleme kuralı: **probe-örtüsü bileşenler (yalnız set_mode'suz ortamda
+   var olan maliyetler — örn. emoji `convert_alpha` düşüşü kaynaklı disk
+   fallback'i) kazanım sayısından AYRI raporlanır**; medyanlar tek-kutu anlık
+   ölçümüdür, karar verici kanıt deterministik çağrı sayılarıdır.
 5. Kapsam kovuğu dersleri (C2/C3): maddenin draw yolu hiçbir testle kapsanmıyorsa
    YENİ smoke test eklenir (demo test eksikliği dersi — 20 geçen test NameError görmedi).
 
@@ -222,6 +226,44 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
   v2 1280×720·0.75 ve 1920×1080·1.0 iki pencere ayrıca). Birleşik A/B:
   fail kümeleri HEAD ile birebir (v2 20, demo 34; yeni 6'şar test yeşil) →
   sıfır yeni hata. Kalan maliyet blit alanı — donanım bağımlı, kapsam dışı.
+- **D6 inceleme düzeltmesi (2026-10-09, ajan tabanlı advers inceleme — 8
+  kesin bulgu, 0 çürütülmüş; journal'da 35 benzersiz ajan koşusu):** Kapanış
+  kaydının önermeleri keskinleştirildi (ayrıntı v2 rapor OP-020 bloğundaki
+  düzeltme ek'inde):
+  1. "Kare başına DISK image.load (bonus bug)" üretim önermesi YANLIŞTI —
+     yalnız set_mode'suz probe ortamında görülür; üretimde (set_mode
+     aktif) emoji LRU'su ilk karede hit'ti. D6'nın üretim değeri retry
+     riski ve `_failed` zehirlenmesi dayanıklılığının kaldırılmasıdır.
+  2. Interleaved medyanlarının ikon bölümü probe-örtüsü: doğrudan ölçümü
+     (resolve+exists+image.load, set_mode'suz, 5×200 medyan) ~0.3 ms/kare
+     (0.27–0.36; profilli koşum 0.9–1.2 gösterir — profilci ek yükü);
+     üretim-gerçek kazanç ≈ −14.7 (v2) / −14.2 (demo) ms/kare. KURAL (§3'e
+     taşındı): probe-örtüsü bileşenler kazanım sayısından ayrı raporlanır.
+  3. Parite digest'leri set_mode'suz düz Surface'te alınmıştı (o ortamda
+     ikon iki ağaçta da çizilmiyordu). Ek kanıt (inceleme): set_mode'lu
+     display yüzeyinde edited == pre-D6 İKON DAHİL birebir (5 ağaç × 2
+     pencere: v2 fix'li/HEAD/pre-D6 + demo fix'li/HEAD); 1920×1080·ölçek
+     1.0'da v2/demo digest'leri çakışıyor —
+     "v2≠demo" farkı 1280×720'ye özgüdür.
+  4. Bellek bulgusu (FIX'LENDİ, iki repo): iki AvatarEditor örneği oturum
+     ömrü yaşadığından D6 örnek LRU'ları editör çıkışında bırakılmıyordu
+     — 4K doğrudan çizim (macOS) ~106 MiB/örnek kalıcı (Windows sdl2
+     ~21 MiB; gerçekçi oturum ~267 MiB). `release_session_resources()`
+     save/cancel dallarında bırakır; davranış değişmez (avatar diske +
+     asset_manager ham cache'ine yazılı).
+  5. Test kapaları (6 → 12/12): None-sentinel GERÇEK None yoluyla (`.get()`
+     regresyonu eski 6'da yeşil kalırdı); LRU recency + 8 sınır doğrudan
+     (FIFO/sınırsız regresyonu yakalanır); save_avatar tazelik (çağrı
+     sayacı + piksel); release + sonrası çizilebilirlik; ikon fallback
+     disk-yükleme başarı yolu + overlay piksel-içerik formül referansı
+     (inceleme kovukları). pygame-purge
+     dersi: `avatar_editor` yeniden import edilebilir — save yakalama
+     testi dosya-global VE modül pygame'i birlikte patch'ler.
+  6. Fix-sonrası birleşik A/B (tam paket, 12/12 yeni test dahil): fail
+     kümeleri HEAD ile BİREBİR — v2 20 = 20, demo 34 = 34 (sıfır yeni
+     hata). Fix'in tek gövde davranış değişikliği editör ÇIKIŞINDA
+     (release), draw yolu elenmedi — digest sabitliği (madde 3) ayrıca
+     kanıtı.
 
 ---
 
