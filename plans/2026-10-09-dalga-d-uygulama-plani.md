@@ -1,0 +1,142 @@
+# DALGA D Uygulama Planı — Ölçüm-Kapılı Orta Risk
+
+> Tarih: 2026-10-09. Kullanıcı kararıyla DALGA D AÇILDI; smoke kılavuzundaki canlı
+> doğrulama kapıları (A-0/A-1/A-3, D, C-2, E) bu dalganın içine taşındı —
+> "önce tur, sonra dalga" sırası kaldırıldı, ölçümler dalga akışında toplanır.
+> Kaynak bulgu tabanı: `reports/Quadrix_Kapsamli_Performans_Arastirmasi.md` §DALGA D
+> (satır 433) + maddelerin kendi bölümleri. Canlı kanıt tabanı:
+> `reports/telemetry/quadrix_full_windows/ANALIZ_2026-10-09.md`.
+>
+> **Depo pratiği:** DALGA B/C her maddede "iki repo, birebir aynı edit" deseniyle
+> uygulandı (v2 `main` + demo `release/demo` senkron commit'ler). Rapor §437'deki
+> "uygulama yalnız quadrix-demo'da; v2 salt-okunur" satırı bu pratikle ÇELİŞİYOR —
+> ground truth hiyerarşisi gereği (CLAUDE.md §3/4) kod pratiği esas alınır ve
+> saplama burada kayıt altına alındı. DALGA D de iki repo senkron uygulanır.
+>
+> **Ölçüm altyapısı sınırı (rapor §8):** tutorial/guide/avatar ekranlarında faz
+> metreleri YOK — OP-019/020 kazanım iddiaları metre eklenmeden kanıtlanamaz.
+> Metre ekleri opt-in ve ölçüm-kapılı olacak (üretim kare maliyeti OP-051 dersi).
+
+---
+
+## 0. Dallanacak Maddeler (rapor sırasıyla)
+
+| # | Bulgu | Bölge | v2 konum | demo konum | Risk |
+|---|-------|-------|----------|------------|------|
+| D1 | OP-063 fonksiyon-içi import'lar kare yolunda | çekirdek | game.py:5409, pvp:5070, gme 12058/12156, sweep 820/879, tutorial `_wrap_text` re | birebir muadiller | sıfır (davranış değişimi yok) |
+| D2 | OP-013 sweep bandı: 3 SRCALPHA + 160-320 dilim blit/kare | çekirdek | sweep_effects.py:784-839, 1014 | sweep_effects.py:843+ | düşük |
+| D3 | OP-014 fall offset hücre-başı lineer tarama | çekirdek | game.py:4037 | game.py:3908 | düşük |
+| D4 | OP-015 (+OP-059) milestone panel + MILESTONE_COLORS | çekirdek | game.py:6297-6399 | game.py:6161-6179 | düşük-orta |
+| D5 | OP-019 tutorial ders-içi layout fit+wrap her kare | menü | tutorial.py:539-676 | tutorial.py:457+ | orta (metin düzeni) |
+| D6 | OP-020 avatar editörü degrade + smoothscale | menü | avatar_editor.py:290-294, 412 | avatar_editor.py:273, 393 | düşük |
+| D7 | OP-035 PatchedFont `.copy()` / `render_shared` | altyapı | text_cache.py:82-89 | text_cache.py:89-96, 98-118 | orta (varsayılan yol KORUNMALI) |
+| D8 | OP-049 gamepad/connection polling throttle | girdi | her kare | her kare | orta (canlı donanım şartı) |
+| D9 | OP-038/039/040 heartbeat'ler | online | online_coop_game.py:3068+, 2975+, online_pvp_game.py:595, 4757+ | muadiller | orta-yüksek (takas açık karar) |
+| D10 | OP-018 ghost memoize (board_rev denetimi) | çekirdek | game.py:4544-4552 | game.py:4381 | EN YÜKSEK (bayat ghost = görsel bug) |
+
+Koşullu maddeler (kanıt gelirse eklenir):
+- **D11 prtsc kök düzeltme:** A-0 kırık-katman sonucu "kaynak koşumda da log YOK"
+  çıkarsa SDL event akışına dayanmayan algı (`GetAsyncKeyState(VK_SNAPSHOT)` yolu,
+  odak/hijack'ten bağımsız) D10 sonrasına eklenir. Kaynak koşumda log VARSA maddenin
+  kendisi düşer — kırık build demektir, çözüm re-pull/rebuild'dir.
+
+## 1. Uygulama Sırası ve Gerekçesi
+
+Risk artan sırada; her madde kendi doğrulama paketiyle atomik kapanır:
+
+1. **D1 (import'lar):** davranış değişimi yok — en güvenli başlangıç; D2/D5'in
+   ön koşulu (sweep/tutorial import'ları aynı dalga).
+2. **D2 → D3 → D4 (çekirdek efekt zinciri):** satır temizleme yolu; piksel-parite
+   deseni DALGA C'de kanıtlanmış LRU/tampon kalıpları (OP-017/021/022 dersleri).
+3. **D5 → D6 (menü ekranları):** layout cache'ler; metin düzeni korunumu test-öncesi.
+4. **D7 (render_shared):** ön koşul — demo'nun text_cache ileri sürümü (sys.modules
+   alias, idempotent `patch_font`, `render_shared` kancası, `test_text_cache.py`)
+   v2'ye taşınır (rapor §7); ardından YALNIZCA profil-probe ile en sıcak salt-okunur
+   blit noktalarında benimseme; her noktada "yüzey mutasyon almıyor" lokal test şartı.
+   Varsayılan `.copy()` yolu DOKUNULMAZ (savunmacı ve doğru — yüzlerce çağrıcı mutasyon yapıyor).
+5. **D8 (throttle):** 250 ms (≤500 ms üst sınır — "geç güncellenen get_count" Deck/macOS
+   platform uyarısı); `handle_hotplug_event` gerçek-zamanlı yolu zaten var; girdi okuma
+   döngüsü (DAS/d-pad) her kare kalır. Canlı donanım kanıtı kapı 3'te toplanır.
+6. **D9 (heartbeat'ler):** KOD ÖNCESİ KANIT ŞARTI — online_coop arşiv bulgusu
+   (10×~155 ms tekrarlayan tek kare, 2026-10-07; 10-09 rapor B-A notu aynı bölge)
+   + canlı E turu ölçümü. Takas (unreliable kanalda düzeltme gecikmesi) açık karar:
+   - OP-038: guest 16 ms `force=True` (~62 JSON/sn durgunken) → ack-durumuna bağla
+     (`_guest_piece_unacked_since` zaten var; kayıp-kurtarma korunur).
+   - OP-039: signature aynıysa kadans 33→200 ms + config COOP_BOARD_STATE/COOP_GAME_CONFIG
+     kanallarına ayrılır (guest `data.get` varsayılan toleranslı — doğrulanmış).
+   - OP-040: PvP imza (grid rev, score, lines) değişmedikçe 100 ms → 500-1000 ms;
+     kilit anı event-driven gönderimler aynen kalır.
+   Hedef kare etkisi 155 ms duraksamasının kaynağıyla eşleşiyorsa madde önceliklenir.
+7. **D10 (ghost memoize):** en geniş blast radius (kilit/temizleme yollarının tamamı).
+   `(piece.x, y, shape/rot, board_rev)` anahtar; `board_rev` TÜM grid mutasyonlarında
+   artan sayaç. Kademeli: önce sayaç altyapısı + denetim testleri, sonra memoize.
+
+## 2. Piksel-Parite Prensipleri (DALGA C dersleri)
+
+- SRCALPHA fill+blit / font.render+blit üretimleri LRU'ya birebir alınır.
+- Doğrudan `draw.rect/line` çağrıları ekrana (piksel-alfasız) DOKUNULMAZ —
+  OP-017 probe dersi: display yüzeyinde alfa yok sayılır, dönüşüm piksel değiştirir.
+- `set_alpha` dönüşümleri PROHİBİT (a² ve karışım farkları — probe ile çürütülmüş).
+- Zaman animasyonları `frames_left`/`get_ticks()` kaynaklarından beslenmeye devam
+  eder — önbellek anahtarına FAZ girmez, blit konumu girer.
+- Anahtar imzalarına `scale_key` dersi: aynı (w,h) farklı ölçekle farklı içerik
+  üretebilir (OP-022 dersi — `_content_cache_signature` deseni).
+
+## 3. Her Maddenin Doğrulama Standardı
+
+1. `python -m compileall -q src tests` (iki repo)
+2. Maddenin dar paketi (tablo, maddelerin rapor bölümlerinden):
+   - D2: v2 `test_country_sweep_effects.py` + `test_country_sweep_localization.py`
+     (demo'da yok) + iki repo `test_game_line_clear_fall_animation.py`
+   - D3: `test_game_line_clear_fall_animation.py` + v2 `test_flexible_border_lock_and_block_out.py`
+   - D4: `test_game_hud_stat_row_clamp.py` + line-clear dar (milestone'a özgü test
+     tespit edilemedi — rapor §10/9; kapı 4 verisiyle değerlendirilir)
+   - D5: `test_tutorial_runtime.py` + `test_phase8_tutorial_ui_scaling.py`
+   - D6: `test_avatar_editor_containment.py`
+   - D7: `test_text_cache.py` (v2'ye port) + `test_settings_preset_transition.py`
+   - D8: gamepad/hotplug paketi + DAS zamanlama testleri
+   - D9: `test_online_coop_network_flow.py`, `test_online_pvp_piece_sync.py`,
+     `test_online_pvp_message_validation.py`, v2 `test_online_coop_host_profiler.py`
+   - D10: `test_game_polish_das_rotate_ghost.py`, `test_game_ghost_keyboard_guard.py`,
+     v2 `test_flexible_border_lock_and_block_out.py`
+3. Birleşik koşu (mevcut taban: v2 877+, demo 886+ — DALGA C sonrası gerçek sayı
+   koşum anında ölçülür)
+4. Ölçüm probe'u (before/after, HEAD worktree vs düzenlenmiş ağaç — C2/C7 deseni;
+   `probe_store_draw_perf.py` / `probe_online_c7_hot_paths.py` modellenir)
+5. Kapsam kovuğu dersleri (C2/C3): maddenin draw yolu hiçbir testle kapsanmıyorsa
+   YENİ smoke test eklenir (demo test eksikliği dersi — 20 geçen test NameError görmedi).
+
+## 4. Canlı Doğrulama Kapıları (smoke turundan taşındı)
+
+Bu kapılar DALGA D değişikliklerinden ÖNCE/KURULUM SIRASINDA toplanır (baseline);
+değişiklik sonrası aynı ölçümler maddelerin kabul kıyasları olur:
+
+| Kapı | Ne | Ne zaman | Hangi maddeye girdi |
+|------|----|----------|---------------------|
+| K-1 | **A-0 prtsc kırık-katman** (kaynak koşumu 2 dk + düz PrtSc) | ilk fırsat | D11 ekleme/düşme kararı |
+| K-2 | **A-1/A-3 prtsc + kesişim** (EXE/Steam'de) | D-kapılarıyla aynı turda | C7 canlı kanıt kaydı (DALGA D'yi etkilemez) |
+| K-3 | **12 mod girişi** (Faz 6 + 2-3 s ses donması) | D2-D4'ten ÖNCE baseline | D2/D3/D4 kıyas tabanı |
+| K-4 | **C-2 mağaza cold-start tekrarı** (kapat-aç, tekrar mağaza) | herhangi | DALGA B sağlamlık kaydı |
+| K-5 | **E online PvP + coop ~155 ms tekrar ölçümü** | D9'dan ÖNCE | D9 takas kararı (OP-038/039/040) |
+| K-6 | OP-049 canlı donanım (Deck/macOS dahil) | D8 kabul şartı | D8 |
+
+Türkiye-local Windows ana oyun (Full, AppID 4414520) koşusunda telemetri otomatik
+açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılavuz §1.4).
+
+## 5. Kabul Ölçütleri (DALGA D kapanışı)
+
+1. D1-D10 maddelerinin tamamı (veya koşullu D11) iki repo senkron, atomik Türkçe
+   commit zinciriyle kapatılmış; her maddede ölçüm kaydı rapora işlenmiş.
+2. Ölçüm-kapısı ihlali yok: hiçbir maddede "çalışıyordur" varsayımı — probe ya da
+   canlı kanıt olmayan kazanım iddiası yazılmaz.
+3. Birleşik test tabanı en az DALGA C kapanış seviyesinde (v2 877+ / demo 886+).
+4. K-1…K-6 kapılarının sonuçları ANALIZ_2026-10-09.md'ye ek kayıt olarak düşülmüş;
+   prtsc kırığı (hangi katmansa) kök nedeniyle kapatılmış.
+5. DALGA E kapısı (OP-041/042/043/012/061/062) kullanıcı kararıyla ayrı açılır.
+
+---
+
+*Bağlantılar: rapor §4-6 (madde detayları + öneriler), §8 (metre altyapısı),
+§10 (doğrulanamayanlar); kılavuz `plans/2026-10-09-windows-smoke-dalga-bc-faz6-kilavuzu.md`
+(A-0 talimatı); analiz `reports/telemetry/quadrix_full_windows/ANALIZ_2026-10-09.md`
+(155 ms kümesi, ekran bazlı p95'ler).*
