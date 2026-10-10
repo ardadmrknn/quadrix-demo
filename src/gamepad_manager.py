@@ -630,6 +630,12 @@ class GamepadManager:
     STICK_REPEAT_INTERVAL = 120  # Tekrar hızı
     # Trigger basılma eşiği (0.0 – 1.0)
     TRIGGER_THRESHOLD = 0.5
+    # OP-049 (D8): _check_connections polling throttle aralığı (ms). SDL
+    # get_name/get_count probe'ları her kare yerine bu aralıkla koşar;
+    # JOYDEVICEADDED/REMOVED event yolu (handle_hotplug_event)
+    # gerçek-zamanlı kalır. "Geç güncellenen get_count" platformları
+    # (Deck/macOS) için üst sınır 500 ms'tir — asla yükseltme.
+    CONNECTION_POLL_INTERVAL_MS = 250.0
     # Sağ stick → fare imleci hızı ve hassasiyeti
     MOUSE_SPEED = 20.0
     MOUSE_SENSITIVITY = 1.0
@@ -1859,7 +1865,17 @@ class GamepadManager:
         # refresh denemeleriyle görünür hale getir (v2 paritesi).
         self._refresh_empty_startup_scan()
         self._sync_steam_input_gamepads()
-        self._check_connections()
+        # OP-049 (D8): bağlantı polling'ini CONNECTION_POLL_INTERVAL_MS ile
+        # throttle'la — SDL probe'ları (get_name + get_count taraması) her
+        # kare yerine saniyede ~4 kez koşar. İlk update() her zaman denetler
+        # (startup taraması); girdi okuma döngüsü (buton/eksen/d-pad) ve
+        # event tabanlı handle_hotplug_event yolu her kare/gerçek-zamanlı
+        # kalır — DAS/d-pad zamanlaması etkilenmez.
+        if not hasattr(self, '_last_conn_check_ms'):
+            self._last_conn_check_ms = float('-inf')
+        if self._internal_time - self._last_conn_check_ms >= self.CONNECTION_POLL_INTERVAL_MS:
+            self._check_connections()
+            self._last_conn_check_ms = self._internal_time
 
         for gp_id, gp in list(self.gamepads.items()):
             if not gp.joystick or not gp.joystick.get_init():

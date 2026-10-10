@@ -988,6 +988,82 @@ class Game:
             self._rounded_rect_surface_cache.pop(old_key, None)
         return surface
 
+    def _get_milestone_panel_surface(self, size: tuple[int, int], milestone_color) -> pygame.Surface:
+        """Milestone paneli gradyan yüzeyi (maskesiz, KARE köşeli) — LRU 24.
+
+        OP-015 (D4): kare-başı fresh SRCALPHA + satır satır draw.line yerine
+        önbellek. Gradyan içeriği yalnız (genişlik, yükseklik, renk)'e bağlıdır;
+        pulse yalnızca panel boyutunu değiştirir ve boyut anahtara girer. Demo
+        köşeleri karedir — v2'nin BLEND_RGBA_MULT maskeli yuvarlak-köşe paneli
+        birebir taşınmaz (görsel değişim); tint bileşenleri döngü dışına
+        sabitlenir.
+        """
+        if not hasattr(self, '_milestone_panel_surface_cache') or self._milestone_panel_surface_cache is None:
+            self._milestone_panel_surface_cache = {}
+            self._milestone_panel_surface_cache_order = []
+            self._milestone_panel_surface_cache_max = 24
+        width = max(1, int(size[0]))
+        height = max(1, int(size[1]))
+        color_key = self._normalize_surface_color(milestone_color)
+        key = (width, height, color_key)
+        cached = self._milestone_panel_surface_cache.get(key)
+        if cached is not None:
+            try:
+                self._milestone_panel_surface_cache_order.remove(key)
+            except ValueError:
+                pass
+            self._milestone_panel_surface_cache_order.append(key)
+            return cached
+        panel_surf = pygame.Surface((width, height), pygame.SRCALPHA)
+        r_tint = int(color_key[0] * 0.08)
+        g_tint = int(color_key[1] * 0.08)
+        b_tint = int(color_key[2] * 0.08)
+        for i in range(height):
+            alpha = 210 + int(30 * (i / height))
+            pygame.draw.line(panel_surf, (10 + r_tint, 12 + g_tint, 30 + b_tint, alpha),
+                             (0, i), (width, i))
+        self._milestone_panel_surface_cache[key] = panel_surf
+        self._milestone_panel_surface_cache_order.append(key)
+        while len(self._milestone_panel_surface_cache_order) > self._milestone_panel_surface_cache_max:
+            old_key = self._milestone_panel_surface_cache_order.pop(0)
+            self._milestone_panel_surface_cache.pop(old_key, None)
+        return panel_surf
+
+    def _get_milestone_text_surface(self, text: str, font_size: int, color, alpha: int | None = None) -> pygame.Surface:
+        """Milestone metin yüzeyi — LRU 32 (OP-015 / D4).
+
+        Kare-başı font.render kaldırılır. Gölge için verilen alpha üretimde bir
+        kez set_alpha ile pişirilir (per-surface alpha Surface'in kalıcı
+        özelliğidir; her blit aynı karışımı verir). Anahtar (metin, boyut, renk,
+        alpha); font profili/dil yalnızca ayar ekranlarından değişebilir —
+        firework penceresi (2 s, oyun içi) sırasında olanaksızdır (v2 msg
+        önbelleğindeki aynı gerekçe).
+        """
+        if not hasattr(self, '_milestone_text_surface_cache') or self._milestone_text_surface_cache is None:
+            self._milestone_text_surface_cache = {}
+            self._milestone_text_surface_cache_order = []
+            self._milestone_text_surface_cache_max = 32
+        color_key = self._normalize_surface_color(color)
+        key = (str(text), int(font_size), color_key, alpha)
+        cached = self._milestone_text_surface_cache.get(key)
+        if cached is not None:
+            try:
+                self._milestone_text_surface_cache_order.remove(key)
+            except ValueError:
+                pass
+            self._milestone_text_surface_cache_order.append(key)
+            return cached
+        font = retro_style.get_font(int(font_size), bold=True)
+        surface = font.render(text, True, color_key)
+        if alpha is not None:
+            surface.set_alpha(alpha)
+        self._milestone_text_surface_cache[key] = surface
+        self._milestone_text_surface_cache_order.append(key)
+        while len(self._milestone_text_surface_cache_order) > self._milestone_text_surface_cache_max:
+            old_key = self._milestone_text_surface_cache_order.pop(0)
+            self._milestone_text_surface_cache.pop(old_key, None)
+        return surface
+
     def _draw_custom_frame(self, rect: pygame.Rect, asset_name: str, padding: int = 0, hole_punch: bool = False) -> bool:
         """Belirtilen asset varsa rect üzerine (padding ekleyerek) ortalayıp çizer.
         
@@ -4423,13 +4499,21 @@ class Game:
     
     def get_ghost_y(self):
         """Ghost piece (gölge) pozisyonunu hesapla"""
-        ghost_y = self.current_piece.y
-        test_piece = self.current_piece.copy()
-        
-        while self.board.is_valid_position(test_piece):
-            test_piece.y += 1
-        
-        return test_piece.y - 1
+        # OP-018 (D10): hücre listesini bir kez hesapla; drop adımlarını
+        # board._is_valid_cells'e dy ile sor. Eski yol her adımda
+        # Piece.copy() + get_cells yeniden üretiyordu (~board_height kez).
+        # y, piece_y - 1'den başlar: ilk denetim dy=0 (mevcut konum) olur —
+        # eski algoritmanın ilk is_valid_position çağrısıyla birebir;
+        # başlangıç konumu zaten geçersizse eski dönüş değeri (piece_y - 1)
+        # korunur.
+        piece = self.current_piece
+        board = self.board
+        cells = piece.get_cells()
+        piece_y = piece.y
+        y = piece_y - 1
+        while board._is_valid_cells(cells, 0, y + 1 - piece_y, piece):
+            y += 1
+        return y
 
     def _get_ghost_visual_offset(self, ghost_y: int) -> float:
         """Satır temizleme animasyonu sırasında ghost'un altındaki düşen blokların
@@ -5352,7 +5436,17 @@ class Game:
         # Tahtadaki kilitli parçaları çiz (animasyonlu satır temizleme)
         locked_offset_x = offset_x
         locked_offset_y = offset_y
-        
+
+        # OP-014 (D3): düşme offset'lerini çizim başında tek geçişle dict'e kur —
+        # hücre-başı lineer tarama (dolu hücre × animasyon listesi) yerine dict
+        # erişimi. Değerler draw boyunca dondurulur (mutasyon update() tarafında
+        # yapılır); ilk-eşleşme semantiği _get_block_fall_offset ile birebir.
+        fall_lookup = {}
+        for _fall_anim in self.falling_block_animations:
+            _fall_key = (_fall_anim['row'], _fall_anim['col'])
+            if _fall_key not in fall_lookup:
+                fall_lookup[_fall_key] = _fall_anim['current_offset']
+
         for y in range(self.board_height):  # Dinamik yükseklik
             flash = (y in self.board.last_cleared_lines) and self.line_clear_flash
             for x in range(self.board_width):  # Dinamik genişlik
@@ -5369,8 +5463,8 @@ class Game:
                 block_x = locked_offset_x + x * cell_size + 1
                 block_y = locked_offset_y + y * cell_size + 1
                 
-                # Düşme animasyonu offset'i uygula
-                fall_offset = self._get_block_fall_offset(y, x)
+                # Düşme animasyonu offset'i uygula (OP-014: dict erişimi)
+                fall_offset = fall_lookup.get((y, x), 0)
                 block_y += fall_offset
                 
                 block_size = cell_size - 2
@@ -6189,52 +6283,50 @@ class Game:
             self._milestone_panel_rect = panel_rect
             
             # Dış glow efekti - milestone renginde
+            # OP-015 (D4): kare-başı fresh SRCALPHA + draw.rect yerine
+            # _get_rounded_rect_surface LRU'su — önbellek gövdesi birebir aynı
+            # draw.rect çağrısı (filled, border_radius=16).
             glow_alpha = int(80 + 60 * pulse)
             for offset in range(12, 0, -3):
                 glow_rect = panel_rect.inflate(offset * 2, offset * 2)
-                glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(glow_surf, (*milestone_color, int(glow_alpha * (1 - offset/12))), 
-                               glow_surf.get_rect(), border_radius=16)
+                glow_surf = self._get_rounded_rect_surface(
+                    glow_rect.size,
+                    (*milestone_color, int(glow_alpha * (1 - offset/12))),
+                    border_radius=16,
+                )
                 self.screen.blit(glow_surf, glow_rect.topleft)
-            
+
             # Ana panel - Glassmorphism (milestone rengine tinted)
-            panel_surf = pygame.Surface((animated_w, animated_h), pygame.SRCALPHA)
-            # Gradient arka plan
-            for i in range(animated_h):
-                alpha = 210 + int(30 * (i / animated_h))
-                r_tint = int(milestone_color[0] * 0.08)
-                g_tint = int(milestone_color[1] * 0.08)
-                b_tint = int(milestone_color[2] * 0.08)
-                pygame.draw.line(panel_surf, (10 + r_tint, 12 + g_tint, 30 + b_tint, alpha), 
-                               (0, i), (animated_w, i))
+            # OP-015 (D4): gradyan döngüsü (animated_h satır) LRU'ya alındı;
+            # içerik (w, h, renk)'e bağlı, pulse yalnız boyutu değiştirir.
+            panel_surf = self._get_milestone_panel_surface((animated_w, animated_h), milestone_color)
             self.screen.blit(panel_surf, panel_rect.topleft)
             
             # Çerçeve - milestone rengi
             pygame.draw.rect(self.screen, (*milestone_color, 220), panel_rect, 3, border_radius=14)
             
             # Ana skor - Büyük ve parlak
-            score_font = retro_style.get_font(42, bold=True)
+            # OP-015 (D4): üç font.render da (metin, boyut, renk, alpha)
+            # anahtarlı LRU'ya alındı; rect türetmeleri kare-başı kalır.
             color_intensity = int(pulse * 40)
             pulse_color = (
                 min(255, milestone_color[0] + color_intensity),
                 min(255, milestone_color[1] + color_intensity),
                 min(255, milestone_color[2] + color_intensity)
             )
-            
+
             # Gölge
-            shadow = score_font.render(milestone_text, True, (0, 0, 0))
+            shadow = self._get_milestone_text_surface(milestone_text, 42, (0, 0, 0), alpha=150)
             shadow_rect = shadow.get_rect(centerx=panel_rect.centerx + 2, centery=panel_rect.centery - 5)
-            shadow.set_alpha(150)
             self.screen.blit(shadow, shadow_rect)
-            
+
             # Ana skor metni
-            score_surf = score_font.render(milestone_text, True, pulse_color)
+            score_surf = self._get_milestone_text_surface(milestone_text, 42, pulse_color)
             score_rect = score_surf.get_rect(centerx=panel_rect.centerx, centery=panel_rect.centery - 8)
             self.screen.blit(score_surf, score_rect)
-            
+
             # Alt teşvik mesajı - milestone'a özel
-            msg_font = retro_style.get_font(14, bold=True)
-            msg_surf = msg_font.render(milestone_msg, True, (220, 230, 250))
+            msg_surf = self._get_milestone_text_surface(milestone_msg, 14, (220, 230, 250))
             msg_rect = msg_surf.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - 10)
             self.screen.blit(msg_surf, msg_rect)
         

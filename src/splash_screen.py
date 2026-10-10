@@ -250,9 +250,11 @@ class SplashScreen:
         k_prtsc = getattr(pygame, 'K_PRINTSCREEN', None)
         if k_prtsc is not None:
             try:
+                # get_pressed() pgScancodeWrapper'ı K_* keycode indekslerini
+                # kendisi scancode'a çevirir; len()=512 keycode'a göre guard
+                # kurulamaz (K_PRINTSCREEN her zaman reddedilirdi).
                 keys = pygame.key.get_pressed()
-                if 0 <= int(k_prtsc) < len(keys):
-                    prtsc_down = bool(keys[int(k_prtsc)])
+                prtsc_down = bool(keys[int(k_prtsc)])
             except Exception:
                 prtsc_down = False
 

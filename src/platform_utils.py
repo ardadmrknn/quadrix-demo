@@ -18,6 +18,15 @@ IS_MACOS = sys.platform == 'darwin'
 IS_WINDOWS = sys.platform == 'win32'
 IS_LINUX = sys.platform.startswith('linux')
 
+
+def resource_path(relative_path: str) -> str:
+    """Kaynak dosyalarının mutlak yolunu döndürür (Geliştirme, macOS ve Windows PyInstaller uyumlu)."""
+    base_path = getattr(sys, '_MEIPASS', None)
+    if base_path is None:
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    return os.path.normpath(os.path.join(base_path, relative_path))
+
+
 _REFRESH_RATE_CACHE_HZ = 0
 _REFRESH_RATE_CACHE_AT = 0.0
 _REFRESH_RATE_CACHE_TTL_S = 1.0
