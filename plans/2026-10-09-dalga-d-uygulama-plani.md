@@ -279,6 +279,20 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
      medyan v2 −0.319 / demo +0.087 ms/kare (gürültü bandı — draw
      yolu değişmedi). DERS: izole geçiş tam-suite'i ikame etmez;
      display-mode gerektiren test kendi önkoşulunu kurar.
+  8. **D7 faz 1 — port (2026-10-10):** demo ileri text_cache'i v2'ye
+     bayt-birebir (`diff` doğrulaması; +91/−10): alias bloğu,
+     `render_shared`/`render_text_shared`, idempotent `patch_font()`
+     import-anı çağrı, `render_text` opsiyonel `background=None`.
+     `test_text_cache.py` port. **İmza kırılması:** 4-arg iletimi v2'nin
+     3-param `_FakeFont` stub'larını kırdı (ilk tam-suite 20→27;
+     pause_overlay×5 + phase8×2, izole koşumla teşhis —
+     text_cache.py:197). Düzeltme test-only: iki stub'a
+     `background=None` (demo phase8:38 zaten böyle). Doğrulama:
+     compileall; dar paket 9/9; izole 118/118; tam-suite A/B
+     **20 = 20 BİREBİR**. Demo'ya faz-1 commit'i yok (demo hedef
+     durumda). DERS: port bir imza değişkeni taşırken test stub'ları
+     gerçek kütüphane arayüzüne hizalanır — gövde parite için
+     dokunulmaz. Faz 2 (noktasal benimseme) ayrı kayıt.
 
 ---
 
