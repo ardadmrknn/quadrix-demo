@@ -4499,13 +4499,21 @@ class Game:
     
     def get_ghost_y(self):
         """Ghost piece (gölge) pozisyonunu hesapla"""
-        ghost_y = self.current_piece.y
-        test_piece = self.current_piece.copy()
-        
-        while self.board.is_valid_position(test_piece):
-            test_piece.y += 1
-        
-        return test_piece.y - 1
+        # OP-018 (D10): hücre listesini bir kez hesapla; drop adımlarını
+        # board._is_valid_cells'e dy ile sor. Eski yol her adımda
+        # Piece.copy() + get_cells yeniden üretiyordu (~board_height kez).
+        # y, piece_y - 1'den başlar: ilk denetim dy=0 (mevcut konum) olur —
+        # eski algoritmanın ilk is_valid_position çağrısıyla birebir;
+        # başlangıç konumu zaten geçersizse eski dönüş değeri (piece_y - 1)
+        # korunur.
+        piece = self.current_piece
+        board = self.board
+        cells = piece.get_cells()
+        piece_y = piece.y
+        y = piece_y - 1
+        while board._is_valid_cells(cells, 0, y + 1 - piece_y, piece):
+            y += 1
+        return y
 
     def _get_ghost_visual_offset(self, ghost_y: int) -> float:
         """Satır temizleme animasyonu sırasında ghost'un altındaki düşen blokların

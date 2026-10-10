@@ -50,12 +50,23 @@ class Board:
         return self.occupancy[y][x]
 
     def is_valid_position(self, piece, dx: int = 0, dy: int = 0) -> bool:
+        return self._is_valid_cells(piece.get_cells(), dx, dy, piece)
+
+    def _is_valid_cells(self, cells, dx: int = 0, dy: int = 0, piece=None) -> bool:
+        """is_valid_position'ın hücre-listesi kardeşi.
+
+        Sınır/occupancy/perk semantiğinin TEK kaynağı burasıdır;
+        `is_valid_position` bu metodu parça hücreleriyle çağırır.
+        `get_ghost_y` drop simülasyonu (game.py, OP-018/D10) hücre
+        listesini bir kez hesaplayıp dy adımlarını buraya sorar —
+        get_cells her iterasyonda yeniden üretilmez.
+        """
         # Esnek sınır: Board'daki flag VEYA parçadaki flag aktifse genişletilmiş sınır
         # SADECE sol ve sağ kenarlar için geçerli, alt/üst normal
         flexible_border = self.flexible_border_active or getattr(piece, 'flexible_border', False)
         border_extend = 1 if flexible_border else 0
-        
-        for px, py in piece.get_cells():
+
+        for px, py in cells:
             px += dx
             py += dy
             # Sol ve sağ sınır kontrolü (esnek sınır ile genişletilmiş)
