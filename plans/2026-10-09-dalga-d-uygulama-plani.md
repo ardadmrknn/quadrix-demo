@@ -312,6 +312,29 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
      `draw_glass_panel` → `pygame.draw.rect` gerçek Surface ister —
      blit-kaydeden `pygame.Surface` alt sınıfı, `_ScreenStub` değil.
 
+  10. **D8 (OP-049 gamepad polling throttle) — KAPALI 2026-10-10:**
+     v2 `5235c95` / demo `575a45b`. update() polling'i
+     `CONNECTION_POLL_INTERVAL_MS` (250.0 ms sınıf sabiti) ile
+     throttle'lı; `_last_conn_check_ms` saati birikimli
+     `_internal_time` üzerinden, `float('-inf')` ilkleme idyomuyla
+     ilk karede garanti (bare-instance dayanıklı — `_internal_time`'ın
+     kendi hasattr düzeniyle aynı). Kapsam minimal: yalnız polling
+     yolu; event yolu (`handle_hotplug_event`), Steam
+     `_refresh_empty_startup_scan`/`_sync_steam_input_gamepads` ve
+     girdi okuma döngüsü (DAS/d-pad) her kare kalır. Takas: polling
+     yolunda kopma algılama ≤250 ms gecikir (≤500 ms platform üst
+     sınırı). YENİ
+     `test_gamepad_connection_polling_throttle.py` (7 test ×2 repo:
+     ilk-kare / aralık / sınır (>=) / girdi-döngüsü her kare / event
+     yolu anında / bare-instance / 500 ms guard). Kanıt:
+     deterministik sayım 600 kare 60 fps'te 600→39 çağrı (%93,5
+     azalma); interleaved 6 tur medyan v2 −5,13 / demo −8,16
+     µs/kare (6/6 neg); dar paket (DAS + tüm gamepad testleri)
+     v2 223 / demo 229 yeşil; tam-suite A/B **v2 20 = 20 ·
+     demo 34 = 34 BİREBİR**. K-6 şerhi: VDS kanıtı SDL dummy
+     proxy'sidir — canlı Deck/macOS kabul ölçümü kullanıcıya açık
+     kalır (rapor UYGULANDI maddesinde dürüstlük notu).
+
 ---
 
 *Bağlantılar: rapor §4-6 (madde detayları + öneriler), §8 (metre altyapısı),
