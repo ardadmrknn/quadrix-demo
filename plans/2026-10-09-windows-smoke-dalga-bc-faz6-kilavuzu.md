@@ -1,6 +1,6 @@
 # Windows Smoke Test Kılavuzu — DALGA B/C Canlı Doğrulama + Faz 6 Onayı
 
-> Tarih: 2026-10-09. Hedef commit'ler: v2 `main` = `beee5c6`, demo `release/demo` = `95f4eb5` (push edildi).
+> Tarih: 2026-10-09 (10 Ekim tur kaydı için bkz. ANALIZ §9). Hedef commit'ler: v2 `main` = `a48150e`, demo `release/demo` = `42afa05` (push edildi).
 > Süre tahmini: tam tur ~45-60 dk; hızlı tur (A-D) ~20 dk.
 > Amaç: SDL dummy sürücüsünde sınanamayan yolları canlı Windows'ta doğrulamak — DALGA C'in kapanış koşulu ve 2026-03-08 perf/termal planının Faz 6 onayı.
 > Bu kılavuz v2 (tam sürüm) için yazılmıştır; demo farkları son bölümde.
@@ -26,7 +26,7 @@
 ### 1.1 Kodu Windows makinesine çek
 Windows'taki repo kopyasında (v2):
 ```powershell
-git pull origin main   # beee5c6'a gelmeli
+git pull origin main   # a48150e'a gelmeli
 git log --oneline -1
 ```
 
@@ -154,6 +154,18 @@ Her biri 1-2 dk, "bozulma var mı" gözlemi:
 5. **Overlay uzun akış (Faz 5):** 5-10 dk oynanış + birkaç overlay aç-kapa + menüye dönüş; çıkışta takılma/siyah pencere/kapanmayan süreç yok.
 6. **Pause:** oyun içinde pause 5-10 sn, dönüşte akış bozulmaz (müzik ducking/unducking normal).
 
+### Odak H — Kalan Kanıt Kapıları (DALGA D §4; 10 Ekim turu sonrası açık olanlar)
+10 Ekim turu K-3 (12 mod girişi, temiz) ve K-4 (mağaza cold-start PASS) ölçümlerini topladı; K-2/K-5/K-6 hâlâ açık, K-1 tek bir netleştirmeye muğlak (ANALIZ §9.9). Sonraki turlarda:
+
+1. **K-1 netleştirme (kaynak koşum, 2 dk):** oyunu kaynak koşumda aç ve menüde kal; Windows "Print screen tuşuyla ekran yakalamayı aç" (Ayarlar → Erişilebilirlik → Klavye) KAPALI olduğunu doğrula; oyun penceresi odaklıyken PrtSc'ye DÜZ bir kez bas, 2-3 sn bekle, kapat.
+   - BEKLENEN: `gl_debug.log`'da `[OLAY] 'PrintScreen yakalama'` satırı. Satır VARSA algı kanalı kaynak koşumda sağlam → K-1 kırık = EXE/derleme katmanı (D11 gerekçesi güçlenir). Satır YOKSA ortam katmanı (Win11 hotkey yakalaması) → aynı turu toggle'ı KAPALI yapıp + odak teyidiyle tekrarla.
+2. **K-2 (EXE'de C7 canlı kanıt):** güncel koddan EXE derle (§1.3, pin `a48150e`+); EXE'de A-1 prtsc (menü + oyun içi) ve A-3 kesişim senaryosunu koş.
+   - BEKLENEN: prtsc algılanıyor + toparlanıyor; kesişimde erteleme, kayıp yok. Pre-C7 EXE'de bu kanal yapısal ölüydü (scancode guard) — bu tur C7'nin EXE-düzeyi canlı kanıtı olur (ANALIZ §9.3: 10-10 turunda toplanamadı).
+3. **K-5 (online ~155 ms, D9 kapısı):** telemetri açıkken Steam'de online PvP'ye ve (mümkünse) online coop'a gir; maçta 1-2 dk oyna, lobiden çık.
+   - BEKLENEN: JSONL'de online PvP/coop durum pencereleri toplanır; ~155 ms giriş penceresi tekrar ölçülür → D9 (OP-038/039/040 takas) kıyas tabanı. 10-10 turunda online state hiç toplanmadı (ANALIZ §9.6) — D9 kanıt-gated, bu tur onu açar.
+4. **K-6 (OP-049 canlı donanım, D8 kabul şartı):** gamepad'le (XInput / Deck) 3-5 dk oyna: DAS/ARR tepkisi, menü navigasyonu, Deck'te odak yönetimi.
+   - BEKLENEN: gecikme hissi/yanıtsız girdi yok. Not: kantitatif gamepad kanalı telemetride YOK — buradaki gözlem niteldir; ölçüm kanalı eklemek ayrı iş olarak D-plan'da kayıtlı.
+
 ---
 
 ## 3. Ölçümleri Toplama
@@ -186,13 +198,19 @@ Sonuç temizse: "DALGA B/C Windows smoke TEMİZ, Faz 6 ONAY" demen yeterli — D
 - [ ] G pacing / texture / efekt / menü / overlay taraması temiz
 - [ ] Çıkış akışı temiz (siyah pencere / kapanmayan süreç yok)
 
+Kapı turları (Odak H; DALGA D §4):
+- [ ] H K-1 prtsc [OLAY] satırı toplandı (veya toggle/odak netleştirildi)
+- [ ] H K-2 EXE prtsc + kesişim canlı kanıtı (C7)
+- [ ] H K-5 online PvP/coop ölçümü toplandı
+- [ ] H K-6 gamepad canlı gözlem yapıldı
+
 ---
 
 ## 6. Demo (quadrix-demo) Farkları
-- Kod: `release/demo` dalı, `95f4eb5`; aynı A-G odakları geçerli (DALGA B/C iki repoya da uygulandı).
+- Kod: `release/demo` dalı, `42afa05`; aynı A-G odakları geçerli (DALGA B/C iki repoya da uygulandı).
 - EXE derlemesi: `packaging/specs/tetris_demo.spec` (build betiği ve parametreler aynı).
-- **Perf telemetri katmanı demo'da yok** (v2-only): JSONL/`[PERF]` ölçümleri toplanamaz — demo turu GÖZLEMSEL; ölçüm isterken v2 tarafını koş.
-- Veri klasörü demo'da farklı olabilir (`quadrix_demo`); sentinel gerekmiyor (telemetri zaten yok).
+- **Perf telemetri (çekirdek döngü) demo'da da VAR** (perf_telemetry.py + main.py begin_frame/end_frame/record_startup — 10-10 kaynak taramasıyla doğrulandı): durum-seviyesi JSONL frame/handler/present ölçümleri toplanır; yalnız FAZ-seviyesi kırılımı (`_game_perf_phase_*`/`_store_*`/`_settings_*`/`_menu_*`) v2-only'dir (bkz. rapor §8).
+- Veri klasörü demo'da farklı olabilir (`quadrix_demo`); EXE/Steam koşusunda telemetri yine otomatik açıktır.
 - Demo mod kısıtları (demo_config) nedeniyle bazı modlar kartta görünmeyebilir — görünen modlar için D uygula.
 
 *Kaynaklar: plans/2026-03-08-performance-thermal-optimization-plan.md (Faz 1-5 smoke checklist'leri 7A-7E, Faz 6), reports/Quadrix_Kapsamli_Performans_Arastirmasi.md (DALGA B/C kayıtları + kanıt sınırları), docs/DERLEME_VE_YAYINLAMA_REHBERI.md, src/perf_telemetry.py + src/sdl2_overlay.py (telemetri kapıları).*
