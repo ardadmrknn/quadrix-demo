@@ -56,7 +56,7 @@ Risk artan sırada; her madde kendi doğrulama paketiyle atomik kapanır:
    Varsayılan `.copy()` yolu DOKUNULMAZ (savunmacı ve doğru — yüzlerce çağrıcı mutasyon yapıyor).
 5. **D8 (throttle):** 250 ms (≤500 ms üst sınır — "geç güncellenen get_count" Deck/macOS
    platform uyarısı); `handle_hotplug_event` gerçek-zamanlı yolu zaten var; girdi okuma
-   döngüsü (DAS/d-pad) her kare kalır. Canlı donanım kanıtı kapı 3'te toplanır.
+   döngüsü (DAS/d-pad) her kare kalır. Canlı donanım kanıtı K-6'da toplanır (§4).
 6. **D9 (heartbeat'ler):** KOD ÖNCESİ KANIT ŞARTI — online_coop arşiv bulgusu
    (10×~155 ms tekrarlayan tek kare, 2026-10-07; 10-09 rapor B-A notu aynı bölge)
    + canlı E turu ölçümü. Takas (unreliable kanalda düzeltme gecikmesi) açık karar:
@@ -369,6 +369,35 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
      ölçümü ghost'u görünür kılmazsa açılmaz. Gözlem (kapsam dışı):
      online_pvp `_get_ghost_y` (v2 4772/demo 4221) ve iniş döngüleri
      (game.py 3026/5481, game_modes.py 1254) aynı desen adayları.
+
+  12. **K-1..K-6 canlı kanıt kapıları — 10 EKİM TURU KAYDI 2026-10-10:**
+     Kullanıcı Windows turunu koştu ve repoya itti (5 yeni JSONL oturum +
+     201 gl_debug.log satırı; tam çözümleme ANALIZ §9). **K-4 PASS
+     (tanımıyla):** kapat-aç cold-start tekrarı 20,9 + 21,5 ms — iki
+     bağımsız enstrüman birebir ([GECIS] satırları 3103/3446 + 084904 SPW
+     frame_ms.max=21,5); DALGA B prewarm sağlamlık kaydı tamam. **K-3
+     temiz, taban DEĞİL:** 12 mod girişi ölçüldü, 2-3 s ses donması
+     sinyali YOK (tek 1003,2 ms değerin kökü bloklayıcı mod-tanıtım
+     modalının ~1 s kullanıcı bekleme süresi: clock_ms.max 45,0 + present
+     ~120 fps kesintisiz + [HITCH] yok); ama tüm solo modlar
+     state='game' altında birleşiyor → mod ayrımı JSONL'de yok, D2/D3/D4
+     canlı kıyas tabanı kurulamaz (maddeler VDS deterministik kanıtlarıyla
+     zaten kapalı; bu bir kapsam notudur, engel değil). **K-1 MUĞLAK:**
+     kaynak koşumda kanal AÇIK kanıtlandı (73 focus satırı; menü fazında
+     delik yok) ama `[OLAY] prtsc` hiç tetiklenmedi — 4 kaçış hipotezi,
+     netleştirme sorusu ANALIZ §9.9'da; yanıt D11 ekleme/düşme kararını
+     belirler. **K-2/K-5/K-6 TOPLANMADI:** K-2 frozen'da commit kimliği
+     yok (G-03) + pre-C7 EXE'de algı yapısal ölü → 0-satır negatif kanıt
+     değildir (C7 canlı kanıtı hâlâ açık); K-5 online state hiç toplanmadı
+     → D9 kanıt-gated; K-6 gamepad kantitatif kanalı telemetride yok.
+     Bonus: 132258 mega-oturumu (2,74 saat) DRIFT YOK (ağırlıklı ort
+     17,6→13,1 ms, OLS −1,2 ms/saat; 659 bin karede 0 slow_handler;
+     63 hitch'in 56'sı ilk 27 dk) + uzun-oturum sonunda İLK mağaza
+     girişleri 1381,2/1760,2 ms (faz-kapsamı-dışı store-enter kodu) →
+     G-04 ile örtüşen açık iş: store-giriş fazı phases_ms'ye. Kılavuza
+     Odak H (kalan kapı turları: K-1 netleştirme/K-2/K-5/K-6) eklendi;
+     slow_handler eşiğinin pencere-içi handler'ları kapsamadığı gözlemi
+     (üçüncü tekrar) kaynak incelemesi ayrı iş olarak kayıtlı.
 
 ---
 
