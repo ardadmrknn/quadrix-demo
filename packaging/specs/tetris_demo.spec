@@ -231,6 +231,10 @@ a = Analysis(
     noarchive=False,
 )
 
+# ── Paket boyutu: runtime-dışı asset'leri süz (kanıt: tools/packaging_asset_filter.py) ──
+from tools.packaging_asset_filter import apply_runtime_asset_filter
+apply_runtime_asset_filter(a, drop_dead_icns=False)  # demo: Tetris.icns, macOS spec icon= parametresinde canlı — düşürülmez
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
