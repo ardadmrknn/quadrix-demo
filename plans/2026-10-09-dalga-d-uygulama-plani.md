@@ -335,6 +335,41 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
      proxy'sidir — canlı Deck/macOS kabul ölçümü kullanıcıya açık
      kalır (rapor UYGULANDI maddesinde dürüstlük notu).
 
+  11. **D10 (OP-018 ghost hesabı) — FAZ 1 KAPALI 2026-10-10:** Rapor
+     adresi üretim-ölü çıktı (game.py:4544-4552 değil; gerçek
+     `get_ghost_y` v2 4736-4744 / demo 4500, tek çağıran
+     `_draw_base_scene`). Önerinin memoize/`board_rev` omurgası
+     ölçümle REDDEDİLDİ: occupancy yazım-sayıçlı proxy'si drop-sim'i
+     +%32,6 ve `_cell_filled`'i 2x yavaşlattı — `is_valid_position`
+     çekirdek okuma yoludur. Uygulanan FAZ 1 (iki repo birebir):
+     `Board._is_valid_cells(cells, dx, dy, piece=None)` tek semantik
+     kaynak (gövde birebir taşındı); `is_valid_position` tek satır
+     sarmalayıcı; `get_ghost_y` hücre listesini 1 kez hesaplayıp dy
+     adımlarını `_is_valid_cells`'e sorar (`Piece.copy()` YOK; perk'ler
+     orijinal parçadan; `y = piece_y - 1` başlangıcı eski dy=0 ilk
+     denetimiyle birebir — geçersiz başlangıçta eski dönüş `piece.y-1`
+     korunur). **Sıfır bayat-ghost riski** (cache yok). YENİ
+     `test_ghost_drop_parity.py` (8 test ×2 repo, bayt-birebir):
+     eski-algoritma referans kopyasıyla 500 rastgele senaryo +
+     perk varyantları (tunnel/drill/flexible) + çıpal ankrarlar +
+     sarmalayıcı↔`_is_valid_cells` oracle eşdeğerliği. Kanıt:
+     izole 8/8 ×2; dar paket v2 56+1s / demo 54+1s; tam-suite A/B
+     **v2 20 = 20 · demo 34 = 34 BİREBİR** (paralel koşumdaki demo
+     35. düşüşü rumble stop-timer'ın duvar-saati flake'i — izole 5/5
+     + çekişmesiz seri 34=34 kanıtıyla teşhis). Ölçüm (dönüşümlü,
+     aynı oturum): birim medyan v2 boş-I 132,75→40,16 µs (−%70) /
+     demo 181,94→46,82 (−%74); kare-karışımı interleaved 6 tur
+     medyan **v2 −11,50 / demo −26,86 µs/kare** (6/6 neg);
+     deterministik ghost-yolu `is_valid_position` çağrısı 1000
+     karede 2900 → 0. Yan-etki: sarmalayıcı +238 ns/çağrı (tekrarlayan
+     ~5-10 çarpışma çağrısı/kare → ~+1-2 µs/kare; net açık farkla
+     pozitif). **FAZ 2 (memoize) kanıt-gated ertelendi:** kalan
+     ek kazanım ~7-10 µs/kare; bedel ~140 ele-yazım bump noktası +
+     bayat-ghost sınıfı + `lru_cache(self)` GC mayını — E-turu canlı
+     ölçümü ghost'u görünür kılmazsa açılmaz. Gözlem (kapsam dışı):
+     online_pvp `_get_ghost_y` (v2 4772/demo 4221) ve iniş döngüleri
+     (game.py 3026/5481, game_modes.py 1254) aynı desen adayları.
+
 ---
 
 *Bağlantılar: rapor §4-6 (madde detayları + öneriler), §8 (metre altyapısı),
