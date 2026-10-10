@@ -78,7 +78,7 @@ get_fitting_font = _rs.get_fitting_font
 from ui_theme import UIFonts, UIColors, UIStyle
 from ui_scaling import get_projected_effective_scale
 from localization import t, get_language
-from text_cache import render_text
+from text_cache import render_text, render_text_shared
 # P1-12b (ölçekleme denetim raporu): lobi/bekleme metin bütçeleri —
 # ölçüm yardımcıları (ikili arama ellipsisi + satır sarma).
 from ui_text_layout import wrap_text_limited, ellipsize_text
@@ -6670,7 +6670,7 @@ class OnlinePvPGame:
                          border_color=UIColors.NEON_MAGENTA, glow=True)
 
         vs_font = _rs.get_font(s(38, minimum=20))
-        vs_text = render_text(vs_font, 'VS', True, UIColors.NEON_MAGENTA)
+        vs_text = render_text_shared(vs_font, 'VS', True, UIColors.NEON_MAGENTA)
         self.screen.blit(vs_text, vs_text.get_rect(center=vs_rect.center))
 
         # Pending garbage göstergesi (Online garbage açıksa görünür)
@@ -6737,7 +6737,13 @@ class OnlinePvPGame:
     # ── Oyuncu Başlık Paneli (pvp_game.py stili) ────────────────
 
     def _draw_player_header(self, rect, name, accent_color, score, lines, controls_label):
-        """Başlık paneli: cam panel + accent underline + isim/skor."""
+        """Başlık paneli: cam panel + accent underline + isim/skor.
+
+        OP-035 faz 2: isim/skor/satır/etiket yüzeyleri paylaşımlı LRU
+        master'larıdır (render_text_shared) — bu blokta set_alpha/fill
+        gibi yüzey mutasyonu YASAK (kirli alfalar tüm tüketicilere
+        yayılır; bkz. text_cache.render_shared sözleşmesi).
+        """
         draw_glass_panel(self.screen, rect, alpha=190, border_color=accent_color)
         pygame.draw.rect(self.screen, (*accent_color[:3], 120),
                          rect, 2, border_radius=12)
@@ -6749,21 +6755,21 @@ class OnlinePvPGame:
         # İsim
         sc = self._ui_scale()
         nf = _rs.get_fitting_font(name, self._sx(22, sc, 14), rect.width - 120)
-        ns = render_text(nf, name, True, accent_color)
+        ns = render_text_shared(nf, name, True, accent_color)
         self.screen.blit(ns, ns.get_rect(midleft=(rect.x + 16, rect.centery - 8)))
 
         # Skor / satır (sağda)
         sf = _rs.get_font(self._sx(14, sc, 10), bold=False)
-        sc_s = render_text(sf, f'{t("score", "Skor")} {score:,}'.replace(',', '.'),
-                           True, _rs.text_primary)
-        ln_s = render_text(sf, f'{t("lines", "Satır")} {lines}', True, _rs.text_primary)
+        sc_s = render_text_shared(sf, f'{t("score", "Skor")} {score:,}'.replace(',', '.'),
+                                  True, _rs.text_primary)
+        ln_s = render_text_shared(sf, f'{t("lines", "Satır")} {lines}', True, _rs.text_primary)
         self.screen.blit(sc_s, sc_s.get_rect(midright=(rect.right - 16, rect.centery - 10)))
         self.screen.blit(ln_s, ln_s.get_rect(midright=(rect.right - 16, rect.centery + 10)))
 
         # Kontrol etiketi
         if controls_label:
             cf = _rs.get_font(self._sx(12, sc, 9), bold=False)
-            cs = render_text(cf, controls_label, True, _rs.text_muted)
+            cs = render_text_shared(cf, controls_label, True, _rs.text_muted)
             self.screen.blit(cs, cs.get_rect(bottomleft=(rect.x + 16, rect.bottom - 8)))
 
     # ── Yardımcı draw metotları ──────────────────────────────────
@@ -6818,7 +6824,8 @@ class OnlinePvPGame:
                     else:
                         text = ''
 
-            label = font.render(text, True, UIColors.NEON_CYAN)
+            # OP-035 faz 2: paylaşımlı yüzey — yalnız blit, mutasyon yasak.
+            label = render_text_shared(font, text, True, UIColors.NEON_CYAN)
             top_y = panel_rect.top + s(6)
             self.screen.blit(label, label.get_rect(centerx=panel_rect.centerx, top=top_y))
             return top_y + label.get_height()
@@ -6835,7 +6842,7 @@ class OnlinePvPGame:
                                   hold_label_bottom + s(6), mini)
         elif self.hold_used:
             lock_f = _rs.get_font(s(16, minimum=11))
-            lk = render_text(lock_f, 'X', True, _rs.text_muted)
+            lk = render_text_shared(lock_f, 'X', True, _rs.text_muted)
             self.screen.blit(lk, lk.get_rect(center=(hold_rect.centerx,
                                                        hold_label_bottom + s(24))))
 
