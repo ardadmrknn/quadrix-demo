@@ -293,6 +293,24 @@ açık; JSONL + gl_debug.log kapı ölçümlerini kendiliğinden üretir (kılav
      durumda). DERS: port bir imza değişkeni taşırken test stub'ları
      gerçek kütüphane arayüzüne hizalanır — gövde parite için
      dokunulmaz. Faz 2 (noktasal benimseme) ayrı kayıt.
+  9. **D7 faz 2 — noktasal benimseme (2026-10-10):** 8 nokta iki repo
+     içerik-birebir: header ×4 + VS + yan panel etiketi (doğrudan
+     `font.render` → `render_text_shared` sarmalayıcı — hasattr
+     toleransı stub güvenliği) + hold 'X'. Combo popup (OP-006
+     savunmacı kopya) ve pending garbage (ölü flag) bilinçli kapsam
+     dışı; kalan ~127 nokta varsayılan `.copy()` yolunda. **Ölçüm
+     (interleaved 6 tur × 400 çizim):** v2 medyan −26.4 µs/çizim
+     (4/6 neg — gürültü bandı geniş), demo −124.8 µs/çizim (5/6 neg)
+     → kare başı ~−53 / −250 µs; **deterministik kanıt:** render_text
+     7 → 0, render_shared 7 (kare başı 7 `.copy()` eliminasyonu) +
+     digest BİREBİR `94ad624c762b50e0` (edited == HEAD-worktree, iki
+     repo). YENİ `test_online_pvp_shared_render_sites.py` (6 test ×2
+     repo: shared-path sayımı, `_RecordingSurface` mutasyon-sentinel,
+     yüzey kimliği, cache-clear ısınması, `_draw_game` E2E VS).
+     Doğrulama: dar paket v2 24/24 · demo 20/20; tam-suite A/B
+     **v2 20 = 20 · demo 34 = 34 BİREBİR**. Test dersi: draw yolu
+     `draw_glass_panel` → `pygame.draw.rect` gerçek Surface ister —
+     blit-kaydeden `pygame.Surface` alt sınıfı, `_ScreenStub` değil.
 
 ---
 
