@@ -1,4 +1,4 @@
-# Build & Steam Upload Rehberi
+# Demo Build & Steam Upload Rehberi
 
 > Bu dosya `tools/sync_markdown_docs.py` tarafindan uretilir.
 > Kalici degisiklik icin kaynak script/spec/VDF dosyasini veya sync scriptini guncelle.
@@ -8,36 +8,35 @@
 - Kod degisince Steam build kendiliginden guncellenmez.
 - Guncel kodun pakete girmesi icin build komutunu sen calistirirsin.
 - Steam'e yeni build gitmesi icin upload komutunu sen calistirirsin.
-- Upload sirasinda `Desc`, `ContentRoot` ve `BuildOutput` alanlari helper script tarafindan gecici VDF uzerinde doldurulur.
+- Windows tarafinda build helper repoda YOK (445a0da'da silindi): build manuel PyInstaller ile.
+- macOS tarafinda upload helper repoda YOK (445a0da'da silindi): yukleme manuel steamcmd akisiyla.
 - CI su an otomatik Steam upload yapmiyor; sadece test/lint calistiriyor.
 
 ## Kaynak Gercekler
 
-### Windows
+### Windows (Demo)
 
-- Canonical build helper: `scripts/build/build_windows_exe.ps1`
-- Canonical upload helper: `tools/steam_upload_playtest.ps1`
-- Canonical spec: `packaging/specs/tetris.spec`
-- Playtest AppID: `4428040`
-- Playtest depot: `4428041`
+- Kanonik demo spec: `packaging/specs/tetris_demo.spec`
+- Kanonik upload helper: `tools/steam_upload_demo.ps1` (playtest helper'ini `Target='demo'` ile sarmalar)
+- Playtest helper (paylasilan cekirdek): `tools/steam_upload_playtest.ps1`
+- Demo AppID: `4635310`
+- Demo depot: `4635311`
 - Upload helper temp VDF patchliyor: `evet`
+- Upload helper ContentRoot AppID kimlik kontrolu yapiyor: `evet`
+
+### macOS (Demo)
+
+- Kanonik build helper: `scripts/build/build_macos_app.sh` (tam surum varsayani; `--spec` ile demo spec secilir)
+- Kanonik demo spec: `packaging/specs/tetris_demo_macos_allinone.spec`
+- Demo uygulama adi: `Quadrix Demo.app`
+- Demo AppID: `4635310`
+- Demo depot: `4635312`
 - Build helper bridge derleyebiliyor: `evet`
+- Upload helper: repoda YOK — yukleme manuel steamcmd akisiyla
 
-### macOS
+### Otomatik Surum Artirma
 
-- Canonical build helper: `scripts/build/build_macos_app.sh`
-- Canonical upload helper: `scripts/build/steam_upload_macos.sh`
-- Canonical spec: `packaging/specs/tetris_macos_allinone.spec`
-- Uretilen uygulama adi: `Quadrix.app`
-- Playtest AppID: `4428040`
-- Playtest depot: `4428043`
-- Upload helper temp VDF patchliyor: `evet`
-- Upload helper `--build-first` destekliyor: `evet`
-- Upload helper stale build guard kullaniyor: `evet`
-
-### Otomatik Sürüm Artirma
-
-Windows local version bump bu spec dosyalarinda aktif:
+Windows local version bump bu spec dosyalarinda aktif (demo spec'lerinde bump YOK):
 
 - `packaging/specs/tetris.spec`
 - `packaging/specs/tetris_en.spec`
@@ -57,85 +56,83 @@ macOS tarafinda local override bump yok; runtime dogrudan `src/version_base.py` 
 
 ## Onerilen Komutlar
 
-### Windows build
+### Windows demo build (manuel — helper yok)
 
 ```powershell
-pwsh -File .\scripts\build\build_windows_exe.ps1 -Clean
+py -m PyInstaller packaging\specs\tetris_demo.spec --noconfirm
 ```
 
-### Windows upload
+Not: derleme oncesi `src/demo_config.py` icinde `IS_DEMO = True` yapilmali, derleme sonrasi geri alinmali (bu gecisi otomatikleyen script repoya commit'lenmemis).
+
+### Windows demo upload
 
 ```powershell
-pwsh -File .\tools\steam_upload_playtest.ps1 `
+pwsh -File .\tools\steam_upload_demo.ps1 `
     -SteamCmdPath "C:\steamcmd\steamcmd.exe" `
     -SteamUser "BUILD_ACCOUNT" `
-    -BuildDescription "Playtest build YYYY-MM-DD" `
+    -BuildDescription "Demo build YYYY-MM-DD" `
     -SetLive ""
 ```
 
-Dusuk seviye fallback:
-
-```powershell
-py -m PyInstaller packaging\specs\tetris.spec --noconfirm
-```
-
-### macOS build
+### macOS demo build
 
 ```bash
-./scripts/build/build_macos_app.sh --clean
-```
-
-### macOS upload
-
-```bash
-./scripts/build/steam_upload_macos.sh --build-first --desc "macOS build YYYY-MM-DD"
+./scripts/build/build_macos_app.sh --spec packaging/specs/tetris_demo_macos_allinone.spec --app-name "Quadrix Demo" --clean
 ```
 
 Dusuk seviye fallback:
 
 ```bash
-pyinstaller packaging/specs/tetris_macos_allinone.spec --noconfirm
+pyinstaller packaging/specs/tetris_demo_macos_allinone.spec --noconfirm
+```
+
+### macOS demo upload (manuel — helper yok)
+
+VDF sablonunda `ContentRoot` ve `BuildOutput` bos birakilmistir; manuel akista once doldurulur:
+
+```bash
+steamcmd +login BUILD_ACCOUNT +run_app_build ./steamworks/scripts/app_build_demo_macos.vdf +quit
 ```
 
 ## VDF Politicasi
 
-- Windows helper varsayilan olarak gecici bir AppBuild VDF uretir; override etmek icin `-AppBuildScript steamworks/scripts/app_build_playtest.vdf` kullanilabilir.
-- macOS helper varsayilan olarak `steamworks/scripts/app_build_playtest_macos.vdf` dosyasini kullanir; `--full` ile `steamworks/scripts/app_build_full.vdf` secilir.
+- Windows demo helper varsayilan olarak `steamworks/scripts/app_build_demo.vdf` dosyasini kullanir.
+- Playtest helper'in AppBuildScript varsayani bos ise gecici VDF uretir: `evet`
 - Track edilen VDF sablonlarinda makineye ozel `ContentRoot` ve `BuildOutput` degeri tutulmaz.
 - `Desc` alani helper script tarafindan runtime'da override edilebilir; VDF icindeki default deger yalnizca sablon gorevi gorur.
 
-### Guncel Windows Playtest VDF Sablosu
+### Guncel Windows Demo VDF Sablonu
 
 ```vdf
 "AppBuild"
 {
-    "AppID" "4428040"
-    "Desc" "Playtest build"
+    "AppID" "4635310"
+    "Desc" "Demo build"
     "SetLive" ""
     "ContentRoot" ""
     "BuildOutput" ""
 
     "Depots"
     {
-        "4428041" "depot_build_playtest_windows.vdf"
+        "4635311" "depot_build_demo_windows.vdf"
     }
 }
 ```
 
-### Guncel macOS Playtest VDF Sablosu
+### Guncel macOS Demo VDF Sablonu
 
 ```vdf
 "AppBuild"
 {
-    "AppID" "4428040"
-    "Desc" "macOS Playtest build 2026-02-19"
+    "AppID" "4635310"
+    "Desc" "Demo macOS build"
     "SetLive" ""
     "ContentRoot" ""
     "BuildOutput" ""
 
     "Depots"
     {
-        "4428043" "depot_build_macos.vdf"
+        "4635312" "depot_build_demo_macos.vdf"
     }
 }
 ```
@@ -145,7 +142,7 @@ pyinstaller packaging/specs/tetris_macos_allinone.spec --noconfirm
 - Steam build komutunu elle calistirmak
 - Steam Guard / partner hesabiyla giris yapmak
 - Steamworks panelinde yuklenen BuildID'yi branch'e atamak
-- Gerekirse Playtest `Playable` / branch canli ayarlarini acmak
+- Gerekirse Demo `Playable` / branch canli ayarlarini acmak
 
 ## CI Durumu
 

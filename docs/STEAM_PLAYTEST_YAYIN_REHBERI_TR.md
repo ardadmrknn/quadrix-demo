@@ -1,4 +1,4 @@
-# Steam Playtest Yayin Rehberi (Quadrix)
+# Steam Playtest Yayin Rehberi (Quadrix Demo)
 
 > Bu dosya `tools/sync_markdown_docs.py` tarafindan uretilir.
 > Rehberdeki teknik degerler helper script/spec/VDF dosyalarindan cekilir.
@@ -17,23 +17,22 @@ Bu rehber Steam tarafinda manuel kalan adimlarla, repo tarafinda otomatiklesen a
 - Playtest AppID: `4428040`
 - Windows depot: `4428041` via `depot_build_playtest_windows.vdf`
 - macOS depot: `4428043` via `depot_build_macos.vdf`
-- Windows upload helper: `tools/steam_upload_playtest.ps1`
-- macOS upload helper: `scripts/build/steam_upload_macos.sh`
+- Windows playtest helper: `tools/steam_upload_playtest.ps1`
+- macOS upload helper: repoda YOK — manuel steamcmd akisi
 - Windows helper temp VDF patchliyor: `evet`
-- macOS helper temp VDF patchliyor: `evet`
 
 Onemli fark:
 
 - Artik repo icindeki VDF dosyasina her build icin `Desc`, `ContentRoot` veya `BuildOutput` yazman gerekmiyor.
-- Helper scriptler bu alanlari gecici VDF olusturarak dolduruyor.
+- Windows helper bu alanlari gecici VDF olusturarak dolduruyor.
 - Track edilen VDF dosyasinda kalan `Desc` degeri sadece sablon deger.
 
 ## 3) Windows Playtest Akisi
 
-### Build
+### Build (manuel — build helper repoda yok)
 
 ```powershell
-pwsh -File .\scripts\build\build_windows_exe.ps1 -Clean
+py -m PyInstaller packaging\specs\tetris_demo.spec --noconfirm
 ```
 
 ### Upload
@@ -45,13 +44,6 @@ pwsh -File .\tools\steam_upload_playtest.ps1 `
     -BuildDescription "Playtest build YYYY-MM-DD"
 ```
 
-Dusuk seviye fallback:
-
-```powershell
-py -m PyInstaller packaging\specs\tetris.spec --noconfirm
-"C:\SteamworksSDK\tools\ContentBuilder\builder\steamcmd.exe" +login BUILD_ACCOUNT +run_app_build ".\steamworks\scripts\app_build_playtest.vdf" +quit
-```
-
 ## 4) macOS Playtest Akisi
 
 ### Build
@@ -60,22 +52,20 @@ py -m PyInstaller packaging\specs\tetris.spec --noconfirm
 ./scripts/build/build_macos_app.sh --clean
 ```
 
-### Upload
+### Upload (manuel — helper repoda yok)
 
 ```bash
-./scripts/build/steam_upload_macos.sh --build-first --desc "macOS build YYYY-MM-DD"
+steamcmd +login BUILD_ACCOUNT +run_app_build ./steamworks/scripts/app_build_playtest_macos.vdf +quit
 ```
 
 Notlar:
 
-- Script varsayilan olarak `steamworks/scripts/app_build_playtest_macos.vdf` kullanir.
-- `--full` verilirse `steamworks/scripts/app_build_full.vdf` secilir.
-- `--build-first` tavsiye edilen guvenli akistir.
-- Stale app tespit edilirse upload durdurulur; zorlamak icin `QUADRIX_ALLOW_STALE_UPLOAD=1` gerekir.
+- macOS yuklemede VDF sablonundaki `ContentRoot`/`BuildOutput` once doldurulur.
+- Stale app tespiti yapan sarmalayici repoda yok; yukleme oncesi taze build alinmalidir.
 
 ## 5) Guncel VDF Sablonlari
 
-### Windows
+### Windows playtest
 
 ```vdf
 "AppBuild"
@@ -93,7 +83,7 @@ Notlar:
 }
 ```
 
-### macOS
+### macOS playtest
 
 ```vdf
 "AppBuild"

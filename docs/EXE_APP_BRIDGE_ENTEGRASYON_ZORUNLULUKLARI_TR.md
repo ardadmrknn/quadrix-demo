@@ -6,7 +6,7 @@
 ## Kisa Cevap
 
 - `steam_net_bridge` olmadan Online PvP acilmaz.
-- Windows canonical build helper bridge artefact yoksa derleyebilir.
+- Windows tarafinda build helper repoda YOK: bridge derleme ve PyInstaller adimi manuel.
 - macOS canonical build helper bridge artefact yoksa veya kaynak daha yeniyse yeniden derleyebilir.
 - Asagidaki spec dosyalari bridge binary arar ve paketlemeye ekler.
 
@@ -22,54 +22,36 @@
 
 ## Canonical Wrapper Akislari
 
-### Windows
+### Windows (manuel — helper repoda yok)
 
 ```powershell
-pwsh -File .\scripts\build\build_windows_exe.ps1 -Clean
+cd steamworks\steam_net_bridge
+build.bat
+cd ..\..
+py -m PyInstaller packaging\specs\tetris_demo.spec --noconfirm
 ```
 
 Beklenen davranis:
 
-- Bridge artefact yoksa `steamworks\steam_net_bridge\build.bat` tetiklenir.
+- Bridge artefact yoksa `steamworks\steam_net_bridge\build.bat` elle tetiklenir.
 - Artefactler `local_artifacts\bridge` altina senkronize edilir.
-- Ardindan `packaging/specs/tetris.spec` ile PyInstaller build'i calisir.
+- Ardindan `packaging/specs/tetris_demo.spec` ile PyInstaller build'i calisir.
 
 ### macOS
 
 ```bash
-./scripts/build/build_macos_app.sh --clean
+./scripts/build/build_macos_app.sh --spec packaging/specs/tetris_demo_macos_allinone.spec --app-name "Quadrix Demo" --clean
 ```
 
 Beklenen davranis:
 
 - Bridge artefact yoksa `steamworks/steam_net_bridge/build.sh` tetiklenir.
 - Bridge kaynak dosyasi artefactten yeniyse rebuild zorlanir.
-- Ardindan `packaging/specs/tetris_macos_allinone.spec` ile `.app` build'i alinir.
-
-## Low-level Fallback
-
-### Windows
-
-```powershell
-cd steamworks\steam_net_bridge
-build.bat
-cd ..\..
-py -m PyInstaller packaging\specs\tetris.spec --noconfirm
-```
-
-### macOS
-
-```bash
-cd steamworks/steam_net_bridge
-chmod +x build.sh
-./build.sh
-cd ../..
-pyinstaller packaging/specs/tetris_macos_allinone.spec --noconfirm
-```
+- Ardindan `packaging/specs/tetris_demo_macos_allinone.spec` ile `.app` build'i alinir.
 
 ## Otomasyon Seviyesi
 
-- Windows helper bridge derleyebiliyor: `evet`
+- Windows helper bridge derleyebiliyor: repoda helper YOK (445a0da'da silindi)
 - macOS helper bridge derleyebiliyor: `evet`
 - macOS helper stale bridge rebuild yapiyor: `evet`
 

@@ -7,7 +7,18 @@ from textwrap import dedent, indent
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-WINDOWS_EXE_BUILD_COMMAND = r'pwsh -File .\scripts\build\build_windows_exe.ps1 -Clean'
+
+# Demo deposunun GERÇEK kaynak envanteri (2026-10-11 onarımi):
+# - scripts/build/build_windows_exe.ps1 ve scripts/build/steam_upload_macos.sh
+#   445a0da (2026-06-14) commit'inde silindi ve geri gelmedi.
+# - scripts/build/write_demo_config.py ve scripts/build/build_macos_demo_app.sh
+#   repo geçmişinde HİÇ yok (kullanıcı makinesinde kalmış izlenmeyen taslaklar).
+# Bu araç yalnızca repoya commit'lenmiş kaynaklardan üretir; PS1 içinden
+# SpecFile varsayanı türetilemediği için kanonik demo spec'leri burada
+# tanımlanır (packaging/specs/ altında gerçek dosyalardır).
+WINDOWS_DEMO_SPEC = 'packaging/specs/tetris_demo.spec'
+MAC_DEMO_SPEC = 'packaging/specs/tetris_demo_macos_allinone.spec'
+MAC_DEMO_APP_NAME = 'Quadrix Demo'
 
 
 def _read_text(relative_path: str) -> str:
@@ -89,110 +100,90 @@ def _render_fenced_block(language: str, body: str) -> str:
 
 
 def build_context() -> dict[str, object]:
-    windows_build_text = _read_text('scripts/build/build_windows_exe.ps1')
     windows_upload_text = _read_text('tools/steam_upload_playtest.ps1')
+    windows_demo_upload_text = _read_text('tools/steam_upload_demo.ps1')
     mac_build_text = _read_text('scripts/build/build_macos_app.sh')
-    mac_upload_text = _read_text('scripts/build/steam_upload_macos.sh')
-    windows_vdf_text = _read_text('steamworks/scripts/app_build_playtest.vdf')
-    mac_playtest_vdf_text = _read_text('steamworks/scripts/app_build_playtest_macos.vdf')
+    windows_demo_vdf_text = _read_text('steamworks/scripts/app_build_demo.vdf')
     mac_demo_vdf_text = _read_text('steamworks/scripts/app_build_demo_macos.vdf')
-    write_demo_config_text = _read_text('scripts/build/write_demo_config.py')
+    windows_playtest_vdf_text = _read_text('steamworks/scripts/app_build_playtest.vdf')
+    mac_playtest_vdf_text = _read_text('steamworks/scripts/app_build_playtest_macos.vdf')
     ci_text = _read_text('.github/workflows/ci.yml')
+    demo_config_text = _read_text('src/demo_config.py')
 
-    windows_spec = _clean_repo_relative_path(_extract_ps1_string_default(windows_build_text, 'SpecFile'))
-    # `AppBuildScript` PS1 default'u boş bir string'tir; helper bu durumda runtime'da
-    # geçici bir VDF üretir. Dolayısıyla raw default değeri canonical "varsayılan dosya"
-    # gibi tanıtılmamalıdır. Boş gelirse repo içindeki kanonik playtest VDF'yi kullan
-    # ve override yolu olarak göster.
+    # Playtest helper'ının AppBuildScript varsayanı boş bırakılmıştır; runtime'da
+    # geçici VDF üretir. Demo sarmalayıcısı (steam_upload_demo.ps1) kendi
+    # varsayanını app_build_demo.vdf'ye bağlar.
     windows_app_build_script_raw = _extract_ps1_string_default(windows_upload_text, 'AppBuildScript')
-    windows_app_build_script_override = (
-        _clean_repo_relative_path(windows_app_build_script_raw)
-        if windows_app_build_script_raw.strip()
-        else 'steamworks/scripts/app_build_playtest.vdf'
-    )
     windows_app_build_script_default_is_synthesized = not windows_app_build_script_raw.strip()
+
     mac_spec = _clean_repo_relative_path(_extract_shell_assignment(mac_build_text, 'SPEC_FILE'))
     mac_app_name = _extract_shell_assignment(mac_build_text, 'APP_NAME')
 
-    windows_app_id = _extract_vdf_field(windows_vdf_text, 'AppID')
-    mac_app_id = _extract_vdf_field(mac_playtest_vdf_text, 'AppID')
-    windows_desc = _extract_vdf_field(windows_vdf_text, 'Desc')
-    mac_desc = _extract_vdf_field(mac_playtest_vdf_text, 'Desc')
-
-    windows_depots = _extract_vdf_depots(windows_vdf_text)
-    mac_depots = _extract_vdf_depots(mac_playtest_vdf_text)
+    cap_match = re.search(r'(?m)^DEMO_MYSTERY_SCORE_CAP\s*=\s*(\d+)\s*$', demo_config_text)
+    if not cap_match:
+        raise ValueError('DEMO_MYSTERY_SCORE_CAP not found in src/demo_config.py')
+    demo_mystery_score_cap = cap_match.group(1)
 
     bridge_specs = _relative_paths_for_specs_containing('get_bridge_binaries(')
     windows_version_bump_specs = _relative_paths_for_specs_containing("bump_platform_version(REPO_ROOT, 'windows')")
 
     ci_has_steam_upload = any(
         token in ci_text
-        for token in ('run_app_build', 'steam_upload_playtest', 'steam_upload_macos')
+        for token in ('run_app_build', 'steam_upload_demo', 'steam_upload_playtest')
     )
 
     return {
-        'windows_spec': windows_spec,
-        'windows_upload_script': 'tools/steam_upload_playtest.ps1',
-        'windows_build_script': 'scripts/build/build_windows_exe.ps1',
-        'windows_app_build_script': windows_app_build_script_override,
+        'windows_demo_spec': WINDOWS_DEMO_SPEC,
+        'mac_demo_spec': MAC_DEMO_SPEC,
+        'mac_demo_app_name': MAC_DEMO_APP_NAME,
+        'windows_upload_script': 'tools/steam_upload_demo.ps1',
+        'windows_playtest_upload_script': 'tools/steam_upload_playtest.ps1',
+        'windows_app_build_script': 'steamworks/scripts/app_build_demo.vdf',
         'windows_app_build_script_default_is_synthesized': windows_app_build_script_default_is_synthesized,
-        'windows_app_id': windows_app_id,
-        'windows_desc': windows_desc,
-        'windows_depots': windows_depots,
-        'windows_vdf_text': windows_vdf_text.rstrip(),
-        'windows_upload_uses_temp_vdf': '.tmp_app_build_' in windows_upload_text and 'Set-VdfField' in windows_upload_text,
-        'windows_build_compiles_bridge': 'Steam bridge derleniyor' in windows_build_text,
+        'windows_demo_app_id': _extract_vdf_field(windows_demo_vdf_text, 'AppID'),
+        'windows_demo_desc': _extract_vdf_field(windows_demo_vdf_text, 'Desc'),
+        'windows_demo_depots': _extract_vdf_depots(windows_demo_vdf_text),
+        'windows_demo_vdf_text': windows_demo_vdf_text.rstrip(),
+        'mac_demo_app_id': _extract_vdf_field(mac_demo_vdf_text, 'AppID'),
+        'mac_demo_desc': _extract_vdf_field(mac_demo_vdf_text, 'Desc'),
+        'mac_demo_depots': _extract_vdf_depots(mac_demo_vdf_text),
+        'mac_demo_vdf_text': mac_demo_vdf_text.rstrip(),
+        'windows_playtest_app_id': _extract_vdf_field(windows_playtest_vdf_text, 'AppID'),
+        'windows_playtest_depots': _extract_vdf_depots(windows_playtest_vdf_text),
+        'mac_playtest_app_id': _extract_vdf_field(mac_playtest_vdf_text, 'AppID'),
+        'mac_playtest_depots': _extract_vdf_depots(mac_playtest_vdf_text),
         'mac_spec': mac_spec,
         'mac_build_script': 'scripts/build/build_macos_app.sh',
-        'mac_upload_script': 'scripts/build/steam_upload_macos.sh',
         'mac_app_name': mac_app_name,
-        'mac_app_id': mac_app_id,
-        'mac_desc': mac_desc,
-        'mac_depots': mac_depots,
-        'mac_playtest_vdf_text': mac_playtest_vdf_text.rstrip(),
         'mac_playtest_vdf': 'steamworks/scripts/app_build_playtest_macos.vdf',
-        'mac_full_vdf': 'steamworks/scripts/app_build_full.vdf',
-        'mac_upload_uses_temp_vdf': 'TEMP_VDF="/tmp/quadrix_steam_build_' in mac_upload_text,
-        'mac_upload_has_build_first': '--build-first' in mac_upload_text,
-        'mac_upload_has_stale_guard': 'QUADRIX_ALLOW_STALE_UPLOAD' in mac_upload_text,
+        'demo_mystery_score_cap': demo_mystery_score_cap,
+        'windows_upload_uses_temp_vdf': '.tmp_app_build_' in windows_upload_text and 'Set-VdfField' in windows_upload_text,
+        'windows_upload_checks_content_root_appid': 'ContentRoot AppID' in windows_upload_text,
         'mac_build_compiles_bridge': 'Bridge bulunamadı, derleniyor' in mac_build_text,
         'mac_build_rebuilds_stale_bridge': 'Bridge kaynak dosyası daha yeni, yeniden derleme zorlanıyor' in mac_build_text,
         'bridge_specs': bridge_specs,
         'windows_version_bump_specs': windows_version_bump_specs,
         'ci_has_steam_upload': ci_has_steam_upload,
-        'mac_demo_app_id': _extract_vdf_field(mac_demo_vdf_text, 'AppID'),
-        'mac_demo_depots': _extract_vdf_depots(mac_demo_vdf_text),
-        'demo_mystery_score_cap': re.search(r'DEMO_MYSTERY_SCORE_CAP\s*=\s*(\d+)', write_demo_config_text).group(1) if re.search(r'DEMO_MYSTERY_SCORE_CAP\s*=\s*(\d+)', write_demo_config_text) else '1000000',
     }
 
 
 def render_build_and_upload_doc(context: dict[str, object]) -> str:
-    windows_depot_id = context['windows_depots'][0][0] if context['windows_depots'] else 'UNKNOWN'
-    mac_depot_id = context['mac_depots'][0][0] if context['mac_depots'] else 'UNKNOWN'
+    windows_demo_depot_id = context['windows_demo_depots'][0][0] if context['windows_demo_depots'] else 'UNKNOWN'
+    mac_demo_depot_id = context['mac_demo_depots'][0][0] if context['mac_demo_depots'] else 'UNKNOWN'
     bridge_specs = _render_bullets(context['bridge_specs'])
     version_specs = _render_bullets(context['windows_version_bump_specs'])
-    windows_app_build_synth = bool(context.get('windows_app_build_script_default_is_synthesized'))
-    if windows_app_build_synth:
-        windows_vdf_default_line = (
-            f'- Windows helper varsayilan olarak gecici bir AppBuild VDF uretir; '
-            f'override etmek icin `-AppBuildScript {context["windows_app_build_script"]}` kullanilabilir.'
-        )
-    else:
-        windows_vdf_default_line = (
-            f'- Windows helper varsayilan olarak `{context["windows_app_build_script"]}` dosyasini kullanir.'
-        )
-    windows_upload_command = dedent(r'''
-        pwsh -File .\tools\steam_upload_playtest.ps1 `
+    windows_demo_upload_command = dedent(r'''
+        pwsh -File .\tools\steam_upload_demo.ps1 `
             -SteamCmdPath "C:\steamcmd\steamcmd.exe" `
             -SteamUser "BUILD_ACCOUNT" `
-            -BuildDescription "Playtest build YYYY-MM-DD" `
+            -BuildDescription "Demo build YYYY-MM-DD" `
             -SetLive ""
     ''').strip()
-    windows_pyinstaller_command = f'py -m PyInstaller {_to_windows_path(str(context["windows_spec"]))} --noconfirm'
+    windows_demo_pyinstaller_command = f'py -m PyInstaller {_to_windows_path(str(context["windows_demo_spec"]))} --noconfirm'
 
     return _normalize(dedent(
         f"""
-        # Build & Steam Upload Rehberi
+        # Demo Build & Steam Upload Rehberi
 
         > Bu dosya `tools/sync_markdown_docs.py` tarafindan uretilir.
         > Kalici degisiklik icin kaynak script/spec/VDF dosyasini veya sync scriptini guncelle.
@@ -202,36 +193,35 @@ def render_build_and_upload_doc(context: dict[str, object]) -> str:
         - Kod degisince Steam build kendiliginden guncellenmez.
         - Guncel kodun pakete girmesi icin build komutunu sen calistirirsin.
         - Steam'e yeni build gitmesi icin upload komutunu sen calistirirsin.
-        - Upload sirasinda `Desc`, `ContentRoot` ve `BuildOutput` alanlari helper script tarafindan gecici VDF uzerinde doldurulur.
+        - Windows tarafinda build helper repoda YOK (445a0da'da silindi): build manuel PyInstaller ile.
+        - macOS tarafinda upload helper repoda YOK (445a0da'da silindi): yukleme manuel steamcmd akisiyla.
         - CI su an otomatik Steam upload yapmiyor; sadece test/lint calistiriyor.
 
         ## Kaynak Gercekler
 
-        ### Windows
+        ### Windows (Demo)
 
-        - Canonical build helper: `{context['windows_build_script']}`
-        - Canonical upload helper: `{context['windows_upload_script']}`
-        - Canonical spec: `{context['windows_spec']}`
-        - Playtest AppID: `{context['windows_app_id']}`
-        - Playtest depot: `{windows_depot_id}`
+        - Kanonik demo spec: `{context['windows_demo_spec']}`
+        - Kanonik upload helper: `{context['windows_upload_script']}` (playtest helper'ini `Target='demo'` ile sarmalar)
+        - Playtest helper (paylasilan cekirdek): `{context['windows_playtest_upload_script']}`
+        - Demo AppID: `{context['windows_demo_app_id']}`
+        - Demo depot: `{windows_demo_depot_id}`
         - Upload helper temp VDF patchliyor: `{'evet' if context['windows_upload_uses_temp_vdf'] else 'hayir'}`
-        - Build helper bridge derleyebiliyor: `{'evet' if context['windows_build_compiles_bridge'] else 'hayir'}`
+        - Upload helper ContentRoot AppID kimlik kontrolu yapiyor: `{'evet' if context['windows_upload_checks_content_root_appid'] else 'hayir'}`
 
-        ### macOS
+        ### macOS (Demo)
 
-        - Canonical build helper: `{context['mac_build_script']}`
-        - Canonical upload helper: `{context['mac_upload_script']}`
-        - Canonical spec: `{context['mac_spec']}`
-        - Uretilen uygulama adi: `{context['mac_app_name']}.app`
-        - Playtest AppID: `{context['mac_app_id']}`
-        - Playtest depot: `{mac_depot_id}`
-        - Upload helper temp VDF patchliyor: `{'evet' if context['mac_upload_uses_temp_vdf'] else 'hayir'}`
-        - Upload helper `--build-first` destekliyor: `{'evet' if context['mac_upload_has_build_first'] else 'hayir'}`
-        - Upload helper stale build guard kullaniyor: `{'evet' if context['mac_upload_has_stale_guard'] else 'hayir'}`
+        - Kanonik build helper: `{context['mac_build_script']}` (tam surum varsayani; `--spec` ile demo spec secilir)
+        - Kanonik demo spec: `{context['mac_demo_spec']}`
+        - Demo uygulama adi: `{context['mac_demo_app_name']}.app`
+        - Demo AppID: `{context['mac_demo_app_id']}`
+        - Demo depot: `{mac_demo_depot_id}`
+        - Build helper bridge derleyebiliyor: `{'evet' if context['mac_build_compiles_bridge'] else 'hayir'}`
+        - Upload helper: repoda YOK — yukleme manuel steamcmd akisiyla
 
-        ### Otomatik Sürüm Artirma
+        ### Otomatik Surum Artirma
 
-        Windows local version bump bu spec dosyalarinda aktif:
+        Windows local version bump bu spec dosyalarinda aktif (demo spec'lerinde bump YOK):
 
         {_indent_block(version_specs)}
 
@@ -243,51 +233,51 @@ def render_build_and_upload_doc(context: dict[str, object]) -> str:
 
         ## Onerilen Komutlar
 
-        ### Windows build
+        ### Windows demo build (manuel — helper yok)
 
-        {_indent_block(_render_fenced_block('powershell', WINDOWS_EXE_BUILD_COMMAND))}
+        {_indent_block(_render_fenced_block('powershell', windows_demo_pyinstaller_command))}
 
-        ### Windows upload
+        Not: derleme oncesi `src/demo_config.py` icinde `IS_DEMO = True` yapilmali, derleme sonrasi geri alinmali (bu gecisi otomatikleyen script repoya commit'lenmemis).
 
-        {_indent_block(_render_fenced_block('powershell', windows_upload_command))}
+        ### Windows demo upload
 
-        Dusuk seviye fallback:
+        {_indent_block(_render_fenced_block('powershell', windows_demo_upload_command))}
 
-        {_indent_block(_render_fenced_block('powershell', windows_pyinstaller_command))}
+        ### macOS demo build
 
-        ### macOS build
-
-        {_indent_block(_render_fenced_block('bash', './scripts/build/build_macos_app.sh --clean'))}
-
-        ### macOS upload
-
-        {_indent_block(_render_fenced_block('bash', './scripts/build/steam_upload_macos.sh --build-first --desc "macOS build YYYY-MM-DD"'))}
+        {_indent_block(_render_fenced_block('bash', f'./scripts/build/build_macos_app.sh --spec {context["mac_demo_spec"]} --app-name "{context["mac_demo_app_name"]}" --clean'))}
 
         Dusuk seviye fallback:
 
-        {_indent_block(_render_fenced_block('bash', f'pyinstaller {context["mac_spec"]} --noconfirm'))}
+        {_indent_block(_render_fenced_block('bash', f'pyinstaller {context["mac_demo_spec"]} --noconfirm'))}
+
+        ### macOS demo upload (manuel — helper yok)
+
+        VDF sablonunda `ContentRoot` ve `BuildOutput` bos birakilmistir; manuel akista once doldurulur:
+
+        {_indent_block(_render_fenced_block('bash', f'steamcmd +login BUILD_ACCOUNT +run_app_build ./steamworks/scripts/app_build_demo_macos.vdf +quit'))}
 
         ## VDF Politicasi
 
-        {windows_vdf_default_line}
-        - macOS helper varsayilan olarak `{context['mac_playtest_vdf']}` dosyasini kullanir; `--full` ile `{context['mac_full_vdf']}` secilir.
+        - Windows demo helper varsayilan olarak `{context['windows_app_build_script']}` dosyasini kullanir.
+        - Playtest helper'in AppBuildScript varsayani bos ise gecici VDF uretir: `{'evet' if context['windows_app_build_script_default_is_synthesized'] else 'hayir'}`
         - Track edilen VDF sablonlarinda makineye ozel `ContentRoot` ve `BuildOutput` degeri tutulmaz.
         - `Desc` alani helper script tarafindan runtime'da override edilebilir; VDF icindeki default deger yalnizca sablon gorevi gorur.
 
-        ### Guncel Windows Playtest VDF Sablosu
+        ### Guncel Windows Demo VDF Sablonu
 
-        {_indent_block(_render_fenced_block('vdf', context['windows_vdf_text']))}
+        {_indent_block(_render_fenced_block('vdf', context['windows_demo_vdf_text']))}
 
-        ### Guncel macOS Playtest VDF Sablosu
+        ### Guncel macOS Demo VDF Sablonu
 
-        {_indent_block(_render_fenced_block('vdf', context['mac_playtest_vdf_text']))}
+        {_indent_block(_render_fenced_block('vdf', context['mac_demo_vdf_text']))}
 
         ## Ne Manuel Kaldi?
 
         - Steam build komutunu elle calistirmak
         - Steam Guard / partner hesabiyla giris yapmak
         - Steamworks panelinde yuklenen BuildID'yi branch'e atamak
-        - Gerekirse Playtest `Playable` / branch canli ayarlarini acmak
+        - Gerekirse Demo `Playable` / branch canli ayarlarini acmak
 
         ## CI Durumu
 
@@ -298,24 +288,21 @@ def render_build_and_upload_doc(context: dict[str, object]) -> str:
 
 
 def render_playtest_guide_doc(context: dict[str, object]) -> str:
-    windows_depot_id = context['windows_depots'][0][0] if context['windows_depots'] else 'UNKNOWN'
-    windows_depot_vdf = context['windows_depots'][0][1] if context['windows_depots'] else 'UNKNOWN'
-    mac_depot_id = context['mac_depots'][0][0] if context['mac_depots'] else 'UNKNOWN'
-    mac_depot_vdf = context['mac_depots'][0][1] if context['mac_depots'] else 'UNKNOWN'
-    windows_upload_command = dedent(r'''
+    windows_depot_id = context['windows_playtest_depots'][0][0] if context['windows_playtest_depots'] else 'UNKNOWN'
+    windows_depot_vdf = context['windows_playtest_depots'][0][1] if context['windows_playtest_depots'] else 'UNKNOWN'
+    mac_depot_id = context['mac_playtest_depots'][0][0] if context['mac_playtest_depots'] else 'UNKNOWN'
+    mac_depot_vdf = context['mac_playtest_depots'][0][1] if context['mac_playtest_depots'] else 'UNKNOWN'
+    windows_playtest_upload_command = dedent(r'''
         pwsh -File .\tools\steam_upload_playtest.ps1 `
             -SteamCmdPath "C:\SteamworksSDK\tools\ContentBuilder\builder\steamcmd.exe" `
             -SteamUser "BUILD_ACCOUNT" `
             -BuildDescription "Playtest build YYYY-MM-DD"
     ''').strip()
-    windows_low_level_command = dedent(f'''
-        py -m PyInstaller {_to_windows_path(str(context['windows_spec']))} --noconfirm
-        "C:\\SteamworksSDK\\tools\\ContentBuilder\\builder\\steamcmd.exe" +login BUILD_ACCOUNT +run_app_build ".\\{_to_windows_path(str(context['windows_app_build_script']))}" +quit
-    ''').strip()
+    windows_playtest_pyinstaller_command = f'py -m PyInstaller {_to_windows_path(str(context["windows_demo_spec"]))} --noconfirm'
 
     return _normalize(dedent(
         f"""
-        # Steam Playtest Yayin Rehberi (Quadrix)
+        # Steam Playtest Yayin Rehberi (Quadrix Demo)
 
         > Bu dosya `tools/sync_markdown_docs.py` tarafindan uretilir.
         > Rehberdeki teknik degerler helper script/spec/VDF dosyalarindan cekilir.
@@ -331,33 +318,28 @@ def render_playtest_guide_doc(context: dict[str, object]) -> str:
 
         ## 2) Repo Tarafinda Guncel Gercekler
 
-        - Playtest AppID: `{context['windows_app_id']}`
+        - Playtest AppID: `{context['windows_playtest_app_id']}`
         - Windows depot: `{windows_depot_id}` via `{windows_depot_vdf}`
         - macOS depot: `{mac_depot_id}` via `{mac_depot_vdf}`
-        - Windows upload helper: `{context['windows_upload_script']}`
-        - macOS upload helper: `{context['mac_upload_script']}`
+        - Windows playtest helper: `{context['windows_playtest_upload_script']}`
+        - macOS upload helper: repoda YOK — manuel steamcmd akisi
         - Windows helper temp VDF patchliyor: `{'evet' if context['windows_upload_uses_temp_vdf'] else 'hayir'}`
-        - macOS helper temp VDF patchliyor: `{'evet' if context['mac_upload_uses_temp_vdf'] else 'hayir'}`
 
         Onemli fark:
 
         - Artik repo icindeki VDF dosyasina her build icin `Desc`, `ContentRoot` veya `BuildOutput` yazman gerekmiyor.
-        - Helper scriptler bu alanlari gecici VDF olusturarak dolduruyor.
+        - Windows helper bu alanlari gecici VDF olusturarak dolduruyor.
         - Track edilen VDF dosyasinda kalan `Desc` degeri sadece sablon deger.
 
         ## 3) Windows Playtest Akisi
 
-        ### Build
+        ### Build (manuel — build helper repoda yok)
 
-        {_indent_block(_render_fenced_block('powershell', WINDOWS_EXE_BUILD_COMMAND))}
+        {_indent_block(_render_fenced_block('powershell', windows_playtest_pyinstaller_command))}
 
         ### Upload
 
-        {_indent_block(_render_fenced_block('powershell', windows_upload_command))}
-
-        Dusuk seviye fallback:
-
-        {_indent_block(_render_fenced_block('powershell', windows_low_level_command))}
+        {_indent_block(_render_fenced_block('powershell', windows_playtest_upload_command))}
 
         ## 4) macOS Playtest Akisi
 
@@ -365,26 +347,24 @@ def render_playtest_guide_doc(context: dict[str, object]) -> str:
 
         {_indent_block(_render_fenced_block('bash', './scripts/build/build_macos_app.sh --clean'))}
 
-        ### Upload
+        ### Upload (manuel — helper repoda yok)
 
-        {_indent_block(_render_fenced_block('bash', './scripts/build/steam_upload_macos.sh --build-first --desc "macOS build YYYY-MM-DD"'))}
+        {_indent_block(_render_fenced_block('bash', f'steamcmd +login BUILD_ACCOUNT +run_app_build ./steamworks/scripts/{context["mac_playtest_vdf"].split("/")[-1]} +quit'))}
 
         Notlar:
 
-        - Script varsayilan olarak `{context['mac_playtest_vdf']}` kullanir.
-        - `--full` verilirse `{context['mac_full_vdf']}` secilir.
-        - `--build-first` tavsiye edilen guvenli akistir.
-        - Stale app tespit edilirse upload durdurulur; zorlamak icin `QUADRIX_ALLOW_STALE_UPLOAD=1` gerekir.
+        - macOS yuklemede VDF sablonundaki `ContentRoot`/`BuildOutput` once doldurulur.
+        - Stale app tespiti yapan sarmalayici repoda yok; yukleme oncesi taze build alinmalidir.
 
         ## 5) Guncel VDF Sablonlari
 
-        ### Windows
+        ### Windows playtest
 
-        {_indent_block(_render_fenced_block('vdf', context['windows_vdf_text']))}
+        {_indent_block(_render_fenced_block('vdf', _read_text('steamworks/scripts/app_build_playtest.vdf').rstrip()))}
 
-        ### macOS
+        ### macOS playtest
 
-        {_indent_block(_render_fenced_block('vdf', context['mac_playtest_vdf_text']))}
+        {_indent_block(_render_fenced_block('vdf', _read_text('steamworks/scripts/app_build_playtest_macos.vdf').rstrip()))}
 
         ## 6) Kod Degisince Ne Olur?
 
@@ -402,7 +382,7 @@ def render_bridge_doc(context: dict[str, object]) -> str:
         cd steamworks\\steam_net_bridge
         build.bat
         cd ..\\..
-        py -m PyInstaller {_to_windows_path(str(context['windows_spec']))} --noconfirm
+        py -m PyInstaller {_to_windows_path(str(context["windows_demo_spec"]))} --noconfirm
     ''').strip()
 
     return _normalize(dedent(
@@ -415,7 +395,7 @@ def render_bridge_doc(context: dict[str, object]) -> str:
         ## Kisa Cevap
 
         - `steam_net_bridge` olmadan Online PvP acilmaz.
-        - Windows canonical build helper bridge artefact yoksa derleyebilir.
+        - Windows tarafinda build helper repoda YOK: bridge derleme ve PyInstaller adimi manuel.
         - macOS canonical build helper bridge artefact yoksa veya kaynak daha yeniyse yeniden derleyebilir.
         - Asagidaki spec dosyalari bridge binary arar ve paketlemeye ekler.
 
@@ -425,45 +405,29 @@ def render_bridge_doc(context: dict[str, object]) -> str:
 
         ## Canonical Wrapper Akislari
 
-        ### Windows
+        ### Windows (manuel — helper repoda yok)
 
-        {_indent_block(_render_fenced_block('powershell', WINDOWS_EXE_BUILD_COMMAND))}
+        {_indent_block(_render_fenced_block('powershell', windows_low_level_command))}
 
         Beklenen davranis:
 
-        - Bridge artefact yoksa `steamworks\\steam_net_bridge\\build.bat` tetiklenir.
+        - Bridge artefact yoksa `steamworks\\steam_net_bridge\\build.bat` elle tetiklenir.
         - Artefactler `local_artifacts\\bridge` altina senkronize edilir.
-        - Ardindan `{context['windows_spec']}` ile PyInstaller build'i calisir.
+        - Ardindan `{context['windows_demo_spec']}` ile PyInstaller build'i calisir.
 
         ### macOS
 
-        {_indent_block(_render_fenced_block('bash', './scripts/build/build_macos_app.sh --clean'))}
+        {_indent_block(_render_fenced_block('bash', f'./scripts/build/build_macos_app.sh --spec {context["mac_demo_spec"]} --app-name "{context["mac_demo_app_name"]}" --clean'))}
 
         Beklenen davranis:
 
         - Bridge artefact yoksa `steamworks/steam_net_bridge/build.sh` tetiklenir.
         - Bridge kaynak dosyasi artefactten yeniyse rebuild zorlanir.
-        - Ardindan `{context['mac_spec']}` ile `.app` build'i alinir.
-
-        ## Low-level Fallback
-
-        ### Windows
-
-        {_indent_block(_render_fenced_block('powershell', windows_low_level_command))}
-
-        ### macOS
-
-        {_indent_block(_render_fenced_block('bash', dedent(f'''
-        cd steamworks/steam_net_bridge
-        chmod +x build.sh
-        ./build.sh
-        cd ../..
-        pyinstaller {context['mac_spec']} --noconfirm
-        ''').strip()))}
+        - Ardindan `{context['mac_demo_spec']}` ile `.app` build'i alinir.
 
         ## Otomasyon Seviyesi
 
-        - Windows helper bridge derleyebiliyor: `{'evet' if context['windows_build_compiles_bridge'] else 'hayir'}`
+        - Windows helper bridge derleyebiliyor: repoda helper YOK (445a0da'da silindi)
         - macOS helper bridge derleyebiliyor: `{'evet' if context['mac_build_compiles_bridge'] else 'hayir'}`
         - macOS helper stale bridge rebuild yapiyor: `{'evet' if context['mac_build_rebuilds_stale_bridge'] else 'hayir'}`
 
@@ -478,8 +442,7 @@ def render_bridge_doc(context: dict[str, object]) -> str:
 
 def render_macos_demo_upload_guide(context: dict[str, object]) -> str:
     mac_demo_depot_id = context['mac_demo_depots'][0][0] if context['mac_demo_depots'] else 'UNKNOWN'
-    demo_mystery_score_cap = context['demo_mystery_score_cap']
-    formatted_cap = f"{int(demo_mystery_score_cap):,}".replace(",", ".")
+    formatted_cap = f"{int(str(context['demo_mystery_score_cap'])):,}".replace(",", ".")
 
     return _normalize(dedent(
         f"""
@@ -495,53 +458,51 @@ def render_macos_demo_upload_guide(context: dict[str, object]) -> str:
         ## 1. Uygulama Yapısı ve Kurallar (Windows Eşleşmesi)
 
         Oyun kurallarının Windows demo sürümüyle birebir aynı olması sağlanmıştır:
-        - **Mystery (Kart Ustalığı) Modu Sınırı**: Demosundaki skor sınırı **{formatted_cap}**'dur. Bu skora ulaşıldığında oyun dondurulur ve "Demo Tamamlandı" paneli açılır.
-        - **Konfigürasyon Dosyası**: [write_demo_config.py](file:///Users/burakyasayan/quadrix-demo/scripts/build/write_demo_config.py#L58) dosyasındaki `DEMO_MYSTERY_SCORE_CAP = {demo_mystery_score_cap}` değişkeni üzerinden yönetilir.
-        - **Demo Modu Aktivasyonu**: Derleme scripti tetiklendiğinde `src/demo_config.py` otomatik olarak `IS_DEMO = True` durumuna getirilir. Derleme bittiğinde geliştirme ortamının bozulmaması için otomatik olarak `IS_DEMO = False` (full sürüm) konumuna geri döndürülür.
+        - **Mystery (Kart Ustalığı) Modu Sınırı**: Demodaki skor sınırı **{formatted_cap}**'dur. Bu skora ulaşıldığında oyun dondurulur ve "Demo Tamamlandı" paneli açılır.
+        - **Konfigürasyon Kaynağı**: `src/demo_config.py` içindeki `DEMO_MYSTERY_SCORE_CAP = {context['demo_mystery_score_cap']}` değişkeni üzerinden yönetilir (bu değeri otomatiklayan `write_demo_config.py` repoya hiç commit'lenmedi).
+        - **Demo Modu Aktivasyonu**: Derleme öncesi `src/demo_config.py` içinde `IS_DEMO = True` yapılır; derleme bittiğinde geliştirme ortamının bozulmaması için manuel olarak geri alınır.
 
         ---
 
         ## 2. Derleme Süreci (Build)
 
-        Uygulamanın macOS üzerinde PyInstaller kullanılarak temiz bir şekilde paketlenmesi:
-
         ### Hazırlık ve Test
-        Derleme öncesi tüm kod tabanının kararlılığını doğrulamak için test suite koşulmuştur:
+        Derleme öncesi tüm kod tabanının kararlılığını doğrulamak için test suite koşulur:
 
         ```bash
         ./scripts/test/run_tests.sh -q
         ```
 
         ### macOS Demo Bundle Derleme
-        Aşağıdaki komut çalıştırılarak temiz bir `.app` paketi üretilmiştir:
+        Build helper'ın `--spec`/`--app-name` geçersiz kılmalarıyla demo paketi üretilir:
 
         ```bash
-        ./scripts/build/build_macos_demo_app.sh --clean
+        ./scripts/build/build_macos_app.sh --spec {context['mac_demo_spec']} --app-name "{context['mac_demo_app_name']}" --clean
         ```
 
-        - **Üretilen Paket**: `dist/Quadrix Demo.app`
-        - **İçerik Kontrolü**: `Contents/MacOS/QuadrixDemo` executable dosyası, `Contents/Frameworks/` altında native Steam API dylib'i ve derlenmiş `steam_net_bridge` kütüphanesi entegre edilmiştir.
+        - **Üretilen Paket**: `dist/{context['mac_demo_app_name']}.app`
+        - **İçerik Kontrolü**: `Contents/MacOS/` altında executable, `Contents/Frameworks/` altında native Steam API dylib'i ve derlenmiş `steam_net_bridge` kütüphanesi entegre edilir.
 
         ---
 
         ## 3. Steam'e Yükleme Süreci (Upload)
 
-        Derlenen demo paketinin Steam Pipe sistemi üzerinden Steam sunucularına aktarılması adımları:
+        Demo macOS upload sarmalayıcısı repoda YOK (`scripts/build/steam_upload_macos.sh`, 445a0da'da silindi). Yükleme manuel steamcmd akışıyla yapılır:
 
         ### Yükleme Parametreleri
         - **App ID**: `{context['mac_demo_app_id']}` (Quadrix Demo)
         - **Depot ID**: `{mac_demo_depot_id}` (macOS Demo Depot)
-        - **Steam Build Hesabı**: `vibecode_production`
+        - **VDF Şablonu**: `steamworks/scripts/app_build_demo_macos.vdf` (`ContentRoot`/`BuildOutput` alanları yükleme öncesi doldurulur)
 
-        ### Çalıştırılan Komut
+        ### Çalıştırılan Komut (düşük seviye)
 
         ```bash
-        ./scripts/build/steam_upload_macos.sh --demo --user vibecode_production --desc "macOS Demo build YYYY-MM-DD"
+        steamcmd +login BUILD_ACCOUNT +run_app_build ./steamworks/scripts/app_build_demo_macos.vdf +quit
         ```
 
-        ### Yükleme Sırasında Uygulanan Çözümler
-        1. **NFC Normalizasyonu (macOS NFD Fix)**: macOS işletim sistemi dosya adlarını ayrıştırılmış (decomposed - NFD) formda tutar. SteamCMD bu encoding'i manifest dosyalarında kabul etmediğinden (HTTP 400 hatası vermektedir), upload scripti `/tmp/` altında tüm dosya adlarını NFC formuna normalize etmiştir.
-        2. **Steam Guard**: Yükleme sırasında SteamCMD şifre sormuş ve ardından hesapta tanımlı olan Steam Guard Mobil Kimlik Doğrulayıcı (Mobile Authenticator) onayı mobil uygulama üzerinden verilerek oturum açılmıştır.
+        ### Yükleme Sırasında Doğrulanan Deneyimler
+        1. **NFC Normalizasyonu (macOS NFD Fix)**: macOS dosya adlarını ayrıştırılmış (decomposed - NFD) formda tutar. SteamCMD bu encoding'i manifest dosyalarında kabul etmediğinden (HTTP 400), upload öncesi `/tmp/` altındaki tüm dosya adları NFC formuna normalize edilmelidir.
+        2. **Steam Guard**: Yükleme sırasında SteamCMD şifre sorar; hesapta tanımlı Steam Guard Mobil Kimlik Doğrulayıcı onayı mobil uygulama üzerinden verilerek oturum açılır.
 
         ---
 
@@ -551,7 +512,7 @@ def render_macos_demo_upload_guide(context: dict[str, object]) -> str:
         1. [Steamworks Partner Paneli](https://partner.steamgames.com)'ne giriş yapın.
         2. **AppID {context['mac_demo_app_id']} (Quadrix Demo)** sayfasına gidin.
         3. **SteamPipe** -> **Builds** sekmesine tıklayın.
-        4. Yeni yüklenen derlemeyi (BuildID) uygun test branch'ine (örn: `beta` veya `playtest`) ya da doğrudan oyuncuların indirmesi için varsayılan (`default`/`public`) branch'e atayın ve değişiklikleri kaydedin.
+        4. Yeni yüklenen derlemeyi (BuildID) uygun test branch'ine (örn: `beta`) ya da doğrudan oyuncuların indirmesi için varsayılan (`default`/`public`) branch'e atayın ve değişiklikleri kaydedin.
         """
     ))
 
