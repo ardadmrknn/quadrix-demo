@@ -2434,11 +2434,21 @@ class OnlineCoopGame:
                 if self._net_initialized and code:
                     self._begin_code_search(code, fallback_scan=use_full_scan)
 
-        has_unknown_lobbies = any(
-            str(lobby.get('visibility', '') or '').lower() in ('unknown', 'stale_unknown')
-            for lobby in getattr(self, '_lobby_list', [])
-        ) or bool(getattr(self, '_deferred_lobby_entries', {}))
-        if self.online_state == OnlineCoopState.LOBBY_MENU and self._net_initialized and has_unknown_lobbies:
+        # OP-044: any() taraması yalnızca LOBBY_MENU + ağ bağlıyken gerekir;
+        # eski sıra bunu durum kapısından ÖNCE her kare hesaplıyordu. Kapı
+        # koşulları kısa devre ile korunur (and zinciri sırası değişmedi)
+        # — online_pvp_game 1e8cbc5 deseni birebir.
+        if (
+            self.online_state == OnlineCoopState.LOBBY_MENU
+            and self._net_initialized
+            and (
+                bool(getattr(self, '_deferred_lobby_entries', {}))
+                or any(
+                    str(lobby.get('visibility', '') or '').lower() in ('unknown', 'stale_unknown')
+                    for lobby in getattr(self, '_lobby_list', [])
+                )
+            )
+        ):
             self._deferred_lobby_refresh_timer = max(
                 0.0,
                 self._deferred_lobby_refresh_timer - float(delta_time),
@@ -5679,8 +5689,11 @@ class OnlineCoopGame:
         name_font = _rs.get_font(s(20, minimum=14))
         my_color = UIColors.NEON_GREEN if self.my_ready else _rs.text_primary
         opp_color = UIColors.NEON_GREEN if self.opponent_ready else _rs.text_primary
-        my_name_surface = name_font.render(my_name, True, my_color)
-        opp_name_surface = name_font.render(opponent_name, True, opp_color)
+        # OP-037: isimler oturumda sabit — ham Font.render yerine text_cache
+        # yolu (online_pvp ready-check deseni; renk anahtara dahil, ready
+        # toggle yeni anahtar üretir).
+        my_name_surface = render_text(name_font, my_name, True, my_color)
+        opp_name_surface = render_text(name_font, opponent_name, True, opp_color)
         self.screen.blit(my_name_surface, my_name_surface.get_rect(center=(my_cx, name_y)))
         self.screen.blit(opp_name_surface, opp_name_surface.get_rect(center=(opp_cx, name_y)))
 

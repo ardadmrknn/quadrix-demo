@@ -6886,6 +6886,23 @@ class OnlinePvPGame:
                         slice_info,
                     )
 
+    def _get_pause_dim_surface(self, size: tuple[int, int]) -> pygame.Surface:
+        """Pause/exit karartma yüzeyini bounded efekt cache'inden al (OP-008)."""
+        if getattr(self, '_effect_surface_cache', None) is None:
+            # __init__ dışı kurulum yolları (test __new__ ile kurulum,
+            # kısmi geri yükleme) önbelleği atlayabilir — pvp_game
+            # _get_pause_dim_surface deyimiyle aynı lazy-init koruması.
+            self._effect_surface_cache = EffectSurfaceCache()
+        width, height = max(1, int(size[0])), max(1, int(size[1]))
+        return self._effect_surface_cache.get_filled_surface((width, height), (0, 0, 0, 185))
+
+    def _get_grounded_glow_surface(self, block_size, alpha: int) -> pygame.Surface:
+        """Zemin parça glow yüzeyini bounded efekt cache'inden al (OP-007)."""
+        if getattr(self, '_effect_surface_cache', None) is None:
+            self._effect_surface_cache = EffectSurfaceCache()
+        size = (max(1, int(block_size)), max(1, int(block_size)))
+        return self._effect_surface_cache.get_filled_surface(size, (255, 255, 255, alpha))
+
     def _draw_pause_overlay(self):
         """Duraklatma ekranı — pvp_game standardında (alpha=185 + cam panel)."""
         w, h = self.window_width, self.window_height
@@ -6893,8 +6910,10 @@ class OnlinePvPGame:
         sc = self._ui_scale()
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
-        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 185))
+        # OP-008: karartma artık bounded efekt cache'inden (ham Surface +
+        # fill yerine) — sabit RGBA fill, içerik birebir; kare içi 4K sınıfı
+        # tam-ekran tahsisi kalkar (demo game.py + pvp_game deseni).
+        overlay = self._get_pause_dim_surface((w, h))
         self.screen.blit(overlay, (0, 0))
 
         pw = min(s(420), w - s(80))
@@ -7004,8 +7023,11 @@ class OnlinePvPGame:
                                     ratio = min(1.0, max(0.0, self.lock_timer / effective_delay))
                                     alpha = int(ratio * 150)
                                     if alpha > 0:
-                                        glow_surf = pygame.Surface((int(cell_size - 2), int(cell_size - 2)), pygame.SRCALPHA)
-                                        glow_surf.fill((255, 255, 255, alpha))
+                                        # OP-007: kilit-parlama dolgusu EffectSurfaceCache
+                                        # yolundan (ghost/sweep'in get_filled_surface deseni;
+                                        # aynı boyut + aynı RGBA fill → piksel-birebir,
+                                        # hücre-başı SRCALPHA tahsisi kalkar).
+                                        glow_surf = self._get_grounded_glow_surface(int(cell_size - 2), alpha)
                                         self.screen.blit(glow_surf, (int(px + 1), int(py + 1)))
 
         if self.my_line_sweep_rows and self.my_line_sweep_active:
