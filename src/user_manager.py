@@ -118,6 +118,10 @@ class UserManager:
         self._users_dirty = False
         self._users_last_change = time.monotonic()
         self._users_flush_debounce_seconds = 2.0
+        # G-02: ilk bekleyen değişiklikten en çok 2 s'de yazım üst sınırı —
+        # sürekli hold akışında trailing tek başına sonsuza ertelerdi.
+        self._users_first_pending = None
+        self._users_flush_max_wait_seconds = 2.0
         self.load_users()
 
     def _profile_root_dir(self) -> str:
@@ -340,6 +344,14 @@ class UserManager:
             self._users_dirty = False
         except Exception as e:
             print(f"Kullanıcılar kaydedilirken hata: {e}")
+            # G-01: doğrudan çağıranlar (update_user_stats/add_fragments) için
+            # de retry kuyruğu işaretle + saatleri kur ki kare-başı değil
+            # ~2 s aralıklı kontrollü retry olsun; kapanış force flush'i
+            # yeniden deneyebilir.
+            self._users_dirty = True
+            _now = time.monotonic()
+            self._users_last_change = _now
+            self._users_first_pending = _now
 
     def _ensure_daily_status(self, username=None):
         """Aktif kullanıcı için günlük durumunu hazırla"""
@@ -587,7 +599,11 @@ class UserManager:
         # flush_users_if_due ~2 s'de bir toplu yazar; oyun sonu
         # update_user_stats ve kapanış force flush nihai yazımı garanti eder.
         self._users_dirty = True
-        self._users_last_change = time.monotonic()
+        _now = time.monotonic()
+        self._users_last_change = _now
+        # G-02: ilk bekleyen değişiklik zamanını işaretle (üst-sınır epoch'u).
+        if getattr(self, '_users_first_pending', None) is None:
+            self._users_first_pending = _now
 
     def flush_users_if_due(self, force=False):
         """Debounced users.json yazımını uygun anda diske yaz (OP-004).
@@ -595,6 +611,14 @@ class UserManager:
         settings_manager.flush_if_due deyiminin aynası. `force=True`
         (temiz çıkış / restart) debounce'u bypass eder ama dirty YOKSA
         yazmaz — gereksiz save tetiklemez.
+
+        G-02: trailing dolduğunda YA DA ilk bekleyen değişiklikten
+        `_users_flush_max_wait_seconds` geçtiğinde yazılır.
+
+        G-01: save_users dirty'yi yalnız başarılı yazımda sıfırlar; hâlâ
+        dirty ise yazım başarısız demektir — saatler yeniden kurulur (kare-
+        başı deneme döngüsü yerine ~2 s aralıklı kontrollü retry) ve False
+        döner.
         """
         if not getattr(self, '_users_dirty', False):
             return False
@@ -602,9 +626,22 @@ class UserManager:
             now = time.monotonic()
             last_change = getattr(self, '_users_last_change', now)
             debounce = getattr(self, '_users_flush_debounce_seconds', 2.0) or 0.0
+            first_pending = getattr(self, '_users_first_pending', None)
+            max_wait = getattr(self, '_users_flush_max_wait_seconds', 2.0) or 0.0
             if (now - last_change) < debounce:
-                return False
+                # Trailing dolmadı — üst sınır da dolmadıysa ertele.
+                if first_pending is None or (now - first_pending) < max_wait:
+                    return False
         self.save_users()
+        if getattr(self, '_users_dirty', False):
+            # Yazım başarısız: dirty korundu (save_users'ın except yolu veya
+            # stub izdüşümü). Saatleri şimdiye çek — ardışık kare çağrıları
+            # yeniden denemesin, ~2 s sonra tek deneme gelsin.
+            now = time.monotonic()
+            self._users_last_change = now
+            self._users_first_pending = now
+            return False
+        self._users_first_pending = None
         return True
 
     def get_user_by_steam_id(self, steam_id: str) -> str | None:

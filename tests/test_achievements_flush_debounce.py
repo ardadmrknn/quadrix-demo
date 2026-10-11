@@ -46,7 +46,8 @@ def _make_manager():
 
     def _fake_save():
         am.save_calls += 1
-        return None
+        # G-01 sonrası save() bool döner — başarılı yazım izdüşümü.
+        return True
 
     def _fake_sync():
         am.sync_calls += 1

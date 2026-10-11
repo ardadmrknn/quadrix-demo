@@ -668,9 +668,13 @@ class AchievementManager:
         # OP-003: satır-temizleme sıcak yolunda her seferinde disk + Steam
         # yazımını engelleyen dirty/debounce durumu (settings_manager.flush_if_due
         # deyimiyle aynı). Yeni başarım anında yazılır (toast anı korunur).
+        # G-02: first_pending + üst sınır — sürekli stat akışında yazım en
+        # geç 2 s'de bir gerçekleşir (trailing tek başına sonsuza ertelerdi).
         self._dirty = False
         self._last_change_monotonic = time.monotonic()
+        self._first_pending_monotonic = None
         self._flush_debounce_seconds = 2.0
+        self._flush_max_wait_seconds = 2.0
         self.load()
 
     def grant_unclaimed_rewards(self):
@@ -710,7 +714,9 @@ class AchievementManager:
                 print(f"[UYARI] Başarım ödülü talep edilemedi ({achievement_id}): {e}")
             return 0
         self.claimed_rewards.add(achievement_id)
-        self.save()
+        if not self.save():
+            # G-01: ödül kaydı başarısız — dirty kuyruğu retry eder.
+            self._defer_write()
         return reward
 
     def load(self):
@@ -759,7 +765,12 @@ class AchievementManager:
             print(f"[HATA] Başarılar yuklenemedi: {e}")
     
     def save(self):
-        """Başarıları kaydet"""
+        """Başarıları kaydet.
+
+        G-01: yazım sonucunu bool olarak döndürür — çağıranlar (flush,
+        update_stats, unlock, claim_reward) Steam sync'i yalnız başarılı
+        yazım sözleşmesine göre çağırır ve başarısızlıkta dirty kuyruğuna düşer.
+        """
         try:
             # Sadece gerekli istatistikleri kaydet
             clean_stats = {
@@ -801,8 +812,10 @@ class AchievementManager:
                 print(
                     f"[KAYIT] Başarılar kaydedildi: {len(self.unlocked)} başarı açıldı"
                 )
+            return True
         except Exception as e:
             print(f"[HATA] Başarılar kaydedilemedi: {e}")
+            return False
     
     def update_stats(self, **kwargs):
         """İstatistikleri güncelle ve yeni başarıları kontrol et"""
@@ -871,13 +884,28 @@ class AchievementManager:
         # game-over) stats'ı doğrudan mutasyona uğrattıysa save amacıyla
         # buraya gelir.
         if self.new_achievements:
-            self.save()
-            self.sync_stats_to_steam()
+            if self.save():
+                self.sync_stats_to_steam()
+            else:
+                # G-01: anlık yazım başarısız — kuyruğa düş, flush kontrollü
+                # retry etsin (Steam sync başarılı yazıma kadar bekler).
+                self._defer_write()
         else:
-            self._dirty = True
-            self._last_change_monotonic = time.monotonic()
+            self._defer_write()
 
         return self.new_achievements
+
+    def _defer_write(self):
+        """Yazımı debounce kuyruğuna işaretle (G-01/G-02).
+
+        Dirty işaretler, trailing saatini kurar ve İLK bekleyen değişiklik
+        zamanını (yoksa) kaydeder — üst-sınır ölçümü bu epoch üzerinden yapılır.
+        """
+        self._dirty = True
+        now = time.monotonic()
+        self._last_change_monotonic = now
+        if getattr(self, '_first_pending_monotonic', None) is None:
+            self._first_pending_monotonic = now
 
     def flush_achievements_if_due(self, force=False):
         """Debounced başarı/istatistik yazımını uygun anda diske ve Steam'e yaz.
@@ -886,6 +914,14 @@ class AchievementManager:
         ~2 s debounce. Ana döngü her karede debounce'lu çağırır; temiz
         çıkış / restart yolları `force=True` ile bypass eder. `force=True`
         yalnız dirty varken yazar — gereksiz save tetiklemez.
+
+        G-02: trailing dolduğunda YA DA ilk bekleyen değişiklikten
+        `_flush_max_wait_seconds` geçtiğinde yazılır — sürekli stat akışında
+        yazım sonsuza ertelenmez.
+
+        G-01: dirty yalnız BAŞARILI yazımda düşer. Başarısızlıkta korunur ve
+        saatler yeniden kurulur: kare-başı sonsuz deneme döngüsü yerine ~2 s
+        aralıklı kontrollü retry; Steam sync yalnız başarılı yazımda çağrılır.
         """
         if not getattr(self, '_dirty', False):
             return False
@@ -893,15 +929,24 @@ class AchievementManager:
             now = time.monotonic()
             last_change = getattr(self, '_last_change_monotonic', now)
             debounce = getattr(self, '_flush_debounce_seconds', 2.0) or 0.0
+            first_pending = getattr(self, '_first_pending_monotonic', None)
+            max_wait = getattr(self, '_flush_max_wait_seconds', 2.0) or 0.0
             if (now - last_change) < debounce:
-                return False
-        # Önce temizle: save/sync başarısız olsa bile her karede
-        # sonsuz yeniden deneme döngüsüne girmesin (nihai yazım oyun
-        # sonu ve kapanış yollarında garanti).
-        self._dirty = False
-        self.save()
-        self.sync_stats_to_steam()
-        return True
+                # Trailing dolmadı — üst sınır da dolmadıysa ertele.
+                if first_pending is None or (now - first_pending) < max_wait:
+                    return False
+        if self.save():
+            self._dirty = False
+            self._first_pending_monotonic = None
+            self.sync_stats_to_steam()
+            return True
+        # Yazım başarısız: dirty kaldı; her iki saati de şimdiye çek ki
+        # ardışık kare çağrıları yeniden denemesin, ~2 s sonra tek deneme
+        # gelsin (nihai yazım oyun sonu ve kapanış force yollarında).
+        now = time.monotonic()
+        self._last_change_monotonic = now
+        self._first_pending_monotonic = now
+        return False
     
     def check_achievements(self):
         """Tüm başarıları kontrol et"""
@@ -933,8 +978,10 @@ class AchievementManager:
             # Lunar ödülü artık otomatik verilmez. Oyuncu başarımlar ekranındaki
             # sarı "Ödülü Al" butonuyla claim_reward() üzerinden manuel alır.
 
-            # Değişiklikleri hemen kaydet
-            self.save()
+            # Değişiklikleri hemen kaydet (G-01: başarısızlıkta debounce
+            # kuyruğuna düşer, flush retry eder).
+            if not self.save():
+                self._defer_write()
 
             # Steam'e bildir
             steam_name = STEAM_ACHIEVEMENT_MAP.get(achievement_id)
