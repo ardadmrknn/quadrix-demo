@@ -1791,6 +1791,9 @@ def main():
     except Exception:
         pass
 
+    # PERF-01: startup alt faz damgaları — her blok 2 satır (damga + kayıt);
+    # re-indentasyon yok, davranış değişmez (plans/2026-10-11-perf-01).
+    _t_startup0 = _t_settings = time.perf_counter()
     # Windows 10/11 DPI Awareness - pygame.init() öncesi ayarlanmalı
     from platform_utils import _init_windows_dpi_awareness
     _init_windows_dpi_awareness()
@@ -1821,6 +1824,8 @@ def main():
             # Detaylı log - kullanıcı sorun yaşarsa yardımcı olur
             print(f"[Uyarı] Tk ön yükleme başarısız (dosya dialog'ı etkilenebilir): {exc}")
 
+    perf_telemetry.record_startup_phase('settings_init', (time.perf_counter() - _t_settings) * 1000.0)
+    _t_core = time.perf_counter()
     # ==================== MIXER PRE-INIT (KRITIK) ====================
     # mixer pre_init, ses/müzik stabilitesini artırır (pygame.init'ten önce çağrılmalı!).
     # Mixer init
@@ -1895,6 +1900,8 @@ def main():
         except Exception:
             pass
     
+    perf_telemetry.record_startup_phase('core_init', (time.perf_counter() - _t_core) * 1000.0)
+    _t_display = time.perf_counter()
     init_platform_display()
     
     # Sistem ekran çözünürlüğünü al
@@ -2095,7 +2102,9 @@ def main():
     
     # Özel fare imlecini yükle (display oluşturulduktan sonra)
     setup_custom_cursor()
-    
+    perf_telemetry.record_startup_phase('display_init', (time.perf_counter() - _t_display) * 1000.0)
+    _t_steam = time.perf_counter()
+
     clock = pygame.time.Clock()
     fullscreen = bool(settings_manager.get('fullscreen', True))
     last_fullscreen_toggle_ms = -10_000
@@ -2258,6 +2267,8 @@ def main():
         except Exception:
             pass
     
+    perf_telemetry.record_startup_phase('steam_init', (time.perf_counter() - _t_steam) * 1000.0)
+    _t_views = time.perf_counter()
     # Dil ayarını yükle ve uygula
     saved_language = settings_manager.get('language', 'tr')
     set_language(saved_language)
@@ -2317,6 +2328,8 @@ def main():
         except Exception:
             pass
 
+    perf_telemetry.record_startup_phase('views_init', (time.perf_counter() - _t_views) * 1000.0)
+    _t_menu = time.perf_counter()
     # Enter sonrası siyah bekleme oluşmaması için ağır ekran kurulumlarını
     # splash öncesinde hazırla.
     menu = Menu(screen, user_manager, settings_manager=settings_manager)
@@ -2338,6 +2351,8 @@ def main():
     credits_screen = CreditsScreen(screen)
     extras_screen = ExtrasScreen(screen, user_manager)  # Ekstralar menüsü
     store_screen = StoreScreen(screen, user_manager=user_manager, settings_manager=settings_manager)
+    perf_telemetry.record_startup_phase('menu_construct', (time.perf_counter() - _t_menu) * 1000.0)
+    _t_prewarm = time.perf_counter()
     # Mağaza İLK GİRİŞ karesinin soğuk-önbellek maliyetini (DALGA A ölçümü
     # B-A1: her girişte ~0.3-0.5s'lik tek kare takılması) başlangıca taşı.
     # draw() önbelleklerini ilk görünür kareden ÖNCE, pencere henüz siyahken
@@ -2380,6 +2395,8 @@ def main():
     except Exception:
         pass
     
+    perf_telemetry.record_startup_phase('prewarm', (time.perf_counter() - _t_prewarm) * 1000.0)
+    _t_splash = time.perf_counter()
     # Menüler
     # First show splash screen (press Enter to continue)
     splash = SplashScreen(screen, settings_manager=settings_manager)
@@ -2479,6 +2496,8 @@ def main():
     pygame.event.clear()
     pygame.event.clear()
 
+    perf_telemetry.record_startup_phase('splash', (time.perf_counter() - _t_splash) * 1000.0)
+    _t_music = time.perf_counter()
     # Kaydedilmiş müzik ayarını kontrol et - ANA SAYFA MÜZİĞİNİ çal
     print("=" * 60)
     print("ANA MENÜ MÜZİĞİ BAŞLATILIYOR")
@@ -2523,6 +2542,7 @@ def main():
         elif initial_mute_all:
             print("   Müzik KAPALI (mute_all=True)")
     print("=" * 60)
+    perf_telemetry.record_startup_phase('music_start', (time.perf_counter() - _t_music) * 1000.0)
 
     # Durum — Steam profili veya aktif kullanıcı varsa menüye, yoksa kullanıcı seçimine.
     state = 'menu' if _has_active_profile_session(user_manager, _steam_user_set) else 'user_selection'
@@ -3208,6 +3228,7 @@ def main():
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
+                _t_launch = time.perf_counter()
                 game = Game(
                     difficulty,
                     sound,
@@ -3222,6 +3243,7 @@ def main():
                     sound_manager=menu_sound,
                     score_manager=score_manager,
                 )
+                perf_telemetry.record_slow_phase(state, 'launch_game_ms', (time.perf_counter() - _t_launch) * 1000.0)
                 state = 'game'
             elif action == 'tutorial_mode':
                 menu_sound.stop_music()
@@ -3271,6 +3293,7 @@ def main():
                 menu_sound.stop_music()
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
+                _t_launch = time.perf_counter()
                 pvp_game = PvPGame(
                     sound,
                     effects,
@@ -3280,6 +3303,7 @@ def main():
                     settings_manager,
                     sound_manager=menu_sound,
                 )
+                perf_telemetry.record_slow_phase(state, 'launch_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
                 state = 'pvp'
             elif action in ('online_pvp', 'Online PvP'):
                 if demo_config is not None and demo_config.is_locked_main_action('online_pvp'):
@@ -3288,6 +3312,7 @@ def main():
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_pvp', settings_manager=settings_manager):
                     continue
                 confirm_exit = False
+                _t_launch = time.perf_counter()
                 online_pvp_game, steam_reason = _create_online_pvp_game(
                     on_failure=_restore_online_pvp_menu_music,
                     screen=screen,
@@ -3297,6 +3322,7 @@ def main():
                     settings_manager=settings_manager,
                     sound_manager=menu_sound,
                 )
+                perf_telemetry.record_slow_phase(state, 'launch_online_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
                 if online_pvp_game is None:
                     state = 'menu'
                     menu.show_info(steam_reason, duration=240)
@@ -3360,6 +3386,7 @@ def main():
                 menu_sound.stop_music()
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
+                _t_launch = time.perf_counter()
                 coop_game = CoopGame(
                     sound,
                     effects,
@@ -3369,12 +3396,14 @@ def main():
                     settings_manager,
                     sound_manager=menu_sound,
                 )
+                perf_telemetry.record_slow_phase(state, 'launch_coop_ms', (time.perf_counter() - _t_launch) * 1000.0)
                 state = 'coop'
             elif action == 'online_coop':
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_coop', settings_manager=settings_manager):
                     continue
                 confirm_exit = False
                 menu_sound.stop_music()
+                _t_launch = time.perf_counter()
                 online_coop_game = OnlineCoopGame(
                     screen=screen,
                     fullscreen=fullscreen,
@@ -3382,6 +3411,7 @@ def main():
                     settings_manager=settings_manager,
                     sound_manager=menu_sound,
                 )
+                perf_telemetry.record_slow_phase(state, 'launch_online_coop_ms', (time.perf_counter() - _t_launch) * 1000.0)
                 _handle_online_coop._game = online_coop_game
                 state = 'online_coop'
             elif action == 'coop_campaign':
@@ -4106,6 +4136,7 @@ def main():
                 menu_sound.stop_music()
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
+                _t_launch = time.perf_counter()
                 pvp_game = PvPGame(
                     sound,
                     effects,
@@ -4115,6 +4146,7 @@ def main():
                     settings_manager,
                     sound_manager=menu_sound,
                 )
+                perf_telemetry.record_slow_phase(state, 'launch_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
                 state = 'pvp'
             elif action in ('Quadrix 2', 'Quadrix Extra'):
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'tetris2', settings_manager=settings_manager):
@@ -4172,6 +4204,7 @@ def main():
                     continue
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_pvp', settings_manager=settings_manager):
                     continue
+                _t_launch = time.perf_counter()
                 online_pvp_game, steam_reason = _create_online_pvp_game(
                     on_failure=_restore_online_pvp_menu_music,
                     screen=screen,
@@ -4181,6 +4214,7 @@ def main():
                     settings_manager=settings_manager,
                     sound_manager=menu_sound,
                 )
+                perf_telemetry.record_slow_phase(state, 'launch_online_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
                 if online_pvp_game is None:
                     state = 'menu'
                     menu.show_info(steam_reason, duration=240)
@@ -4221,6 +4255,7 @@ def main():
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
+                _t_launch = time.perf_counter()
                 game = Game(
                     difficulty,
                     sound,
@@ -4235,6 +4270,7 @@ def main():
                     sound_manager=menu_sound,
                     score_manager=score_manager,
                 )
+                perf_telemetry.record_slow_phase(state, 'launch_game_ms', (time.perf_counter() - _t_launch) * 1000.0)
                 state = 'game'
             elif action == 'coop_campaign':
                 if coop_level_select is None:
@@ -5014,6 +5050,9 @@ def main():
     from platform_utils import get_focus_throttle_policy
     focus_policy = get_focus_throttle_policy()
 
+    # PERF-01: ilk çizilen kare tek seferlik kaydedilir (startup → ilk draw).
+    _first_frame_done = False
+
     while running:
         try:
             is_active_window = bool(pygame.display.get_active())
@@ -5220,6 +5259,10 @@ def main():
 
         _handler_started = time.perf_counter() if perf_telemetry.is_enabled() else None
         did_draw = bool(handler(delta_ms))
+        # PERF-01: ilk çizilen karenin ana-girişten gecikmesi (startup toplamı).
+        if did_draw and not _first_frame_done:
+            _first_frame_done = True
+            perf_telemetry.record_startup_phase('first_frame', (time.perf_counter() - _t_startup0) * 1000.0)
         if _handler_started is not None:
             _handler_ms = (time.perf_counter() - _handler_started) * 1000.0
             perf_telemetry.record_phase(_perf_frame_state, 'handler_ms', _handler_ms)
