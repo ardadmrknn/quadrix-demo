@@ -63,6 +63,10 @@ from constants import (
     DAS_REPEAT,
 )
 
+# PERF-04/R-09: her zaman erişilebilir ölçüm kanalı (env-gated, opt-in).
+# Demo telemetrisi QUADRIX_PERF_TELEMETRY=1 ile açılır (bounded).
+import perf_telemetry
+
 # Steam pump thread kontrolü
 try:
     from steam_integration import pause_pump as _pause_steam_pump
@@ -2863,6 +2867,8 @@ class OnlineCoopGame:
         )
         if normalized_ack > self._last_input_ack_seq:
             self._last_input_ack_seq = normalized_ack
+            # R-09: ack ilerlemesi sayac olarak gorunur (heartbeat ack iliskisi).
+            perf_telemetry.record_metric('online_coop', 'coop_input_ack_count', 1)
 
         pending_inputs = getattr(self, '_guest_pending_inputs', None)
         if not isinstance(pending_inputs, list) or not pending_inputs:
@@ -3101,6 +3107,7 @@ class OnlineCoopGame:
             self._reject_guest_authoritative_piece_state(seq)
             return
 
+        _t_apply = time.perf_counter()
         incoming_piece = self._piece_from_snapshot(data.get('p2_current'))
         if incoming_piece is None:
             self._reject_guest_authoritative_piece_state(seq)
@@ -3146,6 +3153,8 @@ class OnlineCoopGame:
             except Exception:
                 pass
         self._last_guest_piece_state_seq = seq
+        # PERF-04: host tarafinda guest parca apply maliyeti.
+        perf_telemetry.record_slow_phase('online_coop', 'coop_piece_apply_ms', (time.perf_counter() - _t_apply) * 1000.0)
 
     def _reject_guest_authoritative_piece_state(self, seq: int) -> None:
         """Mark a guest snapshot as processed and immediately resend host truth."""
@@ -3328,6 +3337,7 @@ class OnlineCoopGame:
             board_data.get('guest_piece_ack', self._last_host_guest_piece_ack_seq)
         )
         if board_seq != getattr(self, '_guest_render_board_seq', -1) and not pending_board_mutation:
+            _t_board_apply = time.perf_counter()
             board = render_game.board
             if board_data.get('_semantic_board'):
                 if bool(board_data.get('_board_full', False)):
@@ -3405,11 +3415,14 @@ class OnlineCoopGame:
                         render_game._start_block_fall_animation(pending_rows)
             except Exception:
                 pass
+            # PERF-04: ag board apply maliyeti (host anlik goruntusu uygulanir).
+            perf_telemetry.record_slow_phase('online_coop', 'coop_board_apply_ms', (time.perf_counter() - _t_board_apply) * 1000.0)
 
         piece_data = self._guest_piece_cache
         if isinstance(piece_data, dict):
             piece_seq = int(piece_data.get('seq', -1) or -1)
             if piece_seq != getattr(self, '_guest_render_piece_seq', -1):
+                _t_piece_apply = time.perf_counter()
                 self._apply_authoritative_guest_timing(render_game, piece_data)
                 piece_ack = self._clamp_int(
                     piece_data.get('input_ack', self._last_input_ack_seq),
@@ -3441,6 +3454,8 @@ class OnlineCoopGame:
                     self._guest_last_authoritative_piece_elapsed_ms = piece_elapsed_ms
                     self._guest_local_prediction_ms = 0.0
                 self._guest_render_piece_seq = piece_seq
+                # PERF-04: ag piece apply maliyeti (host parca anlik goruntusu).
+                perf_telemetry.record_slow_phase('online_coop', 'coop_piece_apply_ms', (time.perf_counter() - _t_piece_apply) * 1000.0)
         return render_game
 
     def _update_guest_render_effects(self, delta_time: float):
@@ -4435,6 +4450,7 @@ class OnlineCoopGame:
         """Host → Guest: semantic board delta/full snapshot (unreliable)."""
         if not self.coop_game:
             return
+        _t_send = time.perf_counter()
         current_cells = self._capture_semantic_board_cells()
         previous_cells = self._last_sent_board_cells if isinstance(self._last_sent_board_cells, dict) else None
         full_snapshot = bool(force_full or previous_cells is None)
@@ -4473,11 +4489,20 @@ class OnlineCoopGame:
 
         self._last_sent_board_cells = current_cells
         self.net.send(data, reliable=False, channel=CHANNEL_STATE)
+        # PERF-04/R-09: heartbeat sure/byte/full iliskisi olculebilir.
+        # Tahmini payload boyutu (gercek json byte degil; alt sinir):
+        # 13 alanli list per cell ~32 byte + sabit zarf ~256 byte.
+        perf_telemetry.record_slow_phase('online_coop', 'coop_board_send_ms', (time.perf_counter() - _t_send) * 1000.0)
+        perf_telemetry.record_metric('online_coop', 'coop_net_send_bytes_est', len(data.get('cells', [])) * 32 + 256)
+        if full_snapshot:
+            # Desync toparlama vekili: tam anlik goruntu sayisi (desync sayaci YOK).
+            perf_telemetry.record_metric('online_coop', 'coop_board_send_full', 1)
 
     def _send_piece_state(self):
         """Host → Guest: aktif parça pozisyonları (unreliable)."""
         if not self.coop_game:
             return
+        _t_send = time.perf_counter()
         self._piece_state_seq += 1
 
         def _piece_dict(piece):
@@ -4512,6 +4537,10 @@ class OnlineCoopGame:
         }
         self._last_piece_state_signature = self._current_piece_state_signature()
         self.net.send(data, reliable=False, channel=CHANNEL_STATE)
+        # PERF-04/R-09: piece heartbeat maliyeti + byte tahmini (alt sinir).
+        # Sabit-uzunluk piece state ~220 byte; gercek olcum degil, "estimated".
+        perf_telemetry.record_slow_phase('online_coop', 'coop_piece_send_ms', (time.perf_counter() - _t_send) * 1000.0)
+        perf_telemetry.record_metric('online_coop', 'coop_net_send_bytes_est', 220)
 
     def _send_lock_event(self, event_data: dict, event_name: str = 'lines_cleared'):
         """Host → Guest: parça kilit / satır temizleme olayı (reliable)."""
@@ -4754,6 +4783,7 @@ class OnlineCoopGame:
 
     def draw(self):
         """Ekranı çiz."""
+        _t_draw = time.perf_counter()
         self._lobby_buttons.clear()
 
         # Arka plan (PLAYING host'ta CoopGame kendi arka planını çizer)
@@ -4779,6 +4809,8 @@ class OnlineCoopGame:
 
         # NOT: pygame.display.flip() burada çağrılmıyor.
         # Ana döngü, Online PvP ile aynı sırada geçiş perdesini çizip flip yapıyor.
+        # PERF-01: draw maliyeti kovaya her kare dusus; >100 ms olay olarak.
+        perf_telemetry.record_slow_phase('online_coop', 'coop_draw_ms', (time.perf_counter() - _t_draw) * 1000.0)
 
     # ============================================================
     #  DRAW: Online Shell Ekranları (PvP'den adapte)
