@@ -190,6 +190,52 @@ def record_metric(state: str, name: str, value: float | int = 1) -> None:
         pass
 
 
+_SLOW_PHASE_EVENT_THRESHOLD_MS = 100.0
+
+
+def record_slow_phase(state: str, phase: str, ms: float | int | None, *, threshold_ms: float = _SLOW_PHASE_EVENT_THRESHOLD_MS) -> None:
+    """Faz örneğini kovaya yazar; eşik üstünde olay düzeyinde de kaydeder.
+
+    PERF-1 (rapor §9.2 PERF-01): 100 ms üzeri olaylar anonim slow_handler
+    yerine KÖK FAZ ADIYLA görünür. Faz her durumda pencere kovasına düşer.
+    Demo telemetrisi opt-in/bounded'tır: kapalıyken no-op, açıkken de
+    oturum olay sınırı (256) _write_event içinde uygulanır.
+    """
+    if ms is None:
+        return
+    try:
+        value = float(ms)
+    except Exception:
+        return
+    record_phase(state, phase, value)
+    try:
+        if value > float(threshold_ms):
+            record_event(
+                "slow_phase",
+                state=str(state or "unknown"),
+                phase=str(phase or ""),
+                ms=round(value, 1),
+            )
+    except Exception:
+        pass
+
+
+def record_startup_phase(name: str, ms: float | int | None) -> None:
+    """Startup alt faz süresini olay olarak kaydeder (crash-safe).
+
+    PERF-1: startup alt fazları ana döngü başlamadan biter; kova/pencere
+    mekanizması henüz yoktur. Olay kanalı her faz biter bitmez diske yazar —
+    startup yarıda kalırsa toplanan fazlar kaybolmaz.
+    """
+    if ms is None:
+        return
+    try:
+        value = round(float(ms), 1)
+    except Exception:
+        return
+    record_event("startup_phase", phase=str(name or ""), ms=value)
+
+
 def _flush_state(state: str, *, reason: str) -> None:
     agg = _agg.get(state)
     if not agg or int(agg.get("frames", 0) or 0) <= 0:

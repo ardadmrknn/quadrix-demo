@@ -105,12 +105,15 @@ def test_record_startup_includes_identity_fields():
     # test izolasyonu için cache'i açık stub'la (v2'de bu kapı yoktur).
     _saved_enabled = getattr(pt, '_enabled_cache', None)
     pt._enabled_cache = True
+    # Orijinal _write_event GERİ KONUR (del edilmez): silinirse modülün
+    # record_event'i oturumun kalanında NameError fırlatır ve sonraki
+    # testlerde gizli kirlilik üretir (PERF-1 dalgasında yakalandı).
+    _original_write_event = pt._write_event
     pt._write_event = _capture
     try:
         pt.record_startup(backend='test')
     finally:
-        pt._write_event = None
-        del pt._write_event
+        pt._write_event = _original_write_event
         pt._enabled_cache = _saved_enabled
         build_identity._identity_cache = None
 
