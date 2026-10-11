@@ -318,6 +318,11 @@ class ScreenTransition:
         self.progress = 0.0  # 0.0 - 1.0
         self._old_screen_capture = None
         self._callback = None
+        # Callback'li geçişler iki fazlıdır (out→in). Callback tükendikten
+        # sonra da faz bilgisi korunmalı: yoksa in-fazı tek-fazlı dalda
+        # `duration` üzerinden işlerdi (asimetrik ritim + capture serbest
+        # kalmazdı). v2 ile aynı bayrak semantiği.
+        self._two_phase_transition = False
         # ── Performans: geçiş boyunca her kare yeni 1920x1080 surface tahsis etmek
         # yerine yeniden kullanılabilir tamponlar (GC baskısı + stall'ı önler) ──
         self._solid_overlay = None        # opak renk overlay (fade/zoom)
@@ -379,6 +384,7 @@ class ScreenTransition:
         self.progress = 0.0
         self._callback = callback
         self._prev_wipe_cover_width = 0
+        self._two_phase_transition = callback is not None
         
         # Slide geçişlerinde her zaman eski ekranı yakala (gri ekran yerine)
         is_slide = self.transition_type.startswith('slide_')
@@ -409,10 +415,10 @@ class ScreenTransition:
         
         elapsed = pygame.time.get_ticks() - self.start_time
         
-        # Callback varsa iki fazlı, yoksa tek fazlı
-        if self._callback is not None or self.phase == 'out':
+        # Callback'li geçiş iki fazlı (out-in), diğerleri tek fazlı
+        if self._two_phase_transition:
             half_duration = self.duration / 2
-            
+
             if self.phase == 'out':
                 # İlk yarı: eski ekran kapanıyor
                 self.progress = min(1.0, elapsed / half_duration)
@@ -424,6 +430,12 @@ class ScreenTransition:
                     if self._callback:
                         self._callback()
                         self._callback = None
+                        # C2: callback (yeni ekranın kurulumu) uzun sürerse
+                        # açılış fazı duvar-saatiyle yutulur ve perde tek
+                        # karede yutulurdu (pop-in). Saat kurulumdan SONRA
+                        # taze damgalanır: açılış yumuşak oynar.
+                        self.start_time = pygame.time.get_ticks()
+                        self.progress = 0.0
             else:
                 # İkinci yarı: yeni ekran açılıyor
                 self.progress = min(1.0, elapsed / half_duration)
@@ -431,6 +443,7 @@ class ScreenTransition:
                     self.active = False
                     self._old_screen_capture = None
                     self._prev_wipe_cover_width = 0
+                    self._two_phase_transition = False
                     return False
         else:
             # Tek fazlı geçiş (sadece in)
@@ -705,3 +718,19 @@ def is_screen_transition_active() -> bool:
     """Ekran geçişi aktif mi?"""
     global _screen_transition
     return _screen_transition is not None and _screen_transition.is_active()
+
+
+def cancel_screen_transition():
+    """Aktif geçişi derhal kes (ertelemeli launch'ın hata yolu).
+
+    Kurulum callback'i başarısız olursa perde yarı kapalı kalmasın: geçiş
+    pasifleşir, bekleyen callback düşürülür ve capture yüzeyi serbest kalır
+    (normal tamamlanma yoluyla aynı temizlik).
+    """
+    global _screen_transition
+    if _screen_transition is not None:
+        _screen_transition._callback = None
+        _screen_transition.active = False
+        _screen_transition._two_phase_transition = False
+        _screen_transition._old_screen_capture = None
+        _screen_transition.progress = 0.0

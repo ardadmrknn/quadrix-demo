@@ -289,6 +289,19 @@ def test_demo_routes_block_constructor_and_show_correct_lock_screen():
                'demo_config': types.SimpleNamespace(is_locked_main_action=lambda action: True, get_extras_lock_kind=lambda action: 'transition')}
         body = copy.deepcopy(route.body)
         loop = ast.For(target=ast.Name(id='_', ctx=ast.Store()), iter=ast.List(elts=[ast.Constant(0)], ctx=ast.Load()), body=body, orelse=[])
-        exec(compile(ast.fix_missing_locations(ast.Module(body=[loop], type_ignores=[])), 'demo_route', 'exec'), env)
+        # Ertelenmiş launch (A+C2) kapanışları `nonlocal state` içerdiğinden
+        # gövde modül düzeyinde derlenemez (SyntaxError: no binding for
+        # nonlocal). Gövdeyi `state`'i yerel tanımlayan bir sarmal fonksiyona
+        # al: nonlocal bağı çözülür, `continue` hâlâ for döngüsünde geçerli.
+        # Kilitli senaryoda koruma continue ile kapanışa hiç ulaşmadan döner.
+        wrapper = ast.parse(
+            "def _demo_route():\n"
+            "    state = 'menu'\n"
+            "    for _ in [0]:\n"
+            "        pass\n"
+        ).body[0]
+        wrapper.body[1] = loop
+        invoke = ast.parse('_demo_route()', mode='exec').body[0]
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[wrapper, invoke], type_ignores=[])), 'demo_route', 'exec'), env)
         create.assert_not_called()
         assert menu._maybe_handle_demo_main_action.call_count + extras._show_demo_lock_prompt_for_mode.call_count == 1

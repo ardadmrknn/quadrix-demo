@@ -231,6 +231,7 @@ try:
     from .background_effects import (  # type: ignore
         start_screen_transition, update_screen_transition,
         draw_screen_transition, is_screen_transition_active,
+        cancel_screen_transition,
         ScreenTransition
     )
     from .gamepad_manager import get_gamepad_manager, is_gamepad_connected, handle_gamepad_hotplug_event, pump_gamepad_into_event_queue  # type: ignore
@@ -273,6 +274,7 @@ except Exception:
     from background_effects import (
         start_screen_transition, update_screen_transition,
         draw_screen_transition, is_screen_transition_active,
+        cancel_screen_transition,
         ScreenTransition
     )
     from gamepad_manager import get_gamepad_manager, is_gamepad_connected, handle_gamepad_hotplug_event, pump_gamepad_into_event_queue
@@ -2924,6 +2926,40 @@ def main():
         # (display Surface quit vb.)
         os._exit(0)
 
+    def _launch_game_via_wipe(launch_fn, duration_ms=350):
+        """A (geçiş desenkronu): oyun kurulumunu perdenin tam kapandığı ana ertele.
+
+        Eski akışta kurulum tıklama karesinde, perde başlamadan koşuyordu:
+        ~935 ms donuk menü (telemetri: slow_handler 933.4 ms extras→game,
+        935.0 ms menu→online_pvp) + oyun perde arkasında akarken perde
+        oynuyordu ("perde geç geliyor" hissi). Bu yardımcı tıklama karesinde
+        yalnız perdeyi kapatır (anında geri bildirim), kurulumu callback'e —
+        perdenin tam kapalı olduğu ana — alır; state orada değişir: oyun tam
+        görünür anda başlar. Perde sürerken ikinci launch yutulur (çift
+        perde koruması); kurulum hata verirse perde iptal edilir ve state
+        eski ekranda kalır. Coop bu akışa sokulmaz (kendi açılış perdesi).
+        """
+        if is_screen_transition_active():
+            return False
+
+        def _guvenli_launch():
+            try:
+                launch_fn()
+            except Exception as exc:
+                # Kurulum başarısız: perde yarı kapalı kalmasın; state
+                # değişmedi (eski ekranda kalır), hata kayda düşer.
+                cancel_screen_transition()
+                print(f"[GECIS] ertelemeli launch hatası: {exc!r}")
+
+        try:
+            _ovl_mark = _active_overlay_module()
+            if _ovl_mark is not None and hasattr(_ovl_mark, 'perf_transition_begin'):
+                _ovl_mark.perf_transition_begin(f"{state} → ertelemeli-launch")
+        except Exception:
+            pass
+        start_screen_transition(screen, _guvenli_launch, duration_ms=duration_ms, transition_type='wipe')
+        return True
+
     def _handle_menu(delta_ms):
         nonlocal running, state, confirm_exit, confirm_daily, daily_prompt_selected, daily_prompt_challenge, game, pvp_game, coop_game, guide_screen
         nonlocal cheat_buffer, cheat_last_key_ms
@@ -2935,7 +2971,6 @@ def main():
             user_manager.set_tutorial_completed(False)
             tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt, settings_manager=settings_manager)
             if tutorial_choice in ('quick_start', 'full_academy'):
-                menu_sound.stop_music()
                 if tutorial_choice == 'quick_start':
                     tutorial_kwargs = dict(
                         launch_lesson_id='qs_move_lane',
@@ -2943,22 +2978,27 @@ def main():
                     )
                 else:
                     tutorial_kwargs = dict(lesson_flow_scope='full')
-                game = TutorialMode(
-                    'Normal',
-                    settings_screen.sound_enabled,
-                    settings_screen.effects_enabled,
-                    achievement_manager,
-                    theme_manager,
-                    screen,
-                    fullscreen,
-                    settings_manager,
-                    user_manager,
-                    sound_manager=menu_sound,
-                    score_manager=score_manager,
-                    block_style_manager=block_style_manager,
-                    **tutorial_kwargs
-                )
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game
+                    menu_sound.stop_music()
+                    game = TutorialMode(
+                        'Normal',
+                        settings_screen.sound_enabled,
+                        settings_screen.effects_enabled,
+                        achievement_manager,
+                        theme_manager,
+                        screen,
+                        fullscreen,
+                        settings_manager,
+                        user_manager,
+                        sound_manager=menu_sound,
+                        score_manager=score_manager,
+                        block_style_manager=block_style_manager,
+                        **tutorial_kwargs
+                    )
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
                 return False
             else:
                 user_manager.dismiss_tutorial_prompt()
@@ -2994,25 +3034,29 @@ def main():
                         if daily_prompt_selected == 0:
                             # Oyna
                             confirm_daily = False
-                            menu_sound.stop_music()
                             difficulty = settings_screen.difficulty
                             sound = settings_screen.sound_enabled
                             effects = settings_screen.effects_enabled
-                            game = DailyChallengeMode(
-                                difficulty,
-                                sound,
-                                effects,
-                                achievement_manager,
-                                theme_manager,
-                                screen,
-                                fullscreen,
-                                settings_manager,
-                                user_manager,
-                                'daily',
-                                sound_manager=menu_sound,
-                                score_manager=score_manager,
-                            )
-                            state = 'game'
+
+                            def _launch():
+                                nonlocal state, game
+                                menu_sound.stop_music()
+                                game = DailyChallengeMode(
+                                    difficulty,
+                                    sound,
+                                    effects,
+                                    achievement_manager,
+                                    theme_manager,
+                                    screen,
+                                    fullscreen,
+                                    settings_manager,
+                                    user_manager,
+                                    'daily',
+                                    sound_manager=menu_sound,
+                                    score_manager=score_manager,
+                                )
+                                state = 'game'
+                            _launch_game_via_wipe(_launch)
                         else:
                             confirm_daily = False
                         continue
@@ -3028,25 +3072,29 @@ def main():
                     if menu.daily_play_rect and menu.daily_play_rect.collidepoint(pos):
                         daily_prompt_selected = 0
                         confirm_daily = False
-                        menu_sound.stop_music()
                         difficulty = settings_screen.difficulty
                         sound = settings_screen.sound_enabled
                         effects = settings_screen.effects_enabled
-                        game = DailyChallengeMode(
-                            difficulty,
-                            sound,
-                            effects,
-                            achievement_manager,
-                            theme_manager,
-                            screen,
-                            fullscreen,
-                            settings_manager,
-                            user_manager,
-                            'daily',
-                            sound_manager=menu_sound,
-                            score_manager=score_manager,
-                        )
-                        state = 'game'
+
+                        def _launch():
+                            nonlocal state, game
+                            menu_sound.stop_music()
+                            game = DailyChallengeMode(
+                                difficulty,
+                                sound,
+                                effects,
+                                achievement_manager,
+                                theme_manager,
+                                screen,
+                                fullscreen,
+                                settings_manager,
+                                user_manager,
+                                'daily',
+                                sound_manager=menu_sound,
+                                score_manager=score_manager,
+                            )
+                            state = 'game'
+                        _launch_game_via_wipe(_launch)
                     elif menu.daily_cancel_rect and menu.daily_cancel_rect.collidepoint(pos):
                         daily_prompt_selected = 1
                         confirm_daily = False
@@ -3157,27 +3205,29 @@ def main():
                 except Exception:
                     level_num = 1
                 level_num = max(1, min(100, level_num))
-
-                menu_sound.stop_music()
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
 
-                game = CampaignMode(
-                    current_level=level_num,
-                    difficulty=difficulty,
-                    sound_enabled=sound,
-                    effects_enabled=effects,
-                    achievement_manager=achievement_manager,
-                    theme_manager=theme_manager,
-                    screen=screen,
-                    fullscreen=fullscreen,
-                    settings_manager=settings_manager,
-                    user_manager=user_manager,
-                    sound_manager=menu_sound,
-                    score_manager=score_manager,
-                )
-                state = 'game'
+                def _launch():
+                    nonlocal state, game
+                    menu_sound.stop_music()
+                    game = CampaignMode(
+                        current_level=level_num,
+                        difficulty=difficulty,
+                        sound_enabled=sound,
+                        effects_enabled=effects,
+                        achievement_manager=achievement_manager,
+                        theme_manager=theme_manager,
+                        screen=screen,
+                        fullscreen=fullscreen,
+                        settings_manager=settings_manager,
+                        user_manager=user_manager,
+                        sound_manager=menu_sound,
+                        score_manager=score_manager,
+                    )
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             
             elif action in ('single_player', 'Tek Oyunculu', 'Single Player'):
                 # Tutorial Check
@@ -3185,7 +3235,6 @@ def main():
                     tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt, settings_manager=settings_manager)
                     if tutorial_choice in ('quick_start', 'full_academy'):
                         # Start Tutorial
-                        menu_sound.stop_music()
                         if tutorial_choice == 'quick_start':
                             tutorial_kwargs = dict(
                                 launch_lesson_id='qs_move_lane',
@@ -3193,22 +3242,27 @@ def main():
                             )
                         else:
                             tutorial_kwargs = dict(lesson_flow_scope='full')
-                        game = TutorialMode(
-                            'Normal',
-                            settings_screen.sound_enabled,
-                            settings_screen.effects_enabled,
-                            achievement_manager,
-                            theme_manager,
-                            screen,
-                            fullscreen,
-                            settings_manager,
-                            user_manager,
-                            sound_manager=menu_sound,
-                            score_manager=score_manager,
-                            block_style_manager=block_style_manager,
-                            **tutorial_kwargs
-                        )
-                        state = 'game'
+
+                        def _launch():
+                            nonlocal state, game
+                            menu_sound.stop_music()
+                            game = TutorialMode(
+                                'Normal',
+                                settings_screen.sound_enabled,
+                                settings_screen.effects_enabled,
+                                achievement_manager,
+                                theme_manager,
+                                screen,
+                                fullscreen,
+                                settings_manager,
+                                user_manager,
+                                sound_manager=menu_sound,
+                                score_manager=score_manager,
+                                block_style_manager=block_style_manager,
+                                **tutorial_kwargs
+                            )
+                            state = 'game'
+                        _launch_game_via_wipe(_launch)
                         continue
                     else:
                         # Şimdilik Geç — progress üretmeden sadece popup'ı kapat
@@ -3223,88 +3277,104 @@ def main():
                     and menu_sound.current_track_name == target_game_music
                     and pygame.mixer.music.get_busy()
                 )
-                if not same_track_playing:
-                    menu_sound.stop_music()
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                _t_launch = time.perf_counter()
-                game = Game(
-                    difficulty,
-                    sound,
-                    effects,
-                    achievement_manager,
-                    theme_manager,
-                    screen,
-                    fullscreen,
-                    settings_manager,
-                    user_manager,
-                    'classic',
-                    sound_manager=menu_sound,
-                    score_manager=score_manager,
-                )
-                perf_telemetry.record_slow_phase(state, 'launch_game_ms', (time.perf_counter() - _t_launch) * 1000.0)
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game
+                    if not same_track_playing:
+                        menu_sound.stop_music()
+                    _t_launch = time.perf_counter()
+                    game = Game(
+                        difficulty,
+                        sound,
+                        effects,
+                        achievement_manager,
+                        theme_manager,
+                        screen,
+                        fullscreen,
+                        settings_manager,
+                        user_manager,
+                        'classic',
+                        sound_manager=menu_sound,
+                        score_manager=score_manager,
+                    )
+                    perf_telemetry.record_slow_phase(state, 'launch_game_ms', (time.perf_counter() - _t_launch) * 1000.0)
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action == 'tutorial_mode':
-                menu_sound.stop_music()
-                game = TutorialMode(
-                    'Normal',
-                    settings_screen.sound_enabled,
-                    settings_screen.effects_enabled,
-                    achievement_manager,
-                    theme_manager,
-                    screen,
-                    fullscreen,
-                    settings_manager,
-                    user_manager,
-                    sound_manager=menu_sound,
-                    score_manager=score_manager,
-                    block_style_manager=block_style_manager
-                )
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game
+                    menu_sound.stop_music()
+                    game = TutorialMode(
+                        'Normal',
+                        settings_screen.sound_enabled,
+                        settings_screen.effects_enabled,
+                        achievement_manager,
+                        theme_manager,
+                        screen,
+                        fullscreen,
+                        settings_manager,
+                        user_manager,
+                        sound_manager=menu_sound,
+                        score_manager=score_manager,
+                        block_style_manager=block_style_manager
+                    )
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action in ('new_gen_tetris', 'Yeni Nesil Quadrix', 'Kart Ustalığı', 'New Gen Quadrix', 'Card Mastery'):
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'mystery', settings_manager=settings_manager):
                     continue
                 confirm_exit = False
-                menu_sound.stop_music()
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = MysteryMode(
-                    difficulty,
-                    sound,
-                    effects,
-                    achievement_manager,
-                    theme_manager,
-                    screen,
-                    fullscreen,
-                    settings_manager,
-                    user_manager,
-                    'mystery',
-                    sound_manager=menu_sound,
-                    score_manager=score_manager,
-                )
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game
+                    menu_sound.stop_music()
+                    game = MysteryMode(
+                        difficulty,
+                        sound,
+                        effects,
+                        achievement_manager,
+                        theme_manager,
+                        screen,
+                        fullscreen,
+                        settings_manager,
+                        user_manager,
+                        'mystery',
+                        sound_manager=menu_sound,
+                        score_manager=score_manager,
+                    )
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action in ('pvp_2_players', 'PvP (2 Oyuncu)', 'PvP (2 Players)'):
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'pvp', settings_manager=settings_manager):
                     continue
                 confirm_exit = False
-                # Menü müziğini durdur; PvP kendi müziğini başlatacak.
-                menu_sound.stop_music()
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                _t_launch = time.perf_counter()
-                pvp_game = PvPGame(
-                    sound,
-                    effects,
-                    screen,
-                    fullscreen,
-                    user_manager,
-                    settings_manager,
-                    sound_manager=menu_sound,
-                )
-                perf_telemetry.record_slow_phase(state, 'launch_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
-                state = 'pvp'
+
+                def _launch():
+                    nonlocal state, pvp_game
+                    # Menü müziğini durdur; PvP kendi müziğini başlatacak.
+                    menu_sound.stop_music()
+                    _t_launch = time.perf_counter()
+                    pvp_game = PvPGame(
+                        sound,
+                        effects,
+                        screen,
+                        fullscreen,
+                        user_manager,
+                        settings_manager,
+                        sound_manager=menu_sound,
+                    )
+                    perf_telemetry.record_slow_phase(state, 'launch_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
+                    state = 'pvp'
+                _launch_game_via_wipe(_launch)
             elif action in ('online_pvp', 'Online PvP'):
                 if demo_config is not None and demo_config.is_locked_main_action('online_pvp'):
                     menu._maybe_handle_demo_main_action('online_pvp')
@@ -3312,23 +3382,28 @@ def main():
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_pvp', settings_manager=settings_manager):
                     continue
                 confirm_exit = False
-                _t_launch = time.perf_counter()
-                online_pvp_game, steam_reason = _create_online_pvp_game(
-                    on_failure=_restore_online_pvp_menu_music,
-                    screen=screen,
-                    fullscreen=fullscreen,
-                    user_manager=user_manager,
-                    achievement_manager=achievement_manager,
-                    settings_manager=settings_manager,
-                    sound_manager=menu_sound,
-                )
-                perf_telemetry.record_slow_phase(state, 'launch_online_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
-                if online_pvp_game is None:
-                    state = 'menu'
-                    menu.show_info(steam_reason, duration=240)
-                    continue
-                _handle_online_pvp._game = online_pvp_game
-                state = 'online_pvp'
+
+                def _launch():
+                    nonlocal state
+                    _t_launch = time.perf_counter()
+                    online_pvp_game, steam_reason = _create_online_pvp_game(
+                        on_failure=_restore_online_pvp_menu_music,
+                        screen=screen,
+                        fullscreen=fullscreen,
+                        user_manager=user_manager,
+                        achievement_manager=achievement_manager,
+                        settings_manager=settings_manager,
+                        sound_manager=menu_sound,
+                    )
+                    perf_telemetry.record_slow_phase(state, 'launch_online_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
+                    if online_pvp_game is None:
+                        # Kurulum başarısız: state menu'de kalır; perde menüye
+                        # açılır ve bilgi mesajı görünür olur.
+                        menu.show_info(steam_reason, duration=240)
+                        return
+                    _handle_online_pvp._game = online_pvp_game
+                    state = 'online_pvp'
+                _launch_game_via_wipe(_launch)
             elif action in ('daily_challenge', t('daily_challenge')):
                 confirm_exit = False
                 allowed, reason = user_manager.can_play_daily() if user_manager else (False, 'Kullanıcı bulunamadı!')
@@ -3402,18 +3477,22 @@ def main():
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_coop', settings_manager=settings_manager):
                     continue
                 confirm_exit = False
-                menu_sound.stop_music()
-                _t_launch = time.perf_counter()
-                online_coop_game = OnlineCoopGame(
-                    screen=screen,
-                    fullscreen=fullscreen,
-                    user_manager=user_manager,
-                    settings_manager=settings_manager,
-                    sound_manager=menu_sound,
-                )
-                perf_telemetry.record_slow_phase(state, 'launch_online_coop_ms', (time.perf_counter() - _t_launch) * 1000.0)
-                _handle_online_coop._game = online_coop_game
-                state = 'online_coop'
+
+                def _launch():
+                    nonlocal state
+                    menu_sound.stop_music()
+                    _t_launch = time.perf_counter()
+                    online_coop_game = OnlineCoopGame(
+                        screen=screen,
+                        fullscreen=fullscreen,
+                        user_manager=user_manager,
+                        settings_manager=settings_manager,
+                        sound_manager=menu_sound,
+                    )
+                    perf_telemetry.record_slow_phase(state, 'launch_online_coop_ms', (time.perf_counter() - _t_launch) * 1000.0)
+                    _handle_online_coop._game = online_coop_game
+                    state = 'online_coop'
+                _launch_game_via_wipe(_launch)
             elif action == 'coop_campaign':
                 confirm_exit = False
                 if coop_level_select is None:
@@ -3938,42 +4017,50 @@ def main():
             elif action == 'toggle_fullscreen':
                 _toggle_fullscreen(500, 700)
             elif action == 'tutorial_hub':
-                menu_sound.stop_music()
-                game = TutorialMode(
-                    'Normal',
-                    settings_screen.sound_enabled,
-                    settings_screen.effects_enabled,
-                    achievement_manager,
-                    theme_manager,
-                    screen,
-                    fullscreen,
-                    settings_manager,
-                    user_manager,
-                    sound_manager=menu_sound,
-                    score_manager=score_manager,
-                    block_style_manager=block_style_manager
-                )
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game
+                    menu_sound.stop_music()
+                    game = TutorialMode(
+                        'Normal',
+                        settings_screen.sound_enabled,
+                        settings_screen.effects_enabled,
+                        achievement_manager,
+                        theme_manager,
+                        screen,
+                        fullscreen,
+                        settings_manager,
+                        user_manager,
+                        sound_manager=menu_sound,
+                        score_manager=score_manager,
+                        block_style_manager=block_style_manager
+                    )
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action and action.startswith('tutorial_lesson:'):
                 lesson_id = action.split(':', 1)[1]
-                menu_sound.stop_music()
-                game = TutorialMode(
-                    'Normal',
-                    settings_screen.sound_enabled,
-                    settings_screen.effects_enabled,
-                    achievement_manager,
-                    theme_manager,
-                    screen,
-                    fullscreen,
-                    settings_manager,
-                    user_manager,
-                    launch_lesson_id=lesson_id,
-                    lesson_flow_scope='chapter',
-                    sound_manager=menu_sound,
-                    score_manager=score_manager,
-                    block_style_manager=block_style_manager
-                )
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game
+                    menu_sound.stop_music()
+                    game = TutorialMode(
+                        'Normal',
+                        settings_screen.sound_enabled,
+                        settings_screen.effects_enabled,
+                        achievement_manager,
+                        theme_manager,
+                        screen,
+                        fullscreen,
+                        settings_manager,
+                        user_manager,
+                        launch_lesson_id=lesson_id,
+                        lesson_flow_scope='chapter',
+                        sound_manager=menu_sound,
+                        score_manager=score_manager,
+                        block_style_manager=block_style_manager
+                    )
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
         guide_screen.draw()
         return True
 
@@ -4088,23 +4175,31 @@ def main():
             elif action == 'Sprint Mode':
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'sprint', settings_manager=settings_manager):
                     continue
-                menu_sound.stop_music()
-                game_return_state = 'extras'
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = SprintMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'sprint', score_manager=score_manager, sound_manager=menu_sound)
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game, game_return_state
+                    menu_sound.stop_music()
+                    game_return_state = 'extras'
+                    game = SprintMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'sprint', score_manager=score_manager, sound_manager=menu_sound)
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action == 'Ultra Mode':
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'ultra', settings_manager=settings_manager):
                     continue
-                menu_sound.stop_music()
-                game_return_state = 'extras'
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = UltraMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'ultra', score_manager=score_manager, sound_manager=menu_sound)
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game, game_return_state
+                    menu_sound.stop_music()
+                    game_return_state = 'extras'
+                    game = UltraMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'ultra', score_manager=score_manager, sound_manager=menu_sound)
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action == 'Zen Mode':
                 # Zen Mode için optimize edilmiş başlangıç penceresi (Intro + Ayar)
                 auto_clear_rows = _run_popup_and_sync_screen(
@@ -4114,164 +4209,211 @@ def main():
                 )
                 if auto_clear_rows is False:
                     continue  # İptal edildi
-                menu_sound.stop_music()
-                game_return_state = 'extras'
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = ZenMode('Kolay', sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'zen', score_manager=score_manager, auto_clear_rows=auto_clear_rows, sound_manager=menu_sound)
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game, game_return_state
+                    menu_sound.stop_music()
+                    game_return_state = 'extras'
+                    game = ZenMode('Kolay', sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'zen', score_manager=score_manager, auto_clear_rows=auto_clear_rows, sound_manager=menu_sound)
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action == 'Hardcore Mode':
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'hardcore', settings_manager=settings_manager):
                     continue
-                menu_sound.stop_music()
-                game_return_state = 'extras'
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = HardcoreMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'hardcore', score_manager=score_manager, sound_manager=menu_sound)
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game, game_return_state
+                    menu_sound.stop_music()
+                    game_return_state = 'extras'
+                    game = HardcoreMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'hardcore', score_manager=score_manager, sound_manager=menu_sound)
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action in ('pvp_2_players', 'PvP (2 Oyuncu)', 'PvP (2 Players)'):
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'pvp', settings_manager=settings_manager):
                     continue
-                menu_sound.stop_music()
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                _t_launch = time.perf_counter()
-                pvp_game = PvPGame(
-                    sound,
-                    effects,
-                    screen,
-                    fullscreen,
-                    user_manager,
-                    settings_manager,
-                    sound_manager=menu_sound,
-                )
-                perf_telemetry.record_slow_phase(state, 'launch_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
-                state = 'pvp'
+
+                def _launch():
+                    nonlocal state, pvp_game
+                    menu_sound.stop_music()
+                    _t_launch = time.perf_counter()
+                    pvp_game = PvPGame(
+                        sound,
+                        effects,
+                        screen,
+                        fullscreen,
+                        user_manager,
+                        settings_manager,
+                        sound_manager=menu_sound,
+                    )
+                    perf_telemetry.record_slow_phase(state, 'launch_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
+                    state = 'pvp'
+                _launch_game_via_wipe(_launch)
             elif action in ('Quadrix 2', 'Quadrix Extra'):
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'tetris2', settings_manager=settings_manager):
                     continue
-                menu_sound.stop_music()
-                game_return_state = 'extras'
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = Tetris2Mode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'tetris2', score_manager=score_manager, sound_manager=menu_sound)
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game, game_return_state
+                    menu_sound.stop_music()
+                    game_return_state = 'extras'
+                    game = Tetris2Mode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'tetris2', score_manager=score_manager, sound_manager=menu_sound)
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action in ('Mystery Mode', 'Kart Ustalığı', 'Yeni Nesil Quadrix', 'New Gen Quadrix', 'Card Mastery'):
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'mystery', settings_manager=settings_manager):
                     continue
-                menu_sound.stop_music()
-                game_return_state = 'extras'
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = MysteryMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'mystery', score_manager=score_manager, sound_manager=menu_sound)
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game, game_return_state
+                    menu_sound.stop_music()
+                    game_return_state = 'extras'
+                    game = MysteryMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'mystery', score_manager=score_manager, sound_manager=menu_sound)
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action == 'Wide Mode':
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'wide', settings_manager=settings_manager):
                     continue
-                menu_sound.stop_music()
-                game_return_state = 'extras'
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = WideMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'wide', score_manager=score_manager, sound_manager=menu_sound)
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game, game_return_state
+                    menu_sound.stop_music()
+                    game_return_state = 'extras'
+                    game = WideMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'wide', score_manager=score_manager, sound_manager=menu_sound)
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action == 'Survival Mode':
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'survival', settings_manager=settings_manager):
                     continue
-                menu_sound.stop_music()
-                game_return_state = 'extras'
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = SurvivalMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'survival', score_manager=score_manager, sound_manager=menu_sound)
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game, game_return_state
+                    menu_sound.stop_music()
+                    game_return_state = 'extras'
+                    game = SurvivalMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'survival', score_manager=score_manager, sound_manager=menu_sound)
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action == 'Cascade Mode':
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'cascade', settings_manager=settings_manager):
                     continue
-                menu_sound.stop_music()
-                game_return_state = 'extras'
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = CascadeMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'cascade', score_manager=score_manager, sound_manager=menu_sound)
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game, game_return_state
+                    menu_sound.stop_music()
+                    game_return_state = 'extras'
+                    game = CascadeMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'cascade', score_manager=score_manager, sound_manager=menu_sound)
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action == 'Online PvP':
                 if demo_config is not None and demo_config.get_extras_lock_kind('Online PvP'):
                     extras_screen._show_demo_lock_prompt_for_mode('Online PvP')
                     continue
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_pvp', settings_manager=settings_manager):
                     continue
-                _t_launch = time.perf_counter()
-                online_pvp_game, steam_reason = _create_online_pvp_game(
-                    on_failure=_restore_online_pvp_menu_music,
-                    screen=screen,
-                    fullscreen=fullscreen,
-                    user_manager=user_manager,
-                    achievement_manager=achievement_manager,
-                    settings_manager=settings_manager,
-                    sound_manager=menu_sound,
-                )
-                perf_telemetry.record_slow_phase(state, 'launch_online_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
-                if online_pvp_game is None:
-                    state = 'menu'
-                    menu.show_info(steam_reason, duration=240)
-                    continue
-                _handle_online_pvp._game = online_pvp_game
-                state = 'online_pvp'
+
+                def _launch():
+                    nonlocal state
+                    _t_launch = time.perf_counter()
+                    online_pvp_game, steam_reason = _create_online_pvp_game(
+                        on_failure=_restore_online_pvp_menu_music,
+                        screen=screen,
+                        fullscreen=fullscreen,
+                        user_manager=user_manager,
+                        achievement_manager=achievement_manager,
+                        settings_manager=settings_manager,
+                        sound_manager=menu_sound,
+                    )
+                    perf_telemetry.record_slow_phase(state, 'launch_online_pvp_ms', (time.perf_counter() - _t_launch) * 1000.0)
+                    if online_pvp_game is None:
+                        # Kurulum başarısız: orijinal davranış (extras → menü)
+                        # korunur; perde menüye açılır, bilgi mesajı menu.draw
+                        # içinde göründüğünden kullanıcıya görünür olur.
+                        state = 'menu'
+                        menu.show_info(steam_reason, duration=240)
+                        return
+                    _handle_online_pvp._game = online_pvp_game
+                    state = 'online_pvp'
+                _launch_game_via_wipe(_launch)
             elif action in ('daily_challenge', t('daily_challenge')):
                 allowed, reason = user_manager.can_play_daily() if user_manager else (False, 'Kullanıcı bulunamadı!')
                 if not allowed:
                     state = 'menu'
                     menu.show_info(reason or 'Daily Challenge kilitli!')
                     continue
-                menu_sound.stop_music()
-                game_return_state = 'extras'
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = DailyChallengeMode(
-                    difficulty,
-                    sound,
-                    effects,
-                    achievement_manager,
-                    theme_manager,
-                    screen,
-                    fullscreen,
-                    settings_manager,
-                    user_manager,
-                    'daily',
-                    sound_manager=menu_sound,
-                    score_manager=score_manager,
-                )
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game, game_return_state
+                    menu_sound.stop_music()
+                    game_return_state = 'extras'
+                    game = DailyChallengeMode(
+                        difficulty,
+                        sound,
+                        effects,
+                        achievement_manager,
+                        theme_manager,
+                        screen,
+                        fullscreen,
+                        settings_manager,
+                        user_manager,
+                        'daily',
+                        sound_manager=menu_sound,
+                        score_manager=score_manager,
+                    )
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action == 'Classic Mode':
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'classic', settings_manager=settings_manager):
                     continue
-                menu_sound.stop_music()
-                game_return_state = 'extras'
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                _t_launch = time.perf_counter()
-                game = Game(
-                    difficulty,
-                    sound,
-                    effects,
-                    achievement_manager,
-                    theme_manager,
-                    screen,
-                    fullscreen,
-                    settings_manager,
-                    user_manager,
-                    'classic',
-                    sound_manager=menu_sound,
-                    score_manager=score_manager,
-                )
-                perf_telemetry.record_slow_phase(state, 'launch_game_ms', (time.perf_counter() - _t_launch) * 1000.0)
-                state = 'game'
+
+                def _launch():
+                    nonlocal state, game, game_return_state
+                    menu_sound.stop_music()
+                    game_return_state = 'extras'
+                    _t_launch = time.perf_counter()
+                    game = Game(
+                        difficulty,
+                        sound,
+                        effects,
+                        achievement_manager,
+                        theme_manager,
+                        screen,
+                        fullscreen,
+                        settings_manager,
+                        user_manager,
+                        'classic',
+                        sound_manager=menu_sound,
+                        score_manager=score_manager,
+                    )
+                    perf_telemetry.record_slow_phase(state, 'launch_game_ms', (time.perf_counter() - _t_launch) * 1000.0)
+                    state = 'game'
+                _launch_game_via_wipe(_launch)
             elif action == 'coop_campaign':
                 if coop_level_select is None:
                     coop_level_select = CoopLevelSelect(
@@ -4705,7 +4847,6 @@ def main():
                     user_manager.set_tutorial_completed(False)
                     tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt, settings_manager=settings_manager)
                     if tutorial_choice in ('quick_start', 'full_academy'):
-                        menu_sound.stop_music()
                         if tutorial_choice == 'quick_start':
                             tutorial_kwargs = dict(
                                 launch_lesson_id='qs_move_lane',
@@ -4713,22 +4854,27 @@ def main():
                             )
                         else:
                             tutorial_kwargs = dict(lesson_flow_scope='full')
-                        game = TutorialMode(
-                            'Normal',
-                            settings_screen.sound_enabled,
-                            settings_screen.effects_enabled,
-                            achievement_manager,
-                            theme_manager,
-                            screen,
-                            fullscreen,
-                            settings_manager,
-                            user_manager,
-                            sound_manager=menu_sound,
-                            score_manager=score_manager,
-                            block_style_manager=block_style_manager,
-                            **tutorial_kwargs
-                        )
-                        state = 'game'
+
+                        def _launch():
+                            nonlocal state, game
+                            menu_sound.stop_music()
+                            game = TutorialMode(
+                                'Normal',
+                                settings_screen.sound_enabled,
+                                settings_screen.effects_enabled,
+                                achievement_manager,
+                                theme_manager,
+                                screen,
+                                fullscreen,
+                                settings_manager,
+                                user_manager,
+                                sound_manager=menu_sound,
+                                score_manager=score_manager,
+                                block_style_manager=block_style_manager,
+                                **tutorial_kwargs
+                            )
+                            state = 'game'
+                        _launch_game_via_wipe(_launch)
                     else:
                         # Şimdilik Geç — sahte progress üretme, sadece popup'ı kapat
                         user_manager.dismiss_tutorial_prompt()
@@ -4786,32 +4932,35 @@ def main():
             if action and action.startswith('play_'):
                 try:
                     level_num = int(action.split('_')[1])
-                    
-                    # Müziği durdur
-                    menu_sound.stop_music()
-                    
+
                     # Oyun ayarları
                     difficulty = settings_screen.difficulty
                     sound = settings_screen.sound_enabled
                     effects = settings_screen.effects_enabled
-                    
-                    # CampaignMode başlat
-                    game = CampaignMode(
-                        current_level=level_num,
-                        difficulty=difficulty,
-                        sound_enabled=sound,
-                        effects_enabled=effects,
-                        achievement_manager=achievement_manager,
-                        theme_manager=theme_manager,
-                        screen=screen,
-                        fullscreen=fullscreen,
-                        settings_manager=settings_manager,
-                        user_manager=user_manager,
-                        sound_manager=menu_sound,
-                        score_manager=score_manager,
-                    )
-                    
-                    state = 'game'
+
+                    def _launch():
+                        nonlocal state, game
+                        # Müziği durdur
+                        menu_sound.stop_music()
+                        # CampaignMode başlat
+                        game = CampaignMode(
+                            current_level=level_num,
+                            difficulty=difficulty,
+                            sound_enabled=sound,
+                            effects_enabled=effects,
+                            achievement_manager=achievement_manager,
+                            theme_manager=theme_manager,
+                            screen=screen,
+                            fullscreen=fullscreen,
+                            settings_manager=settings_manager,
+                            user_manager=user_manager,
+                            sound_manager=menu_sound,
+                            score_manager=score_manager,
+                        )
+                        state = 'game'
+                    # Campaign select geçişi kısa 450 ms ritmini korur (ana
+                    # döngü kuralıyla aynı süre).
+                    _launch_game_via_wipe(_launch, duration_ms=450)
                     return True
                 except (ValueError, IndexError):
                     pass
@@ -4852,21 +5001,24 @@ def main():
             if action and action.startswith('play_'):
                 try:
                     level_num = int(action.split('_')[1])
-                    menu_sound.stop_music()
                     sound = settings_screen.sound_enabled
                     effects = settings_screen.effects_enabled
 
-                    coop_campaign_game = CoopCampaignMode(
-                        current_level=level_num,
-                        sound_enabled=sound,
-                        effects_enabled=effects,
-                        screen=screen,
-                        fullscreen=fullscreen,
-                        user_manager=user_manager,
-                        settings_manager=settings_manager,
-                        sound_manager=menu_sound,
-                    )
-                    state = 'coop_campaign'
+                    def _launch():
+                        nonlocal state, coop_campaign_game
+                        menu_sound.stop_music()
+                        coop_campaign_game = CoopCampaignMode(
+                            current_level=level_num,
+                            sound_enabled=sound,
+                            effects_enabled=effects,
+                            screen=screen,
+                            fullscreen=fullscreen,
+                            user_manager=user_manager,
+                            settings_manager=settings_manager,
+                            sound_manager=menu_sound,
+                        )
+                        state = 'coop_campaign'
+                    _launch_game_via_wipe(_launch)
                     return True
                 except (ValueError, IndexError):
                     pass
@@ -5195,36 +5347,50 @@ def main():
         _prev_transition_active = transition_active
         
         # State değişikliği algılama ve geçiş efekti başlatma
-        if state != _previous_state and not transition_active:
-            # Ana menüye her dönüşte/girişte leaderboard'u zorla yenile
-            if state == 'menu':
+        if state != _previous_state:
+            # Perde sürerken state değişse bile (ertelemeli launch callback'i
+            # gibi) kitabı güncelle ama YENİ perde başlatma — aksi halde perde
+            # bitince bayat fark için İKİNCİ bir perde daha oynardı (çift perde).
+            if not transition_active:
+                # Ana menüye her dönüşte/girişte leaderboard'u zorla yenile
+                if state == 'menu':
+                    try:
+                        menu.notify_menu_activated()
+                    except Exception:
+                        pass
+                    # Debug duyuru paneli: menüye her yeni girişte yeniden tetiklenebilir.
+                    _announcement_debug_pending = True
+                # Geçiş efekti başlat (state zaten değişti, sadece görsel efekt)
+                # Coop kendi açılış perdesini çiziyor; aynı anda global transition başlatma.
+                if state != 'coop':
+                    transition_type = _get_transition_type(_previous_state, state)
+                    # Campaign select için daha uzun süre (daha belirgin efekt)
+                    if 'campaign_select' in (_previous_state, state):
+                        duration = 450
+                    else:
+                        duration = 350
+                    start_screen_transition(screen, None, duration_ms=duration, transition_type=transition_type)
+                # Performans telemetrisi: ekran/state geçişini + geçiş ölçümünü işaretle
+                # (yalnızca QUADRIX_OVERLAY_PERF=1 iken yazar; aksi halde no-op).
                 try:
-                    menu.notify_menu_activated()
+                    _ovl_mark = _active_overlay_module()
+                    if _ovl_mark is not None:
+                        if hasattr(_ovl_mark, 'set_perf_screen'):
+                            _ovl_mark.set_perf_screen(state)
+                        if hasattr(_ovl_mark, 'perf_transition_begin'):
+                            _ovl_mark.perf_transition_begin(f"{_previous_state} → {state}")
                 except Exception:
                     pass
-                # Debug duyuru paneli: menüye her yeni girişte yeniden tetiklenebilir.
-                _announcement_debug_pending = True
-            # Geçiş efekti başlat (state zaten değişti, sadece görsel efekt)
-            # Coop kendi açılış perdesini çiziyor; aynı anda global transition başlatma.
-            if state != 'coop':
-                transition_type = _get_transition_type(_previous_state, state)
-                # Campaign select için daha uzun süre (daha belirgin efekt)
-                if 'campaign_select' in (_previous_state, state):
-                    duration = 450
-                else:
-                    duration = 350
-                start_screen_transition(screen, None, duration_ms=duration, transition_type=transition_type)
-            # Performans telemetrisi: ekran/state geçişini + geçiş ölçümünü işaretle
-            # (yalnızca QUADRIX_OVERLAY_PERF=1 iken yazar; aksi halde no-op).
-            try:
-                _ovl_mark = _active_overlay_module()
-                if _ovl_mark is not None:
-                    if hasattr(_ovl_mark, 'set_perf_screen'):
+            else:
+                # Perde sürerken değişen state (launch callback'i): overlay'in
+                # ekran etiketini tazele ki yeni state'in kareleri doğru
+                # etiketle ölçülsün (begin damgası launch yardımcısında atıldı).
+                try:
+                    _ovl_mark = _active_overlay_module()
+                    if _ovl_mark is not None and hasattr(_ovl_mark, 'set_perf_screen'):
                         _ovl_mark.set_perf_screen(state)
-                    if hasattr(_ovl_mark, 'perf_transition_begin'):
-                        _ovl_mark.perf_transition_begin(f"{_previous_state} → {state}")
-            except Exception:
-                pass
+                except Exception:
+                    pass
             _previous_state = state
             # Menü ekranlarında basılı tutma tekrarı aktif, oyunda devre dışı
             if state in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp', 'online_coop'):
