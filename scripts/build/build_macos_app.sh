@@ -151,6 +151,16 @@ if [[ ! -d "$APP_PATH" ]]; then
     echo -e "${RED}✗ Build başarısız!${NC}"; exit 1
 fi
 
+# G-03: build kimligi — .app calistirilabilirinin yanina
+# quadrix_build_identity.json yaz. Frozen telemetri JSONL kayitlari bu
+# commit/build ile iliskilendirilir. Derleme basarili; kimlik yazimi
+# hatasi build'i bozmaz (opsionel adim).
+$PYTHON_CMD "$REPO_ROOT/tools/write_build_identity.py" \
+    --target-dir "$APP_PATH/Contents/MacOS" \
+    --spec-file "$SPEC_FILE" \
+    --built-by "build_macos_app.sh" \
+    || echo -e "${RED}UYARI: build kimligi yazilamadi (derleme basarili).${NC}"
+
 APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
 echo ""
 echo -e "${GREEN}${BOLD}✅ Build tamamlandı!${NC} ($((BUILD_END - BUILD_START))s)"

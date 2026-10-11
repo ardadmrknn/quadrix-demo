@@ -66,6 +66,17 @@ Bu orkestratör script şunları yapar (sırayla):
 > ⚠️ Demo'yu doğrudan `build_windows_exe.ps1` ile derlemeyin — demo config yazılmaz/geri
 > alınmaz. Daima `build_windows_demo.ps1` kullanın.
 
+> 🧾 **Build kimliği (G-03):** Her demo Windows derlemesinden sonra EXE'nin yanına
+> build kimliğini tek komutla yaz — frozen telemetri JSONL kayıtları commit/build'e
+> bağlanır (rapor §10 sınırı):
+> ```powershell
+> py tools\write_build_identity.py --target-dir dist --spec-file packaging/specs/tetris_demo.spec --built-by demo_manual
+> ```
+> Çıktı `dist\quadrix_build_identity.json`; Steam ContentRoot'a girer (EXE'nin yanında).
+> Not: bu rehberin §2.2'de anılan `build_windows_demo.ps1` / `write_demo_config.py`
+> betikleri hiçbir repoda izlenmiyor — Windows kutusundaki yerel kopyalarıyla
+> derliyorsan kimlik adımını aynı oturumda çalıştır.
+
 ### 2.3 Steam Overlay (SDL2) paketleme garantisi
 Tüm Windows spec'leri `pygame._sdl2` submodüllerini, `.pyd` dosyalarını (özellikle
 `video.cp312-win_amd64.pyd`) ve pygame SDL2 DLL'lerini açıkça toplar. Build log'unda şu satır

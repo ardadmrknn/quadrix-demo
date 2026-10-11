@@ -135,6 +135,13 @@ def record_startup(**data: Any) -> None:
         "python": sys.version.split()[0],
         "frozen": bool(getattr(sys, "frozen", False)),
     }
+    # G-03: startup kaydı commit/build kimliği taşır — frozen JSONL artık
+    # kaynak commit'e ilişkilendirilebilir. Kimlik hatası kaydı düşürmez.
+    try:
+        import build_identity
+        payload.update(build_identity.get_identity())
+    except Exception:
+        pass
     payload.update(data)
     record_event("startup", **payload)
 
