@@ -63,6 +63,9 @@ class BackgroundManager:
         self.background_surface = None
         self.transparency = 0.3  # 0.0 (tamamen saydam) - 1.0 (opak)
         self.enabled = True
+        # Cache nesil sayacı: resim/transparanlık değişiminde tüketen
+        # kompositlerin (static_composite) ve iç cache'lerin tazelik anahtarı.
+        self._generation = 0
 
     @classmethod
     def prewarm_image(cls, image_path):
@@ -83,6 +86,11 @@ class BackgroundManager:
             resolved_path = _resolve_existing_image_path(image_path)
             if resolved_path is not None:
                 self.background_image = _get_cached_background_image(resolved_path)
+                # Aynı boyutta FARKLI resim takasında boyut-anahtarlı cache'ler
+                # bayat kalmasın: nesil sayacı + yüzey invalidasyonu.
+                self._generation = getattr(self, '_generation', 0) + 1
+                self.background_surface = None
+                self._cached_screen_size = None
                 print(f"[OK] Arka plan resmi yuklendi: {os.path.basename(resolved_path)}")
                 return True
 
@@ -103,6 +111,7 @@ class BackgroundManager:
         """
         self.transparency = max(0.0, min(1.0, value))
         self.background_surface = None  # Yeniden oluşturulacak
+        self._generation = getattr(self, '_generation', 0) + 1
     
     def draw(self, screen, board_rect):
         """

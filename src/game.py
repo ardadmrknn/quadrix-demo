@@ -30,7 +30,8 @@ from sound import SoundManager
 from score_manager import ScoreManager
 from user_manager import DAILY_MAX_FAILURES
 from background import BackgroundManager
-from mode_skins import apply_board_tint, apply_outer_tint, draw_board_overlay, get_mode_skin, get_localized_skin_title, get_localized_skin_subtitle
+from mode_skins import apply_board_tint, draw_board_overlay, get_mode_skin, get_localized_skin_title, get_localized_skin_subtitle
+import static_composite  # PERF FAZ 1: statik arka plan/tahta tabanı kompozitleri
 from background_effects import get_shared_falling_blocks_layer
 from workshop_blocks import WorkshopBlockDefinition, load_workshop_blocks
 from retro_style import retro_style
@@ -1309,6 +1310,10 @@ class Game:
         self.background_manager = BackgroundManager()  # Ana arka plan
         self.single_background = BackgroundManager()  # Tek oyunculu oyun alanı için ayrı arka plan
         self.outer_background = BackgroundManager()  # Oyun alanı dışındaki alan için arka plan
+        # Yeni Game: önceki Game'in serbest kalan yöneticileri id() adresini
+        # yeni yöneticilere devredebilir; komposit cache'lerinde bayat anahtar
+        # çakışmasını kurulum anında temizle (kare yolunda maliyeti yok).
+        static_composite.reset_caches()
         
         # Transparanlık ayarını yükle ve uygula
         bg_transparency = self.settings_manager.get('bg_transparency', 0.7)
@@ -5327,35 +5332,14 @@ class Game:
         # Önce tüm ekranı dış alan arka planı ile doldur
         # Menü ile tutarlı görünüm için retro_style.bg_color kullan
         _fill_color = getattr(retro_style, 'bg_color', bg_color)
-        bg_alpha = 1.0
-        if self.outer_background.is_loaded():
-            # Yarı-saydam arka plan (<1.0) önceki frame piksellerinin üzerine
-            # blend olur; önce temiz bir base doldurmak gerekir.
-            try:
-                bg_alpha = float(getattr(self.outer_background, 'transparency', 1.0))
-            except Exception:
-                bg_alpha = 1.0
-            if bg_alpha < 1.0:
-                self.screen.fill(_fill_color)
-            # Arka planı tüm ekrana çiz
-            self.outer_background.draw_full_screen(self.screen)
-        else:
-            # Arka plan yoksa sadece renk doldur
-            self.screen.fill(_fill_color)
+        # PERF FAZ 1: fill + tam ekran arka plan + outer tint aynı blend
+        # dizisiyle TEK kompozit yüzeyde birleştirilir (girdiler değişmedikçe
+        # cache; kare başına tek opak blit). Piksel sonucu eski diziyle
+        # birebir (tests/test_static_composite.py). Tint alfa ölçeklemesi
+        # (bg_alpha ile) draw_backdrop içinde üretim mantığıyla yapılır.
+        static_composite.draw_backdrop(
+            self.screen, _fill_color, self.outer_background, ui_skin.outer_tint)
 
-        # Outer tint: bg_transparency ile orantılı uygula (menüde tint yok,
-        # oyunda da transparan arttıkça tint azalsın → tutarlı görünüm).
-        _ot = tuple(ui_skin.outer_tint)
-        if len(_ot) >= 4 and _ot[3] > 0:
-            _tint_a = int(_ot[3] * bg_alpha) if bg_alpha < 1.0 else _ot[3]
-            if _tint_a > 0:
-                try:
-                    # OP-063: modül başındaki 'from dataclasses import replace'
-                    # kullanılır; fonksiyon içi import kare başına maliyet ödemiyor.
-                    apply_outer_tint(self.screen, replace(ui_skin, outer_tint=(*_ot[:3], _tint_a)))
-                except Exception:
-                    apply_outer_tint(self.screen, ui_skin)
-        
         # Menüdeki düşen blok animasyonunu paylaş
         if self.effects_enabled and self.falling_blocks:
             self.falling_blocks.update(self.screen)
@@ -5393,12 +5377,26 @@ class Game:
         
         # Oyun tahtası arka planı (siyah) - esnek sınır GÖRSEL DEĞİŞİKLİK YAPMAZ
         board_rect = pygame.Rect(offset_x, offset_y, board_width, board_height)
-        pygame.draw.rect(self.screen, (4, 4, 12), board_rect)
-        
-        # Arka plan resmini çiz - override edilebilir
-        self.draw_board_background(offset_x, offset_y, board_width, board_height)
-        apply_board_tint(self.screen, board_rect, board_skin)
-        draw_board_overlay(self.screen, board_rect, board_skin)
+        if getattr(self.draw_board_background, "__func__", None) is Game.draw_board_background:
+            # PERF FAZ 1: dolgu + tahta arka planı + board tint + overlay tek
+            # kompozit blit (piksel-birebir; grid AYRI kalır — kenar çizgileri
+            # tahta dışına 1px taşar). draw_board_background override EDİLMEMİŞSE
+            # (sınıf düzeyi VEYA instance stub — __func__ denkliği ikisini de
+            # yakalar) taban seçim (single_background / background_manager)
+            # kompozit içinde aynı diziyle uygulanır; override varsa (Wide Mode
+            # gibi) eski yol korunur.
+            _board_bg = (self.single_background if self.single_background.is_loaded()
+                         else self.background_manager)
+            static_composite.blit_board_base(
+                self.screen, (offset_x, offset_y), (board_width, board_height),
+                (4, 4, 12), _board_bg, board_skin)
+        else:
+            pygame.draw.rect(self.screen, (4, 4, 12), board_rect)
+
+            # Arka plan resmini çiz - override edilebilir
+            self.draw_board_background(offset_x, offset_y, board_width, board_height)
+            apply_board_tint(self.screen, board_rect, board_skin)
+            draw_board_overlay(self.screen, board_rect, board_skin)
         
         # Grid çizgileri - cache'li (her frame ~(board_w+board_h) draw.line yerine
         # tek blit). GÖRSEL DEĞİŞİKLİK YAPMAZ: çizgiler birebir aynı opak renkte

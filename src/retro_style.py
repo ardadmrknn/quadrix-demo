@@ -11,6 +11,7 @@ import pygame
 from localization import t
 import math
 from background import BackgroundManager
+import static_composite  # PERF FAZ 1: menü arka planı kompozit blit
 from constants import NEON_CYAN, NEON_MAGENTA, NEON_ORANGE, NEON_LIME, NEON_BLUE
 
 
@@ -1229,16 +1230,12 @@ class RetroStyle:
                     continue
 
         if self._image_background.is_loaded():
-            # If the background image is drawn with per-surface alpha (< 255),
-            # we must clear the screen first; otherwise previous frame pixels
-            # remain and get blended, which makes unrelated layers (e.g. falling
-            # blocks) look like they change with bg_transparency.
-            try:
-                if float(getattr(self, '_bg_transparency', 1.0)) < 1.0:
-                    screen.fill(self.bg_color)
-            except Exception:
-                pass
-            self._image_background.draw_full_screen(screen)
+            # PERF FAZ 1: (gerekirse) fill + tam ekran resim tek kompozit
+            # blit'e indirgendi — piksel dizisi eski kodla birebir (yarı
+            # saydam resimde önce temiz fill, sonra resim; opakta yalnız
+            # resim). Menüde outer tint yoktur, kompozit anahtarı sabit kalır.
+            static_composite.draw_backdrop(
+                screen, self.bg_color, self._image_background, None)
             return
 
         size = screen.get_size()
