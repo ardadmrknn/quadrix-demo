@@ -1547,3 +1547,198 @@ def test_perk_synergy_effect_branch_applies_payload_rate():
 
     assert mode.perk_manager.is_active('synergy_core')
     assert mode.perk_manager.synergy_rate == pytest.approx(0.15)
+
+
+# ---------------------------------------------------------------------------
+# Faz 3 / D1 — combo_insurance gerçek hak sayacı (v2 paritesi)
+# ---------------------------------------------------------------------------
+
+def _make_combo_insurance_mode(MysteryMode, Board, *, charges: int):
+    """Combo Sigortası tüketim akışını izole eden minimal MysteryMode.
+
+    `lock_and_new_piece` tam akışını çalıştırır; `Game.lock_and_new_piece`
+    monkeypatch ile sahte bir super-lock'a bağlanır (bkz. `_fake_dry_lock`).
+    """
+    mode = MysteryMode.__new__(MysteryMode)
+    mode.board = Board()
+    mode._combo_insurance_charges = int(charges)
+    mode._reverse_debt_remaining = 0
+    mode._reverse_debt_total = 5
+    mode._active_effect_visuals = {
+        'combo_insurance': {'id': 'combo_insurance', 'title': 'Combo Sigortası', 'color': (255, 220, 140)},
+    }
+    mode._sync_active_cards = lambda: None
+    mode._set_localized_card_message = lambda *_args, **_kwargs: ''
+    mode.current_piece = SimpleNamespace(name='I', drill=False, is_bomb=False, get_cells=lambda: [(4, 18)])
+    mode._armed_nova_clusters = 0
+    mode._rewind_available = False
+    mode.energy = 0
+    mode.energy_max = 100
+    mode.sound_enabled = False
+    mode.effects_enabled = False
+    mode.line_bonus_remaining = 0
+    mode.line_bonus_amount = 0
+    mode._score_multiplier_timer = 0.0
+    mode._score_multiplier_value = 1.0
+    mode._line_clear_multiplier_remaining = 0
+    mode._line_clear_multiplier_value = 1.0
+    mode._speed_burst_timer = 0.0
+    mode._speed_burst_line_mult = 1.0
+    mode._freeze_drop_active = False
+    mode._freeze_drop_timer = 0.0
+    mode.card_manager = SimpleNamespace(
+        notify_lines_cleared=lambda *_a, **_kw: False,
+        pending_choices=[],
+        used_card_ids=set(),
+    )
+    mode.perk_manager = SimpleNamespace(
+        chrono_freeze_timer=0.0,
+        get_multiplier=lambda: 1.0,
+        notify_lines_cleared=lambda *_a, **_kw: None,
+        on_piece_locked=lambda *_a, **_kw: None,
+        maybe_trigger_alchemist=lambda *_a, **_kw: None,
+    )
+    mode._apply_score_multiplier_to_delta = lambda _d: 0
+    mode._apply_line_clear_multiplier_to_delta = lambda *_a, **_kw: 0
+    mode._apply_line_bonus_reward = lambda _l: None
+    mode._apply_combo_aura_on_lock = lambda *_a, **_kw: None
+    mode._apply_echo_drop_on_lock = lambda *_a, **_kw: None
+    return mode
+
+
+def _fake_dry_lock(monkeypatch, Game, *, lines_cleared: int = 0, new_combo: int = 0):
+    """Sahte super-lock: satır temizler/temizlemez ve combo'yu yeni değere taşır."""
+    def fake_super_lock(self):
+        if lines_cleared:
+            self.board.lines_cleared = int(getattr(self.board, 'lines_cleared', 0)) + int(lines_cleared)
+        self.board.combo = int(new_combo)
+        self.current_piece = SimpleNamespace(name='I', drill=False, is_bomb=False, get_cells=lambda: [(0, 0)])
+    monkeypatch.setattr(Game, 'lock_and_new_piece', fake_super_lock)
+
+
+@pytest.mark.parametrize(('tier_value', 'expected_charges'), [
+    (2, 2),  # Rare
+    (3, 3),  # Epic
+    (4, 4),  # Legendary
+])
+def test_combo_insurance_effect_grants_tier_charges(tier_value, expected_charges):
+    """Kart etkinleştirildiğinde kademe değeri kadar gerçek koruma hakkı verilir."""
+    _, _, MysteryMode, _ = _import_mystery_mode()
+    mode = MysteryMode.__new__(MysteryMode)
+    mode._combo_insurance_charges = 0
+    mode._sync_active_cards = lambda: None
+    mode._remember_effect_visual = lambda *_args, **_kwargs: None
+    mode._set_localized_card_message = lambda *_args, **_kwargs: ''
+    mode.effects_enabled = False
+    mode.sound_enabled = False
+
+    mode._apply_card_effect({
+        'id': 'combo_insurance',
+        '_group_id': 'combo_insurance',
+        'title': 'Combo Sigortası',
+        'value': tier_value,
+        'color': (255, 220, 140),
+    })
+
+    assert mode._combo_insurance_charges == expected_charges
+    assert mode._combo_insurance_armed is True
+
+
+def test_combo_insurance_effect_never_resets_or_stacks_charges():
+    """Tekrar seçim: mevcut haklar sıfırlanmaz; yalnız daha yüksek kademe yükseltir."""
+    _, _, MysteryMode, _ = _import_mystery_mode()
+    mode = MysteryMode.__new__(MysteryMode)
+    mode._combo_insurance_charges = 0
+    mode._sync_active_cards = lambda: None
+    mode._remember_effect_visual = lambda *_args, **_kwargs: None
+    mode._set_localized_card_message = lambda *_args, **_kwargs: ''
+    mode.effects_enabled = False
+    mode.sound_enabled = False
+    card = {'id': 'combo_insurance', '_group_id': 'combo_insurance',
+            'title': 'Combo Sigortası', 'color': (255, 220, 140)}
+
+    # Rare (2) sonra tekrar Rare (2): stack yok.
+    mode._apply_card_effect({**card, 'value': 2})
+    assert mode._combo_insurance_charges == 2
+    mode._apply_card_effect({**card, 'value': 2})
+    assert mode._combo_insurance_charges == 2
+
+    # Epic (3) yükseltmesi mevcut 2'yi 3'e çıkarır (max semantiği).
+    mode._apply_card_effect({**card, 'value': 3})
+    assert mode._combo_insurance_charges == 3
+
+    # Düşük kademe mevcut 3 hakkı sıfırlamaz/azaltmaz.
+    mode._apply_card_effect({**card, 'value': 2})
+    assert mode._combo_insurance_charges == 3
+
+
+@pytest.mark.parametrize(('tier_value', 'dry_locks_until_empty'), [
+    (2, 2),  # Rare: iki gerçek koruma
+    (3, 3),  # Epic: üç gerçek koruma
+    (4, 4),  # Legendary: dört gerçek koruma
+])
+def test_combo_insurance_tier_charges_consume_one_per_dry_lock(monkeypatch, tier_value, dry_locks_until_empty):
+    """Her combo'lu başarısız lock tam bir hak tüketir; hak bitince koruma kalmaz."""
+    _, Game, MysteryMode, Board = _import_mystery_mode()
+    mode = _make_combo_insurance_mode(MysteryMode, Board, charges=tier_value)
+
+    for consumed in range(dry_locks_until_empty):
+        mode.board.combo = 4  # tetiklenmeden hemen önce combo 4
+        _fake_dry_lock(monkeypatch, Game, lines_cleared=0, new_combo=0)
+        mode.lock_and_new_piece()
+        # Combo korundu ve tam bir hak tüketildi.
+        assert mode.board.combo == 4
+        assert mode._combo_insurance_charges == tier_value - (consumed + 1)
+
+    # Haklar tükendi: combo artık korunmaz, kart silahı kapanır.
+    mode.board.combo = 4
+    _fake_dry_lock(monkeypatch, Game, lines_cleared=0, new_combo=0)
+    mode.lock_and_new_piece()
+    assert mode.board.combo == 0
+    assert mode._combo_insurance_charges == 0
+    assert mode._combo_insurance_armed is False
+    assert 'combo_insurance' not in mode._active_effect_visuals
+
+
+def test_combo_insurance_does_not_consume_without_combo(monkeypatch):
+    """Combo yokken (previous_combo == 0) başarısız lock hak tüketmez."""
+    _, Game, MysteryMode, Board = _import_mystery_mode()
+    mode = _make_combo_insurance_mode(MysteryMode, Board, charges=3)
+
+    mode.board.combo = 0
+    _fake_dry_lock(monkeypatch, Game, lines_cleared=0, new_combo=0)
+    mode.lock_and_new_piece()
+
+    assert mode._combo_insurance_charges == 3
+    assert mode._combo_insurance_armed is True
+
+
+def test_combo_insurance_does_not_consume_when_lines_cleared(monkeypatch):
+    """Satır temizlenen lock (player_lines > 0) hak tüketmez."""
+    _, Game, MysteryMode, Board = _import_mystery_mode()
+    mode = _make_combo_insurance_mode(MysteryMode, Board, charges=3)
+
+    mode.board.combo = 2
+    _fake_dry_lock(monkeypatch, Game, lines_cleared=1, new_combo=3)
+    mode.lock_and_new_piece()
+
+    assert mode._combo_insurance_charges == 3
+    assert mode._combo_insurance_armed is True
+
+
+def test_combo_insurance_armed_property_reads_charges():
+    """Legacy bool görünümü sayaca tercüme edilir (eski test yolları)."""
+    _, _, MysteryMode, _ = _import_mystery_mode()
+    mode = MysteryMode.__new__(MysteryMode)
+
+    mode._combo_insurance_charges = 0
+    assert mode._combo_insurance_armed is False
+
+    mode._combo_insurance_armed = True
+    assert mode._combo_insurance_charges == 1
+    assert mode._combo_insurance_armed is True
+
+    mode._combo_insurance_charges = 3
+    mode._combo_insurance_armed = False
+    assert mode._combo_insurance_charges == 0
+    assert mode._combo_insurance_armed is False

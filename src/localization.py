@@ -25233,17 +25233,17 @@ TRANSLATIONS = {
         'ko': '콤보 보험',
     },
     'card_combo_insurance_desc': {
-        'tr': 'Bir kez, satır temizleyemediğin hamlede combo bozulmaz.',
-        'en': 'Once, your combo is not broken on a move that fails to clear a line.',
-        'de': 'Einmalig: Dein Combo bricht bei einem Zug ohne Linienabschluss nicht ab.',
-        'fr': 'Une fois, ton combo ne casse pas si un coup ne complète pas de ligne.',
-        'es': 'Una vez, tu combo no se rompe en una jugada sin línea completada.',
-        'it': 'Una volta, la combo non si interrompe se la mossa non completa una riga.',
-        'pt': 'Uma vez, seu combo não quebra em uma jogada sem completar linha.',
-        'ru': 'Один раз: комбо не сбрасывается при ходе без очищенных линий.',
-        'ja': '1回だけ、ライン消去できなかった配置でもコンボが途切れない。',
-        'zh': '一次：当你下落却未清行时，连击不会断。',
-        'ko': '한 번, 줄을 지우지 못한 동작에서도 콤보가 끊기지 않는다.',
+        'tr': '{value} kez, satır temizleyemediğin hamlede combo bozulmaz.',
+        'en': '{value} times, your combo is not broken on a move that fails to clear a line.',
+        'de': '{value} Mal: Dein Combo bricht bei einem Zug ohne Linienabschluss nicht ab.',
+        'fr': '{value} fois, ton combo ne casse pas si un coup ne complète pas de ligne.',
+        'es': '{value} veces, tu combo no se rompe en una jugada sin línea completada.',
+        'it': '{value} volte, la combo non si interrompe se la mossa non completa una riga.',
+        'pt': '{value} vezes, seu combo não quebra em uma jogada sem completar linha.',
+        'ru': '{value} раза: комбо не сбрасывается при ходе без очищенных линий.',
+        'ja': '{value}回だけ、ライン消去できなかった配置でもコンボが途切れない。',
+        'zh': '{value} 次：当你下落却未清行时，连击不会断。',
+        'ko': '{value}번, 줄을 지우지 못한 동작에서도 콤보가 끊기지 않는다.',
     },
     # ==================== TERS BORÇ ====================
     'card_reverse_debt_title': {
@@ -25301,17 +25301,17 @@ TRANSLATIONS = {
     },
     # ==================== Combo Sigortası / Ters Borç / Delik Avcısı runtime mesajları ====================
     'mystery_msg_combo_insurance_ready': {
-        'tr': 'Combo Sigortası hazır! Bir hamlede combo bozulmayacak.',
-        'en': 'Combo Insurance armed! Your combo will survive one missed clear.',
-        'de': 'Combo-Versicherung aktiv! Dein Combo überlebt einen Zug ohne Linie.',
-        'fr': 'Assurance Combo armée ! Ton combo survivra à un coup sans ligne.',
-        'es': 'Seguro de Combo activado! Tu combo sobrevivirá a una jugada sin línea.',
-        'it': 'Assicurazione Combo pronta! La tua combo sopravvive a una mossa senza linea.',
-        'pt': 'Seguro de Combo armado! Seu combo sobreviverá a uma jogada sem linha.',
-        'ru': 'Страховка комбо готова! Один промах комбо переживёт.',
-        'ja': 'コンボ保険準備完了！1回のミス配置でもコンボは続く。',
-        'zh': '连击保险已就绪！一次未清行也不会断连击。',
-        'ko': '콤보 보험 준비 완료! 한 번의 실패에도 콤보가 유지된다.',
+        'tr': 'Combo Sigortası hazır! {charges} koruma hakkın var.',
+        'en': 'Combo Insurance armed! You have {charges} protections.',
+        'de': 'Combo-Versicherung aktiv! Du hast {charges} Schutzrechte.',
+        'fr': 'Assurance Combo armée ! Tu as {charges} protections.',
+        'es': 'Seguro de Combo activado! Tienes {charges} protecciones.',
+        'it': 'Assicurazione Combo pronta! Hai {charges} protezioni.',
+        'pt': 'Seguro de Combo armado! Você tem {charges} proteções.',
+        'ru': 'Страховка комбо готова! У тебя {charges} защит.',
+        'ja': 'コンボ保険準備完了！{charges}回分の保護がある。',
+        'zh': '连击保险已就绪！你有 {charges} 次保护。',
+        'ko': '콤보 보험 준비 완료! 보호 {charges}회가 있다.',
     },
     'mystery_msg_combo_insurance_triggered': {
         'tr': 'Combo Sigortası tetiklendi! Combo korundu.',
@@ -31680,4 +31680,5 @@ if 'localization' in sys.modules:
     sys.modules['src.localization'] = sys.modules['localization']
 elif 'src.localization' in sys.modules:
     sys.modules['localization'] = sys.modules['src.localization']
+
 

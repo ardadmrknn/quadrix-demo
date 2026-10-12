@@ -6715,9 +6715,11 @@ class MysteryMode(Game):
         self._freeze_drop_timer = 0.0  # Kalan dondurma süresi (saniye)
         self._freeze_drop_active = False  # Şu an bir parça donuk mu?
 
-        # Combo Sigortası: True ise bir sonraki "satır temizleyemeyen" lock'da
-        # combo lokal olarak korunur. Yalnızca previous_combo > 0 iken tüketilir.
-        self._combo_insurance_armed = False
+        # Combo Sigortası: kalan koruma hak sayacı (kademesine göre 2/3/4).
+        # Bir "satır temizleyemeyen" lock, combo bozuluyorsa YALNIZCA combo > 0
+        # iken bir hak tüketir. `_combo_insurance_armed` özelliği bu sayacın
+        # bool görünümüdür (hak > 0 <=> silahlı).
+        self._combo_insurance_charges = 0
 
         # Ters Borç: kart seçildiği anda en alt 2 satır silinir; sonraki N lock
         # için parça yere değer değmez ek lock delay olmadan kilitlenir.
@@ -6820,9 +6822,11 @@ class MysteryMode(Game):
         self._freeze_drop_timer = 0.0  # Kalan dondurma süresi (saniye)
         self._freeze_drop_active = False  # Şu an bir parça donuk mu?
 
-        # Combo Sigortası: True ise bir sonraki "satır temizleyemeyen" lock'da
-        # combo lokal olarak korunur. Yalnızca previous_combo > 0 iken tüketilir.
-        self._combo_insurance_armed = False
+        # Combo Sigortası: kalan koruma hak sayacı (kademesine göre 2/3/4).
+        # Bir "satır temizleyemeyen" lock, combo bozuluyorsa YALNIZCA combo > 0
+        # iken bir hak tüketir. `_combo_insurance_armed` özelliği bu sayacın
+        # bool görünümüdür (hak > 0 <=> silahlı).
+        self._combo_insurance_charges = 0
 
         # Ters Borç: kart seçildiği anda en alt 2 satır silinir; sonraki N lock
         # için parça yere değer değmez ek lock delay olmadan kilitlenir.
@@ -8423,19 +8427,23 @@ class MysteryMode(Game):
         # olarak combo'yu geri yükle ve sigortayı tüket. Sahte XP / sahte score
         # üretmez; yalnız board.combo'yu eski değerine geri yükler.
         try:
+            ci_charges = int(getattr(self, '_combo_insurance_charges', 0) or 0)
             if (
-                getattr(self, '_combo_insurance_armed', False)
+                ci_charges > 0
                 and int(player_lines or 0) <= 0
                 and int(previous_combo or 0) > 0
                 and int(getattr(self.board, 'combo', 0) or 0) <= 0
             ):
                 self.board.combo = int(previous_combo)
-                self._combo_insurance_armed = False
-                # Aktif görseli paneldekinden de düşür
-                try:
-                    self._active_effect_visuals.pop('combo_insurance', None)
-                except Exception:
-                    pass
+                # Her başarılı tetiklenme tam olarak bir hak tüketir; sayı sıfıra
+                # inince kart panelden ve görsel hafızadan kendiliğinden düşer.
+                self._combo_insurance_charges = ci_charges - 1
+                # Aktif görseli paneldekinden de düşür (yalnız son hak tüketildiyse)
+                if self._combo_insurance_charges <= 0:
+                    try:
+                        self._active_effect_visuals.pop('combo_insurance', None)
+                    except Exception:
+                        pass
                 try:
                     self._set_localized_card_message(
                         'mystery_msg_combo_insurance_triggered',
@@ -9542,7 +9550,7 @@ class MysteryMode(Game):
         self._freeze_drop_active = False
 
         # Combo Sigortası / Ters Borç / Delik Avcısı runtime state
-        self._combo_insurance_armed = False
+        self._combo_insurance_charges = 0
         self._reverse_debt_remaining = 0
         self._reverse_debt_total = 5
         self._hole_hunter_charges = 0
@@ -11149,6 +11157,31 @@ class MysteryMode(Game):
     }
 
     @property
+    def _combo_insurance_armed(self) -> bool:
+        """Combo Sigortası silahlı mı? (kalan hak > 0). Kalıcı özellik: eski
+        boolean API'nin okuma tarafı; gerçek kaynak
+        `_combo_insurance_charges` sayacıdır."""
+        try:
+            return int(getattr(self, '_combo_insurance_charges', 0) or 0) > 0
+        except Exception:
+            return False
+
+    @_combo_insurance_armed.setter
+    def _combo_insurance_armed(self, value: bool) -> None:
+        """Legacy bool ataması: True en az 1 hak, False 0 hak demektir.
+
+        Eski testler/sıfırlama yolları `= True/False` yazar; bunlar sayaca
+        tercüme edilir. Gerçek kademe hakları `_apply_card_effect` içinde
+        `card.value` ile `max(current, target)` üzerinden atanır.
+        """
+        if bool(value):
+            current = int(getattr(self, '_combo_insurance_charges', 0) or 0)
+            if current <= 0:
+                self._combo_insurance_charges = 1
+        else:
+            self._combo_insurance_charges = 0
+
+    @property
     def _time_capsule_charges(self) -> int:
         # Zaman Kapsülü slot kartı: kapsül kullanılabilir durumdayken 1 hak,
         # geri yükleme ile tüketilince 0. Slot sistemi bu sayaçtan okur.
@@ -12388,14 +12421,23 @@ class MysteryMode(Game):
 
         # === COMBO SİGORTASI ===
         elif effect_id == "combo_insurance":
-            # Tek kullanım sigorta: silahla. Aynı kart tekrar gelirse hak
-            # ekleme yapma — yalnız True kalsın (zaten silahlı).
-            self._combo_insurance_armed = True
+            # Kalan hak sayacı: kart kademesi hedef hak sayısını belirler
+            # (Rare 2 / Epic 3 / Legendary 4; metadata `value_range` ile aynı
+            # kaynaktan). Mevcut haklar asla sıfırlanmaz; aynı kartı tekrar
+            # seçmek sınırsız hak eklemez — ancak daha yüksek kademe mevcut
+            # hakları yükseltebilir (max semantiği).
+            target_charges = self._card_int_value(card, 2)
+            try:
+                current = int(getattr(self, '_combo_insurance_charges', 0) or 0)
+            except Exception:
+                current = 0
+            self._combo_insurance_charges = max(current, target_charges)
             try:
                 self._set_localized_card_message(
                     'mystery_msg_combo_insurance_ready',
                     1.4,
-                    'Combo Sigortası hazır! Bir hamlede combo bozulmayacak.',
+                    'Combo Sigortası hazır! Satır temizleyemediğin hamlede combo bozulmayacak.',
+                    charges=self._combo_insurance_charges,
                 )
             except Exception:
                 pass
