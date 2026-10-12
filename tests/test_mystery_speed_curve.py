@@ -101,3 +101,26 @@ def test_mystery_speed_uses_board_level_not_card_progression():
 
     mode.board.level = 15
     assert mode.get_current_speed() == 300
+
+def test_speed_burst_effect_floor_allows_faster_than_base_floor():
+    """speed_burst çarpanı temel eğri tabanının (100 ms) altına inebilir;
+    etki tabanı 16 ms'dir (v2 paritesi).
+
+    Eski davranış `max(MYSTERY_LEVEL_SPEED_MIN_MS, ...)` temel eğri
+    tabanına sıkıştırıyordu: L55+ seviyelerde taban zaten 100 ms olduğundan
+    kartın hız vaadi fiilen çalışmıyordu (yalnız satır-çarpanı etkisi
+    kalıyordu)."""
+    extra, MysteryMode = _import_mystery_symbols()
+    mode = _make_mode(MysteryMode, board_level=60)
+
+    # Demo taban eğrisi L55+ seviyelerde 100 ms yatayındadır.
+    base_speed = mode.get_current_speed()
+    assert base_speed == 100
+
+    # Hız Patlaması (legendary 1.75x): 100 / 1.75 = 57 ms.
+    mode._speed_burst_speed_mult = 1.75
+    assert mode.get_current_speed() == 57
+
+    # Aşırı çarpan bile 16 ms etki tabanının altına inmez (kare güvenliği).
+    mode._speed_burst_speed_mult = 100.0
+    assert mode.get_current_speed() == 16

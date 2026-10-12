@@ -108,6 +108,20 @@ MYSTERY_LEVEL_SPEED_ANCHORS = (
 )
 MYSTERY_LEVEL_SPEED_MIN_MS = LEVEL_SPEED_MIN_MS
 MYSTERY_LEVEL_SPEED_POST_L30_STEP_MS = 1
+# Süreli hız kartları temel eğrinin üzerine uygulanır (v2 paritesi). Demo
+# taban eğrisi 100 ms'de yataydur; bu etki tabanı olmazsa speed_burst
+# çarpanı L55+ seviyelerde interval'i 100 ms altına indiremez ve kartın
+# hız vaadi fiilen çalışmaz. 16 ms, 60 FPS'te bir kareden daha hızlı
+# hedeflerin accumulator ile güvenli biçimde işlenebileceği pratik
+# alt sınırdır. Temel eğri değişmez; yalnız kart etkisi bu tabanı kullanır.
+MYSTERY_LEVEL_SPEED_EFFECT_MIN_MS = 16
+# Hız çarpanı etkilerinin (speed_burst) tabanı: taban hız eğrisinin
+# (MYSTERY_LEVEL_SPEED_MIN_MS) ALTINA inme izni verir. Etki yokken taban
+# hız değişmez — taban eğri zaten >= MYSTERY_LEVEL_SPEED_MIN_MS'tir.
+# v2 paritesi: speed_burst daha önce 100 ms genel tabanına takılıp L55+
+# seviyelerde fiilen etkisizleşiyordu; bu taban kartın hız vaadini
+# gerçek kılar (etkisiz halde taban oyun hızı HİÇ değişmez).
+MYSTERY_LEVEL_SPEED_EFFECT_MIN_MS = 16
 
 
 def get_mystery_level_fall_speed_ms(level: int) -> int:
@@ -10781,7 +10795,9 @@ class MysteryMode(Game):
         if speed_burst_mult > 1.0:
             base_interval = int(base_interval / speed_burst_mult)
 
-        return max(MYSTERY_LEVEL_SPEED_MIN_MS, int(base_interval))
+        # Temel eğri tabanına (100 ms) değil etki tabanına (16 ms) sıkış:
+        # hız kartları taban oyuna değil kendi vaadine tabidir.
+        return max(MYSTERY_LEVEL_SPEED_EFFECT_MIN_MS, int(base_interval))
 
     def _draw_status_panel(self) -> None:
         status = self.card_manager.get_status()
