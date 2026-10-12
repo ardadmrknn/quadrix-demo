@@ -413,6 +413,14 @@ CARD_FREE_COMMON_FAMILIES: frozenset[str] = frozenset({
     'mirror_hold', 'row_shuffle', 'mini_bomb', 'reverse_debt', 'echo_drop',
 })
 
+# Seçim anında DÜŞEN PARÇA gerektiren anlık kartlar: parça yokken
+# seçimleri _select_card içinde reddedilir (deny sesi + uyarı; kart
+# harcanmaz, seçim ekranı açık kalır). Etki dallarındaki no-piece
+# guard'ları savunma derinliği olarak korunur.
+PIECE_REQUIRED_CARD_EFFECTS: frozenset[str] = frozenset({
+    'mini_bomb', 'laser_drill',
+})
+
 # Common rarity ile başlayan ama K2+ paralı geliştirilebilen aileler.
 # (hold_destroyer: K1 common ücretsiz, K2-K5 paralı.)
 CARD_COMMON_START_UPGRADE_FAMILIES: frozenset[str] = frozenset({'hold_destroyer'})
@@ -1629,10 +1637,15 @@ class MysteryCardManager:
                 },
             },
             {
+                # Patlama alanı ve kademe değerleri tek kaynaktan gelir:
+                # CARD_UPGRADE_FAMILIES['nova_burst'] extra.blast_size +
+                # value_range (3/4/5). Katalogda buraya yazılan değer
+                # family normalizasyonunca ezilir (ölü veri tuzağı) — bu yüzden
+                # family değerleriyle birebir tutulmalı.
                 "id": "nova_burst",
                 "title": "Nova Patlaması",
                 "base": 3,
-                "value_range": (2, 4),
+                "value_range": (3, 3),
                 "description": "Sonraki {value} parça yere düştüğünde etrafındaki bloklar patlar.",
                 "color": (255, 120, 196),
                 "bg": (46, 10, 30),
@@ -11041,6 +11054,24 @@ class MysteryMode(Game):
                 return
 
         self.card_ui.warning_message = ""
+        # Parça gerektiren anlık kartlar (Mini Bomba, Delici Parça) düşen
+        # parça yokken seçilemez: kart "hareketsiz" seçilirse harcanır ama
+        # etki kurulumu sessizce başarısız olurdu. Slot-dolu reddi ile aynı
+        # desen: deny sesi + uyarı, seçim ekranı açık kalır.
+        piece_required_effect = str(
+            card.get('_group_id') or card.get('id') or ''
+        ) if card else ''
+        if piece_required_effect in PIECE_REQUIRED_CARD_EFFECTS and not getattr(self, 'current_piece', None):
+            if self.sound_enabled:
+                try:
+                    self.sound.play_sound('deny')
+                except Exception:
+                    pass
+            self.card_ui.warning_message = t(
+                'cards_no_piece_warning',
+                'Şu anda düşen parça yok — bu kart bir parça gerektirir.',
+            )
+            return
         self._pending_card_choice_index = index
         self.card_ui.trigger_selection_feedback(index)
 
@@ -12043,13 +12074,23 @@ class MysteryMode(Game):
             effect_triggered = True
         elif effect_id == "laser_drill":
             # Aktif Delici Parça: oyun durmaz; parça kırmızı olur ve temas ettiği blokları yok eder
-            self._activate_drill_piece()
-            try:
-                self._remember_effect_visual('laser_drill', card)
-                self._sync_active_cards()
-            except Exception:
-                pass
-            effect_triggered = True
+            if getattr(self, 'current_piece', None) is not None:
+                self._activate_drill_piece()
+                try:
+                    self._remember_effect_visual('laser_drill', card)
+                    self._sync_active_cards()
+                except Exception:
+                    pass
+                effect_triggered = True
+            else:
+                # Parça yokken kartı hareketsiz bırakma (mini_bomb deseni):
+                # görsel efekt kuyruklanmaz. Seçim katmanı (_select_card) bu
+                # durumu normal akışta zaten reddeder; burası savunma derinliği.
+                try:
+                    self._set_localized_card_message('mystery_msg_laser_drill_no_piece', 0.9, 'Delici Parça: Parça yok!')
+                except Exception:
+                    pass
+                effect_triggered = False
         elif effect_id == "sniper_shot":
             # Keskin Nişancı: kart seçimi yalnızca charge verir; hedefleme
             # overlay'i otomatik açılmaz (seçim/slot atama overlay'i açıkken
@@ -12057,7 +12098,13 @@ class MysteryMode(Game):
             # bağlıdır: oyuncu kartın atandığı slot tuşuna (klavye 1-6 veya
             # gamepad slot_N aksiyonu) bastığında overlay açılır.
             charges = int(card.get('value', 3))  # Varsayılan 3 hak
-            self._sniper_charges = charges
+            # "Tekrar seçilince hakkı TAMAMLA" politikası (bomb_master/hammer
+            # vb. ile aynı): kalan hak, yeniden seçilen kademeden AZ değilse
+            # üzerine yazma — aksi halde leg (6) sonrası unc (3) seçimi hakkı
+            # sessizce düşürür.
+            current_charges = int(getattr(self, '_sniper_charges', 0) or 0)
+            if current_charges < charges:
+                self._sniper_charges = charges
             self._sniper_card = card
             # Overlay durumunu temiz tut; başka bir kart yanlışlıkla açık
             # bırakmış olsa bile sniper kartı seçimiyle overlay açılmamalı.
@@ -14120,9 +14167,10 @@ class MysteryMode(Game):
             except Exception:
                 delta = None
             self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
-        
-        if self.sound_enabled:
-            self.sound.play_sound("clear")
+            # Clear sesi yalnızca gerçekten satır temizlendiyse çalsın;
+            # temizlik olmadan "clear" duymak yanıltıcı geri bildirimdir.
+            if self.sound_enabled:
+                self.sound.play_sound("clear")
     
     def _spawn_card_particles(self, color: tuple[int, int, int]) -> None:
         if not self.effects_enabled:

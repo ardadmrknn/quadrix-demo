@@ -1326,3 +1326,140 @@ def test_speed_burst_catalog_multipliers_are_single_sourced_from_family():
         extra_payload = family_spec[card_id]['extra']['payload']
         assert extra_payload['speed_multiplier'] == speed_mult
         assert extra_payload['line_multiplier'] == line_mult
+
+
+# ---------------------------------------------------------------------------
+# Faz 2 denetim düzeltmeleri — regresyon sözleşmeleri (v2 portu)
+# ---------------------------------------------------------------------------
+
+def test_row_shuffle_plays_clear_sound_only_when_rows_cleared(monkeypatch):
+    """Clear sesi yalnızca gerçekten satır temizlendiyse çalar; boş
+    karıştırma sessiz kalır (koşulsuz play_sound('clear') kusuru)."""
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+    mode.board = Board(width=4, height=6)
+    mode.board_width = 4
+    monkeypatch.setattr(extra.random, 'shuffle', lambda seq: None)
+    played = []
+    mode.sound_enabled = True
+    mode.sound = SimpleNamespace(play_sound=played.append)
+    post_calls = []
+    mode._post_external_line_clear = (
+        lambda cleared, award_energy=False, score_delta=None, source='':
+            post_calls.append((cleared, score_delta, source))
+    )
+
+    # Dolu satır YOK (3/4 hücre): temizlik olmaz → clear sesi çalmamalı.
+    for column in range(3):
+        _row_shuffle_put_block(mode.board, column, 5, (200, 30, 30))
+    mode._shuffle_bottom_rows(1)
+    assert post_calls == []
+    assert played == []
+
+    # Dolu satır VAR: clear_lines temizler → clear sesi tam bir kez.
+    # (Bölge dışı bir blok bırakıyoruz: tahta tamamen boşalırsa perfect
+    # clear bonusu skora girer ve delta iddiası 100'den sapar.)
+    _row_shuffle_put_block(mode.board, 1, 2, (30, 200, 30))
+    _row_shuffle_put_block(mode.board, 3, 5, (200, 30, 30))
+    mode._shuffle_bottom_rows(1)
+    assert post_calls == [(1, 100, 'card')]
+    assert played == ['clear']
+
+
+def test_sniper_reselection_does_not_reduce_charges():
+    """Sniper yeniden seçimi "hakkı tamamla" politikasıyla çalışır:
+    kalan hak, seçilen kademeden AZ değilse üzerine yazılmaz."""
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+    mode.perk_manager = SimpleNamespace(
+        get_multiplier=lambda: 1.0,
+        notify_lines_cleared=lambda _lines, source='player': None,
+        activate=lambda key: None,
+    )
+
+    mode._apply_card_effect({'id': 'sniper_shot', 'value': 6, 'color': (200, 60, 60)})
+    assert int(mode._sniper_charges) == 6
+
+    # Düşük kademe yeniden seçimi: hak DÜŞMEMELİ (eski davranış 3'e inerdi).
+    mode._apply_card_effect({'id': 'sniper_shot', 'value': 3, 'color': (200, 60, 60)})
+    assert int(mode._sniper_charges) == 6
+
+    # Yüksek kademe seçimi: eksik hakkı tamamlamalı.
+    mode._apply_card_effect({'id': 'sniper_shot', 'value': 8, 'color': (200, 60, 60)})
+    assert int(mode._sniper_charges) == 8
+
+
+def test_piece_requiring_card_selection_denied_without_current_piece():
+    """Mini Bomba / Delici Parça düşen parça yokken seçilemez: deny sesi +
+    uyarı; kart harcanmaz, seçim ekranı açık kalır (slot-dolu reddi deseni)."""
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+    mode.card_ui = SimpleNamespace(
+        is_selection_animating=lambda: False,
+        is_flip_animating=lambda: False,
+        warning_message='',
+        trigger_selection_feedback=lambda _i: None,
+        clear_selection_feedback=lambda: None,
+    )
+    mode._pending_card_choice_index = None
+    played = []
+    mode.sound = SimpleNamespace(play_sound=played.append)
+    mode.sound_enabled = True
+    mode.card_manager.pending_choices = [
+        {'id': 'mini_bomb', 'title': 'Mini Bomba', 'value': 1, 'color': (255, 110, 80)},
+        {'id': 'gravity_well', 'title': 'Yerçekimi Kuyusu', 'value': 1, 'color': (120, 80, 200)},
+    ]
+
+    assert getattr(mode, 'current_piece', None) is None
+
+    # mini_bomb (parça gerektirir) → reddedilir, hiçbir şey tüketilmez.
+    mode._select_card(0)
+    assert mode._pending_card_choice_index is None
+    assert mode.card_ui.warning_message
+    assert played == ['deny']
+    assert mode.card_manager.pending_choices[0]['id'] == 'mini_bomb'
+
+    # Parça gerektirmeyen kart aynı yoldan sorunsuz seçilir.
+    mode.card_ui.warning_message = ''
+    mode._select_card(1)
+    assert mode._pending_card_choice_index == 1
+    assert not mode.card_ui.warning_message
+    assert played == ['deny']  # ikinci seçimde yeni deny yok
+
+
+def test_laser_drill_without_current_piece_does_not_trigger_visuals():
+    """laser_drill parçasız uygulandığında etki görsel kuyruklanmaz
+    (mini_bomb no-piece deseni; seçim katmanı normalde reddeder)."""
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+    spawned = []
+    mode._spawn_card_particles = lambda _color: spawned.append(_color)
+
+    assert getattr(mode, 'current_piece', None) is None
+    mode._apply_card_effect({'id': 'laser_drill', 'value': 1, 'color': (255, 50, 150)})
+
+    assert spawned == []
+
+
+def test_nova_burst_catalog_is_single_sourced_from_family():
+    """Nova Patlaması kademe değerleri tek kaynaktan (CARD_UPGRADE_FAMILIES)
+    okunur; katalog ham girdisi family ile birebir olmalı (ölü veri tuzağı)."""
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mgr = extra.MysteryCardManager.__new__(extra.MysteryCardManager)
+    catalog = mgr._build_catalog()
+    by_id = {str(c.get('id')): c for c in catalog}
+
+    expected = {
+        'nova_burst': ((3, 3), 3),
+        'nova_burst_epic': ((4, 4), 4),
+        'nova_burst_leg': ((5, 5), 5),
+    }
+    for card_id, (value_range, blast) in expected.items():
+        card = by_id[card_id]
+        assert card['value_range'] == value_range, (card_id, card['value_range'])
+        assert card['base'] == value_range[0], (card_id, card['base'])
+        assert int(card.get('blast_size', 0)) == blast, (card_id, card.get('blast_size'))
+
+    family_spec = {tier['id']: tier for tier in extra.CARD_UPGRADE_FAMILIES['nova_burst']}
+    for card_id, (_, blast) in expected.items():
+        assert family_spec[card_id]['extra']['blast_size'] == blast

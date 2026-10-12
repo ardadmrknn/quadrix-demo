@@ -392,3 +392,15 @@ def test_speed_burst_guide_description_matches_family_tuning():
 
     assert '1.3x-2x' in entries['tr']
     assert '1.3x-2x' in entries['en']
+
+
+def test_cards_no_piece_warning_and_laser_drill_no_piece_localized():
+    """Faz 2 deny akışının iki yeni anahtarı 11 dilde eksiksiz tanımlı."""
+    from localization import TRANSLATIONS
+
+    expected_languages = {'tr', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ja', 'zh', 'ko'}
+    for key in ('cards_no_piece_warning', 'mystery_msg_laser_drill_no_piece'):
+        entries = TRANSLATIONS[key]
+        assert expected_languages <= set(entries), (key, set(entries) - expected_languages)
+        for language, text in entries.items():
+            assert text and text.strip(), (key, language)
