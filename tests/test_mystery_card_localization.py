@@ -434,6 +434,10 @@ def test_gambler_feedback_strings_are_complete_and_have_no_emoji():
         'mystery_msg_gambler_jackpot',
         'mystery_msg_gambler_scramble',
         'mystery_msg_gambler_empty',
+        # Son Düşüş mesajları da emoji yasağı kapsamında (❄️ kaldırıldı;
+        # _expired görünür kümede olduğu için gerçek render riskiydi).
+        'mystery_msg_freeze_drop_used',
+        'mystery_msg_freeze_drop_expired',
     )
     for key in keys:
         entries = TRANSLATIONS[key]
