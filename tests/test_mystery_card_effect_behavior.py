@@ -1915,3 +1915,27 @@ def test_gambler_roll_at_half_uses_bad_result_and_animates_only_lower_region(mon
         for section in ('removed', 'added', 'changed'):
             assert all(cell['y'] >= 3 for cell in effect[section])
         assert all(move['from_y'] >= 3 and move['to_y'] >= 3 for move in effect['moves'])
+
+# ---------------------------------------------------------------------------
+# Faz 4 / C — tag-rarity tek-kaynak sözleşmesi (v2 portu)
+# ---------------------------------------------------------------------------
+
+def test_catalog_tag_matches_rarity_for_all_cards():
+    """Rozet etiketi (tag) enderlikle birebir tutarlı olmalı (tek kaynak:
+    _CARD_RARITY_TAGS). CARD_SINGLE_TIER_LOCKED döngüsü bayat katalog
+    etiketlerini senkronlar; aile kartları _annotate_tier üzerinden zaten
+    senkron. Eski sapmalar: block_magnet "Epic"->"Legendary",
+    laser_drill "Rare"->"Epic" (C grubu, denetim bulgusu)."""
+    extra, _, _, _ = _import_mystery_mode()
+    mgr = extra.MysteryCardManager.__new__(extra.MysteryCardManager)
+    catalog = mgr._build_catalog()
+    expected = {"common": "Common", "uncommon": "Uncommon", "rare": "Rare",
+                "epic": "Epic", "legendary": "Legendary"}
+    mismatches = [
+        (card.get("id"), card.get("rarity"), card.get("tag"))
+        for card in catalog
+        if str(card.get("rarity") or "") in expected
+        and card.get("tag") != expected[str(card.get("rarity"))]
+    ]
+    assert not mismatches, mismatches
+

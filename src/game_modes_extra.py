@@ -553,12 +553,16 @@ def _apply_card_family_metadata(cards: List[Dict]) -> List[Dict]:
                 result.append(clone)
                 by_id[variant_id] = clone
 
-    # Tek-kademe kilitli kartlar: enderlik senkronu + tier=1.
+    # Tek-kademe kilitli kartlar: enderlik senkronu + tier=1. Tag de aynı
+    # kaynaktan (_CARD_RARITY_TAGS) senkronlanır: katalog girdisinde bayat
+    # kalan etiket (ör. legendary kartta "Epic" rozeti) oyuncuya yanlış
+    # enderlik gösterirdi. Renk zaten `rarity` alanından gelir (tek kaynak).
     for family_id, rarity in CARD_SINGLE_TIER_LOCKED.items():
         card = by_id.get(family_id)
         if card is not None:
             card['rarity'] = rarity
             card['tier'] = 1
+            card['tag'] = _CARD_RARITY_TAGS.get(rarity, card.get('tag', 'Bonus'))
 
     return result
 
@@ -1615,7 +1619,7 @@ class MysteryCardManager:
                 "color": (255, 140, 100),
                 "bg": (48, 20, 12),
                 "icon": "M",
-                "tag": "Epic",
+                "tag": "Legendary",
                 "rarity": "legendary",
                 "weight": 12,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_block_magnet.png"),
@@ -2018,8 +2022,8 @@ class MysteryCardManager:
                 "color": (255, 50, 150),
                 "bg": (40, 5, 25),
                 "icon": "🔥",
-                "tag": "Rare",
-                "rarity": "rare",
+                "tag": "Epic",
+                "rarity": "epic",
                 "weight": 25,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_laser_drill.png"),
                 "style": {
