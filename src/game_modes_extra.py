@@ -66,6 +66,7 @@ except Exception:
 
 from constants import (
     BLACK,
+    COLORS,
     BOARD_WIDTH,
     BOARD_HEIGHT,
     FAST_FALL_SPEED,
@@ -11588,6 +11589,65 @@ class MysteryMode(Game):
         agg = sum(heights)
         return holes, bump, agg, full_lines
 
+    def _shuffle_gambler_bottom_half(self) -> int:
+        """Alt yarıyı üst satırlara ve aktif parçaya dokunmadan yeniden kur.
+
+        Mevcut bloklar (renk/doku/gold/owner) korunarak toplanır, alt yarı
+        temizlenir ve bloklar + havuzdan yeni renkler satır başına (width-1)
+        yoğunlukta yeniden dağıtılır — hazır dolu satır bırakılmaz.
+        """
+        board = self.board
+        lower_start = board.height - board.height // 2
+        active_piece = getattr(self, 'current_piece', None)
+        get_active_cells = getattr(active_piece, 'get_cells', None)
+        try:
+            active_cells = set(get_active_cells()) if callable(get_active_cells) else set()
+        except Exception:
+            active_cells = set()
+        existing_blocks = [
+            (
+                board.grid[row][column],
+                board.texture_grid[row][column],
+                board.gold[row][column],
+                board.owners[row][column],
+            )
+            for row in range(lower_start, board.height)
+            for column in range(board.width)
+            if board.occupancy[row][column]
+        ]
+        color_pool = [block[0] for block in existing_blocks if block[0] != BLACK] or COLORS
+        target_cells = []
+        for row in range(lower_start, board.height):
+            row_cells = [
+                (column, row)
+                for column in range(board.width)
+                if (column, row) not in active_cells
+            ]
+            random.shuffle(row_cells)
+            target_cells.extend(row_cells[:max(0, board.width - 1)])
+        random.shuffle(target_cells)
+        random.shuffle(existing_blocks)
+        target_blocks = existing_blocks[:len(target_cells)]
+        target_blocks.extend(
+            (random.choice(color_pool), None, False, None)
+            for _missing_block_index in range(len(target_cells) - len(target_blocks))
+        )
+
+        for row in range(lower_start, board.height):
+            for column in range(board.width):
+                board.grid[row][column] = BLACK
+                board.occupancy[row][column] = False
+                board.texture_grid[row][column] = None
+                board.gold[row][column] = False
+                board.owners[row][column] = None
+        for (column, row), (color, texture, gold, owner) in zip(target_cells, target_blocks):
+            board.grid[row][column] = color
+            board.occupancy[row][column] = True
+            board.texture_grid[row][column] = texture
+            board.gold[row][column] = gold
+            board.owners[row][column] = owner
+        return len(target_cells)
+
     def _apply_block_magnet(self) -> None:
         """Blok Manyetigi: Tum bosluklar kapanir, bloklar sola kayar."""
         try:
@@ -12240,107 +12300,44 @@ class MysteryMode(Game):
         # === KUMARBAZIN ZARI ===
         elif effect_id == "gambler_dice":
             import random as _rng
-            roll = _rng.random()
-            if roll < 0.5:
-                # Tüm tahtayı temizle
-                total_cleared = 0
-                try:
-                    for y in range(self.board.height):
-                        for x in range(self.board.width):
-                            if self.board.occupancy[y][x]:
-                                total_cleared += 1
-                            self.board.grid[y][x] = BLACK
-                            self.board.occupancy[y][x] = False
-                            self.board.texture_grid[y][x] = None
-                            self.board.gold[y][x] = False
-                            self.board.owners[y][x] = None
-                except Exception:
-                    pass
-                try:
-                    bonus = total_cleared * 50
-                    self.board.score += bonus
-                    self._set_localized_card_message('mystery_msg_gambler_jackpot', 2.0, '🎲 JACKPOT! Tum tahta temizlendi! +{bonus} puan', bonus=bonus)
-                except Exception:
-                    pass
-            else:
-                # Kötü şans: açıklamadaki gibi tahtanın yaklaşık yarısını
-                # rastgele bloklarla doldur (üst 5 satırı ani top-out için koru).
-                try:
-                    playable_top = min(5, self.board.height)
-                    playable_cells = [
-                        (x, y)
-                        for y in range(playable_top, self.board.height)
-                        for x in range(self.board.width)
-                    ]
-                    empty_cells = [
-                        (x, y)
-                        for x, y in playable_cells
-                        if not bool(self.board.occupancy[y][x])
-                    ]
-                    current_filled = len(playable_cells) - len(empty_cells)
-                    row_counts = {
-                        y: sum(1 for x in range(self.board.width) if bool(self.board.occupancy[y][x]))
-                        for y in range(playable_top, self.board.height)
-                    }
-                    max_safe_capacity = sum(max(0, self.board.width - 1 - count) for count in row_counts.values())
-                    target_filled = min(
-                        len(playable_cells),
-                        max(1, (self.board.width * self.board.height) // 2),
-                    )
-                    to_place = max(0, min(len(empty_cells), target_filled - current_filled, max_safe_capacity))
-
-                    if to_place > 0:
-                        existing_colors = [
-                            self.board.grid[y][x]
-                            for y in range(self.board.height)
-                            for x in range(self.board.width)
-                            if bool(self.board.occupancy[y][x]) and self.board.grid[y][x] != BLACK
-                        ]
-                        fallback_colors = [
-                            (0, 255, 255),
-                            (255, 255, 0),
-                            (160, 80, 255),
-                            (0, 255, 120),
-                            (255, 80, 80),
-                            (80, 160, 255),
-                            (255, 160, 40),
-                        ]
-                        color_pool = existing_colors or fallback_colors
-                        _rng.shuffle(empty_cells)
-                        placed = 0
-                        for x, y in empty_cells:
-                            if placed >= to_place:
-                                break
-                            if row_counts.get(y, 0) >= self.board.width - 1:
-                                continue
-                            self.board.grid[y][x] = _rng.choice(color_pool)
-                            self.board.occupancy[y][x] = True
-                            self.board.texture_grid[y][x] = None
-                            self.board.gold[y][x] = False
-                            try:
-                                self.board.owners[y][x] = None
-                            except Exception:
-                                pass
-                            placed += 1
-                            row_counts[y] = row_counts.get(y, 0) + 1
-                        # Avoid leaving ready-made full rows that the next normal
-                        # lock would incorrectly collect as player-created clears.
-                        for y in range(playable_top, self.board.height):
-                            if all(bool(self.board.occupancy[y][x]) for x in range(self.board.width)):
-                                x = _rng.randrange(self.board.width)
+            with self._animated_card_board_change('gambler_dice'):
+                roll = _rng.random()
+                if roll < 0.5:
+                    # Tüm tahtayı temizle
+                    total_cleared = 0
+                    try:
+                        for y in range(self.board.height):
+                            for x in range(self.board.width):
+                                if self.board.occupancy[y][x]:
+                                    total_cleared += 1
                                 self.board.grid[y][x] = BLACK
                                 self.board.occupancy[y][x] = False
                                 self.board.texture_grid[y][x] = None
                                 self.board.gold[y][x] = False
-                                try:
-                                    self.board.owners[y][x] = None
-                                except Exception:
-                                    pass
-                        self._set_localized_card_message('mystery_msg_gambler_scramble', 2.0, '🎲 Sansina kusura bakma! {placed} blok eklendi!', placed=placed)
+                                self.board.owners[y][x] = None
+                    except Exception:
+                        pass
+                    try:
+                        bonus = total_cleared * 50
+                        self.board.score += bonus
+                        self._set_localized_card_message('mystery_msg_gambler_jackpot', 2.0, 'JACKPOT! Tum tahta temizlendi! +{bonus} puan', bonus=bonus)
+                    except Exception:
+                        pass
+                else:
+                    placed = self._shuffle_gambler_bottom_half()
+                    if placed > 0:
+                        self._set_localized_card_message(
+                            'mystery_msg_gambler_scramble',
+                            2.0,
+                            'Alt yarı yeniden dağıtıldı: {placed} blok. Üst yarı korunuyor.',
+                            placed=placed,
+                        )
                     else:
-                        self._set_localized_card_message('mystery_msg_gambler_empty', 2.0, '🎲 Tahta zaten yari dolu, zar daha fazla blok ekleyemedi!')
-                except Exception:
-                    pass
+                        self._set_localized_card_message(
+                            'mystery_msg_gambler_empty',
+                            2.0,
+                            'Alt yarıda doldurulabilecek güvenli hücre yok.',
+                        )
             effect_triggered = True
 
         # === RENK TEMİZLEME ===

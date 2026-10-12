@@ -471,27 +471,6 @@ def test_echo_drop_keeps_charge_until_it_can_fill_a_gap():
     assert mode._echo_drop_charges == 1
 
 
-def test_gambler_bad_roll_fills_empty_board_to_half_without_touching_top_rows(monkeypatch):
-    extra, _, MysteryMode, Board = _import_mystery_mode()
-    mode = MysteryMode.__new__(MysteryMode)
-    mode.board = Board()
-    mode.sound_enabled = False
-    mode.effects_enabled = False
-    mode.card_manager = SimpleNamespace(used_card_ids=set())
-    mode._set_localized_card_message = lambda *_args, **_kwargs: ''
-
-    monkeypatch.setattr(extra.random, 'random', lambda: 0.75)
-
-    mode._apply_card_effect({'id': 'gambler_dice', 'value': 1, 'color': (255, 80, 80)})
-
-    occupied = sum(1 for row in mode.board.occupancy for cell in row if cell)
-    top_occupied = sum(1 for row in mode.board.occupancy[:5] for cell in row if cell)
-
-    assert occupied == (mode.board.width * mode.board.height) // 2
-    assert top_occupied == 0
-    assert not any(all(row) for row in mode.board.occupancy)
-
-
 def test_block_magnet_keeps_empty_cells_canonical_black_after_shift():
     extra, _, MysteryMode, Board = _import_mystery_mode()
     mode = MysteryMode.__new__(MysteryMode)
@@ -1742,3 +1721,197 @@ def test_combo_insurance_armed_property_reads_charges():
     mode._combo_insurance_armed = False
     assert mode._combo_insurance_charges == 0
     assert mode._combo_insurance_armed is False
+
+
+# ---------------------------------------------------------------------------
+# Faz 3 / D3 — gambler_dice v2 implementasyonu: alt yarı yeniden dağıtma
+# ---------------------------------------------------------------------------
+
+def _minimal_gambler_mode(MysteryMode, Board, *, width=10, height=20, effects_enabled=False):
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=effects_enabled)
+    mode.board = Board(width=width, height=height)
+    mode.board_width = width
+    mode.current_piece = None
+    return mode
+
+
+def _gambler_board_region_state(board, start_row, end_row):
+    return [
+        [
+            (
+                board.occupancy[row][column],
+                board.grid[row][column],
+                board.texture_grid[row][column],
+                board.gold[row][column],
+                board.owners[row][column],
+            )
+            for column in range(board.width)
+        ]
+        for row in range(start_row, end_row)
+    ]
+
+
+def _put_gambler_block(board, column, row, color, *, texture=None, gold=False, owner=None):
+    board.occupancy[row][column] = True
+    board.grid[row][column] = color
+    board.texture_grid[row][column] = texture
+    board.gold[row][column] = gold
+    board.owners[row][column] = owner
+
+
+@pytest.mark.parametrize(('width', 'height'), [(10, 20), (15, 20), (10, 21), (4, 6), (4, 1), (1, 20)])
+def test_gambler_bad_roll_fills_only_bottom_half_without_full_rows(monkeypatch, width, height):
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_gambler_mode(MysteryMode, Board, width=width, height=height)
+    monkeypatch.setattr(extra.random, 'random', lambda: 0.75)
+
+    mode._apply_card_effect({'id': 'gambler_dice', 'value': 1, 'color': (255, 80, 80)})
+
+    lower_start = height - height // 2
+    assert not any(any(row) for row in mode.board.occupancy[:lower_start])
+    assert all(sum(row) == width - 1 for row in mode.board.occupancy[lower_start:])
+    assert not any(all(row) for row in mode.board.occupancy)
+    for row in range(height):
+        for column in range(width):
+            assert mode.board.texture_grid[row][column] is None
+            assert mode.board.gold[row][column] is False
+            assert mode.board.owners[row][column] is None
+            if not mode.board.occupancy[row][column]:
+                assert mode.board.grid[row][column] == extra.BLACK
+    assert mode.board.score == 0
+    assert mode.board.lines_cleared == 0
+    assert mode.pending_level_ups == 0
+    assert mode.card_manager.progress == 0
+
+
+@pytest.mark.parametrize('seed', range(8))
+@pytest.mark.parametrize('lower_count', [0, 40, 90, 99, 100])
+def test_gambler_bad_roll_rebuilds_lower_half_even_when_stack_is_above_midpoint(monkeypatch, seed, lower_count):
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_gambler_mode(MysteryMode, Board)
+    lower_start = mode.board.height - mode.board.height // 2
+    _put_gambler_block(mode.board, 0, lower_start - 1, (30, 140, 210), texture=object(), gold=True, owner='T')
+    for column in range(mode.board.width):
+        _put_gambler_block(mode.board, column, lower_start - 2, (column + 60, 130, 200), owner='I')
+    lower_cells = [(column, row) for row in range(lower_start, mode.board.height) for column in range(mode.board.width)]
+    for column, row in lower_cells[:lower_count]:
+        _put_gambler_block(mode.board, column, row, (150, 80, 220))
+    upper_before = _gambler_board_region_state(mode.board, 0, lower_start)
+    generator = extra.random.Random(seed)
+    monkeypatch.setattr(extra.random, 'random', lambda: 0.75)
+    monkeypatch.setattr(extra.random, 'shuffle', generator.shuffle)
+    monkeypatch.setattr(extra.random, 'choice', generator.choice)
+    monkeypatch.setattr(mode.board, 'clear_lines', lambda *args, **kwargs: pytest.fail('Card must not clear or shift rows'))
+    monkeypatch.setattr(mode.board, 'apply_gravity', lambda *args, **kwargs: pytest.fail('Card must not move upper blocks'))
+
+    mode._apply_card_effect({'id': 'gambler_dice', 'value': 1, 'color': (255, 80, 80)})
+
+    assert _gambler_board_region_state(mode.board, 0, lower_start) == upper_before
+    assert all(sum(row) == mode.board.width - 1 for row in mode.board.occupancy[lower_start:])
+    assert not any(all(row) for row in mode.board.occupancy[lower_start:])
+    assert mode.board.score == 0
+    assert mode.board.lines_cleared == 0
+    assert mode.board.level == 1
+    assert mode.card_manager.progress == 0
+    assert mode.pending_level_ups == 0
+
+
+def test_gambler_bad_roll_shuffles_existing_lower_blocks_with_their_metadata(monkeypatch):
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_gambler_mode(MysteryMode, Board)
+    lower_start = mode.board.height - mode.board.height // 2
+    lower_textures = (object(), object())
+    _put_gambler_block(mode.board, 0, lower_start, (80, 120, 255), texture=lower_textures[0], gold=True, owner='T')
+    _put_gambler_block(mode.board, 0, mode.board.height - 1, (255, 120, 80), texture=lower_textures[1], owner='I')
+    lower_before = _gambler_board_region_state(mode.board, lower_start, mode.board.height)
+    expected_blocks = [cell for row in lower_before for cell in row if cell[0]]
+    monkeypatch.setattr(extra.random, 'random', lambda: 0.75)
+    monkeypatch.setattr(extra.random, 'shuffle', lambda values: values.reverse())
+
+    mode._apply_card_effect({'id': 'gambler_dice', 'value': 1, 'color': (255, 80, 80)})
+
+    lower_after = _gambler_board_region_state(mode.board, lower_start, mode.board.height)
+    actual_blocks = [cell for row in lower_after for cell in row if cell[0]]
+    assert lower_after != lower_before
+    for expected in expected_blocks:
+        assert actual_blocks.count(expected) == 1
+    assert all(
+        mode.board.texture_grid[row][0] is None
+        for row in (lower_start, mode.board.height - 1)
+    )
+    for row in range(lower_start, mode.board.height):
+        for column in range(mode.board.width):
+            if not mode.board.occupancy[row][column]:
+                assert mode.board.grid[row][column] == extra.BLACK
+                assert mode.board.texture_grid[row][column] is None
+                assert mode.board.gold[row][column] is False
+                assert mode.board.owners[row][column] is None
+
+
+@pytest.mark.parametrize('active_cells', [
+    [(4, 1), (5, 1), (4, 2), (5, 2)],
+    [(0, 9), (0, 10), (1, 10), (2, 10)],
+    [(3, 15), (4, 15), (3, 16), (4, 16)],
+])
+def test_gambler_bad_roll_does_not_place_blocks_on_or_reposition_active_piece(monkeypatch, active_cells):
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_gambler_mode(MysteryMode, Board)
+    active_piece = SimpleNamespace(x=3, y=9, get_cells=lambda: list(active_cells))
+    mode.current_piece = active_piece
+    monkeypatch.setattr(extra.random, 'random', lambda: 0.75)
+
+    mode._apply_card_effect({'id': 'gambler_dice', 'value': 1, 'color': (255, 80, 80)})
+
+    assert mode.current_piece is active_piece
+    assert (active_piece.x, active_piece.y) == (3, 9)
+    assert active_piece.get_cells() == active_cells
+    assert all(not mode.board.occupancy[row][column] for column, row in active_cells)
+    lower_start = mode.board.height - mode.board.height // 2
+    assert not any(any(row) for row in mode.board.occupancy[:lower_start])
+    for row in range(lower_start, mode.board.height):
+        reserved = sum(1 for column, active_row in active_cells if active_row == row)
+        assert sum(mode.board.occupancy[row]) == min(mode.board.width - 1, mode.board.width - reserved)
+
+
+@pytest.mark.parametrize('roll', [0.0, 0.499999])
+def test_gambler_good_roll_still_clears_the_whole_board_with_bonus(monkeypatch, roll):
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_gambler_mode(MysteryMode, Board)
+    active_piece = SimpleNamespace(x=3, y=1, get_cells=lambda: [(3, 1)])
+    mode.current_piece = active_piece
+    mode.board.score = 125
+    for column, row in [(2, 0), (3, 9), (4, 10), (5, 19)]:
+        _put_gambler_block(mode.board, column, row, (150, 80, 220), texture=object(), gold=True, owner='T')
+    monkeypatch.setattr(extra.random, 'random', lambda: roll)
+
+    mode._apply_card_effect({'id': 'gambler_dice', 'value': 1, 'color': (255, 80, 80)})
+
+    assert not any(any(row) for row in mode.board.occupancy)
+    assert all(color == extra.BLACK for row in mode.board.grid for color in row)
+    assert all(texture is None for row in mode.board.texture_grid for texture in row)
+    assert not any(any(row) for row in mode.board.gold)
+    assert all(owner is None for row in mode.board.owners for owner in row)
+    assert mode.board.score == 325
+    assert mode.board.lines_cleared == 0
+    assert mode.pending_level_ups == 0
+    assert mode.current_piece is active_piece
+
+
+def test_gambler_roll_at_half_uses_bad_result_and_animates_only_lower_region(monkeypatch):
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_gambler_mode(MysteryMode, Board, width=4, height=6, effects_enabled=True)
+    _put_gambler_block(mode.board, 0, 2, (80, 120, 255))
+    _put_gambler_block(mode.board, 0, 5, (255, 120, 80))
+    upper_before = _gambler_board_region_state(mode.board, 0, 3)
+    monkeypatch.setattr(extra.random, 'random', lambda: 0.5)
+
+    mode._apply_card_effect({'id': 'gambler_dice', 'value': 1, 'color': (255, 80, 80)})
+
+    assert _gambler_board_region_state(mode.board, 0, 3) == upper_before
+    assert all(sum(row) == 3 for row in mode.board.occupancy[3:])
+    assert mode._card_board_effects
+    for effect in mode._card_board_effects:
+        assert effect['id'] == 'gambler_dice'
+        for section in ('removed', 'added', 'changed'):
+            assert all(cell['y'] >= 3 for cell in effect[section])
+        assert all(move['from_y'] >= 3 and move['to_y'] >= 3 for move in effect['moves'])

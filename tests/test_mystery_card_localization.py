@@ -419,3 +419,28 @@ def test_perk_synergy_description_uses_synergy_percent_placeholder_in_all_langua
         # Ham oran (0.10) değil; yüzde gösterimi (10) yerleştirilir.
         assert '{synergy_rate}' not in text, (language, text)
         assert '10' not in text.replace('{synergy_percent}', ''), (language, text)
+
+
+def test_gambler_feedback_strings_are_complete_and_have_no_emoji():
+    """Gambler geri bildirim anahtarları 11 dilde eksiksiz ve EMOJİSİZDİR.
+
+    Pygame fontları renkli emoji gliflerini render edemez (kutucuk/çökme);
+    v2'de yasaklayan sözleşmenin demo portu (v2 paritesi)."""
+    from localization import TRANSLATIONS
+
+    expected_languages = {'tr', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ja', 'zh', 'ko'}
+    keys = (
+        'card_gambler_dice_desc',
+        'mystery_msg_gambler_jackpot',
+        'mystery_msg_gambler_scramble',
+        'mystery_msg_gambler_empty',
+    )
+    for key in keys:
+        entries = TRANSLATIONS[key]
+        assert expected_languages <= set(entries), (key, set(entries) - expected_languages)
+        for language, text in entries.items():
+            assert text, (key, language)
+            for character in text:
+                assert not (0x1F000 <= ord(character) <= 0x1FAFF), (
+                    key, language, character, hex(ord(character))
+                )
