@@ -1572,12 +1572,16 @@ class MysteryCardManager:
         return t('card_hint_random')
 
     def _build_catalog(self) -> List[Dict]:
-        # === NADİRLİK SİSTEMİ (Güncellenmiş) ===
-        # common=50-60    -> Basit, anında etkili, sık çıkan
-        # uncommon=40-50  -> Orta güçte, koşullu etkili
-        # rare=25-35      -> Güçlü, stratejik önemli
-        # epic=12-20      -> Çok güçlü, oyun değiştirici
-        # legendary=5-10  -> En güçlü, nadiren çıkar
+        # === NADİRLİK SİSTEMİ (gerçek çekme zinciri) ===
+        # 1) RARITY_WEIGHT_ANCHORS: rarity bucket'ı board.level'e göre
+        #    enterpolasyonla seçilir (katalog kart adedinden bağımsız).
+        # 2) Aile seçimi: offer_weight (yalnız birkaç aile) × tier-öncelik
+        #    çarpanı × featured çarpanı.
+        # 3) Varyant: bucket içi seçim.
+        # NOT (2026-10-12): katalogdaki eski `weight` alanı (8-60) hiçbir
+        # çekme kodu tarafından okunmuyordu (ölü veri) ve önceki
+        # "common=50-60 ... legendary=5-10" yorumu canlı bir alan ima
+        # ederek yanıltıyordu — denetimle kaldırıldı.
         # 
         # === KART TÜRLERİ ===
         # single_use=True  -> Anında etki, bir kez kullanılır
@@ -1599,7 +1603,6 @@ class MysteryCardManager:
                 "icon": "🧹",
                 "tag": "Uncommon",
                 "rarity": "uncommon",
-                "weight": 60,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_clean_sweep.png"),
                 "style": {
                     "gradient": [(32, 90, 140), (10, 24, 38)],
@@ -1621,7 +1624,6 @@ class MysteryCardManager:
                 "icon": "M",
                 "tag": "Legendary",
                 "rarity": "legendary",
-                "weight": 12,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_block_magnet.png"),
                 "style": {
                     "gradient": [(255, 120, 80), (100, 30, 20)],
@@ -1643,7 +1645,6 @@ class MysteryCardManager:
                 "icon": "✂️",
                 "tag": "Uncommon",
                 "rarity": "uncommon",
-                "weight": 55,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_peak_cutter.png"),
                 "single_use": True,
                 "style": {
@@ -1670,7 +1671,6 @@ class MysteryCardManager:
                 "icon": "💥",
                 "tag": "Epic",
                 "rarity": "epic",
-                "weight": 18,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_nova_burst.png"),
                 "style": {
                     "gradient": [(140, 12, 60), (44, 10, 28)],
@@ -1692,7 +1692,6 @@ class MysteryCardManager:
                 "icon": "B",
                 "tag": "Common",
                 "rarity": "common",
-                "weight": 40,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_mini_bomb.png"),
                 "style": {"border": (255, 170, 120)},
                 "single_use": True,
@@ -1708,7 +1707,6 @@ class MysteryCardManager:
                 "icon": "MH",
                 "tag": "Common",
                 "rarity": "common",
-                "weight": 42,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_mirror_block.png"),
                 "style": {
                     "gradient": [(160, 190, 255), (38, 50, 120)],
@@ -1731,7 +1729,6 @@ class MysteryCardManager:
                 "icon": "ED",
                 "tag": "Common",
                 "rarity": "common",
-                "weight": 44,
                 "offer_weight": 1.65,
                 "offer_weight_until_level": 8,
                 "payload": {"echo_cells": 2},
@@ -1763,7 +1760,6 @@ class MysteryCardManager:
                 "icon": "⚡",
                 "tag": "Rare",
                 "rarity": "rare",
-                "weight": 35,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_speed_burst.png"),
                 "style": {
                     "gradient": [(255, 210, 100), (190, 120, 30)],
@@ -1786,7 +1782,6 @@ class MysteryCardManager:
                 "icon": "⚡",
                 "tag": "Epic",
                 "rarity": "epic",
-                "weight": 20,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_speed_burst.png"),
                 "style": {
                     "gradient": [(255, 190, 60), (170, 90, 15)],
@@ -1809,7 +1804,6 @@ class MysteryCardManager:
                 "icon": "⚡",
                 "tag": "Legendary",
                 "rarity": "legendary",
-                "weight": 8,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_speed_burst.png"),
                 "style": {
                     "gradient": [(255, 170, 40), (160, 80, 10)],
@@ -1831,7 +1825,6 @@ class MysteryCardManager:
                 "icon": "👻",
                 "tag": "Epic",
                 "rarity": "epic",
-                "weight": 25,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_quantum_tunnel.png"),
                 "style": {"border": (160, 180, 255)},
                 "limited": True,
@@ -1848,7 +1841,6 @@ class MysteryCardManager:
                 "icon": "H",
                 "tag": "Rare",
                 "rarity": "rare",
-                "weight": 35,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_hammer.png"),
                 "style": {"border": (255, 236, 190)},
                 "limited": True,
@@ -1866,7 +1858,6 @@ class MysteryCardManager:
                 "icon": "💣",
                 "tag": "Rare",
                 "rarity": "rare",
-                "weight": 30,
                 "limited": True,
                 "single_use": True,
                 "style": {"border": (255, 120, 80)},
@@ -1883,7 +1874,6 @@ class MysteryCardManager:
                 "icon": "RW",
                 "tag": "Rare",
                 "rarity": "rare",
-                "weight": 18,
                 "limited": True,
                 "style": {"border": (255, 150, 255)},
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_rewind.png"),
@@ -1899,7 +1889,6 @@ class MysteryCardManager:
                 "icon": "🔄",
                 "tag": "Epic",
                 "rarity": "epic",
-                "weight": 18,
                 "limited": True,
                 "style": {"border": (220, 140, 255)},
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_phase.png"),
@@ -1915,7 +1904,6 @@ class MysteryCardManager:
                 "icon": "🔗",
                 "tag": "Rare",
                 "rarity": "rare",
-                "weight": 25,
                 "persistent": True,
                 "style": {"border": (255, 200, 120)},
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_synergy.png"),
@@ -1931,7 +1919,6 @@ class MysteryCardManager:
                 "icon": "🎒",
                 "tag": "Legendary",
                 "rarity": "legendary",
-                "weight": 18,
                 "persistent": True,
                 "style": {"border": (180, 180, 255)},
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_second_pocket.png"),
@@ -1947,7 +1934,6 @@ class MysteryCardManager:
                 "icon": "⬌",
                 "tag": "Legendary",
                 "rarity": "legendary",
-                "weight": 8,
                 "persistent": True,
                 "style": {
                     "gradient": [(255, 190, 60), (120, 60, 10)],
@@ -1969,7 +1955,6 @@ class MysteryCardManager:
                 "icon": "🌀",
                 "tag": "Epic",
                 "rarity": "epic",
-                "weight": 18,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_gravity_well.png"),
                 "style": {"border": (140, 180, 255)},
                 "single_use": True,
@@ -1985,7 +1970,6 @@ class MysteryCardManager:
                 "icon": "👻",
                 "tag": "Legendary",
                 "rarity": "legendary",
-                "weight": 12,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_ghost_echo.png"),
                 "single_use": True,
                 "style": {"border": (220, 220, 255)},
@@ -2002,7 +1986,6 @@ class MysteryCardManager:
                 "icon": "🎲",
                 "tag": "Common",
                 "rarity": "common",
-                "weight": 55,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_row_shuffle.png"),
                 "style": {
                     "gradient": [(80, 170, 240), (18, 44, 88)],
@@ -2024,7 +2007,6 @@ class MysteryCardManager:
                 "icon": "🔥",
                 "tag": "Epic",
                 "rarity": "epic",
-                "weight": 25,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_laser_drill.png"),
                 "style": {
                     "gradient": [(255, 30, 120), (100, 10, 50)],
@@ -2046,7 +2028,6 @@ class MysteryCardManager:
                 "icon": "N",
                 "tag": "Uncommon",
                 "rarity": "uncommon",
-                "weight": 35,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_sniper_shot.png"),
                 "style": {
                     "gradient": [(180, 30, 30), (60, 10, 10)],
@@ -2069,7 +2050,6 @@ class MysteryCardManager:
                 "icon": "T",
                 "tag": "Legendary",
                 "rarity": "legendary",
-                "weight": 8,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_time_capsule.png"),
                 "style": {
                     "gradient": [(80, 200, 160), (20, 60, 50)],
@@ -2092,7 +2072,6 @@ class MysteryCardManager:
                 "icon": "F",
                 "tag": "Epic",
                 "rarity": "epic",
-                "weight": 15,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_future_changer.png"),
                 "style": {
                     "gradient": [(140, 60, 200), (40, 20, 80)],
@@ -2115,7 +2094,6 @@ class MysteryCardManager:
                 "icon": "W",
                 "tag": "Legendary",
                 "rarity": "legendary",
-                "weight": 8,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_block_workshop.png"),
                 "style": {
                     "gradient": [(255, 180, 60), (120, 60, 10)],
@@ -2137,7 +2115,6 @@ class MysteryCardManager:
                 "icon": "D",
                 "tag": "Legendary",
                 "rarity": "legendary",
-                "weight": 8,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_gambler_dice.png"),
                 "style": {
                     "gradient": [(220, 30, 30), (80, 10, 10)],
@@ -2159,7 +2136,6 @@ class MysteryCardManager:
                 "icon": "C",
                 "tag": "Epic",
                 "rarity": "epic",
-                "weight": 18,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_color_fix.png"),
                 "style": {
                     "gradient": [(60, 220, 160), (15, 60, 45)],
@@ -2182,7 +2158,6 @@ class MysteryCardManager:
                 "icon": "X",
                 "tag": "Common",
                 "rarity": "common",
-                "weight": 55,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_hold_destroyer.png"),
                 "style": {
                     "gradient": [(180, 180, 195), (60, 60, 70)],
@@ -2206,7 +2181,6 @@ class MysteryCardManager:
                 "icon": "X",
                 "tag": "Uncommon",
                 "rarity": "uncommon",
-                "weight": 45,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_hold_destroyer.png"),
                 "style": {
                     "gradient": [(80, 200, 130), (20, 60, 40)],
@@ -2230,7 +2204,6 @@ class MysteryCardManager:
                 "icon": "X",
                 "tag": "Rare",
                 "rarity": "rare",
-                "weight": 30,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_hold_destroyer.png"),
                 "style": {
                     "gradient": [(60, 140, 220), (15, 40, 90)],
@@ -2254,7 +2227,6 @@ class MysteryCardManager:
                 "icon": "X",
                 "tag": "Epic",
                 "rarity": "epic",
-                "weight": 18,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_hold_destroyer.png"),
                 "style": {
                     "gradient": [(170, 70, 220), (50, 20, 80)],
@@ -2278,7 +2250,6 @@ class MysteryCardManager:
                 "icon": "X",
                 "tag": "Legendary",
                 "rarity": "legendary",
-                "weight": 8,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_hold_destroyer.png"),
                 "style": {
                     "gradient": [(255, 180, 40), (120, 70, 10)],
@@ -2303,7 +2274,6 @@ class MysteryCardManager:
                 "icon": "❄️",
                 "tag": "Rare",
                 "rarity": "rare",
-                "weight": 30,
                 "freeze_duration": 6,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_freeze_drop.png"),
                 "style": {
@@ -2328,7 +2298,6 @@ class MysteryCardManager:
                 "icon": "❄️",
                 "tag": "Epic",
                 "rarity": "epic",
-                "weight": 18,
                 "freeze_duration": 10,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_freeze_drop.png"),
                 "style": {
@@ -2353,7 +2322,6 @@ class MysteryCardManager:
                 "icon": "❄️",
                 "tag": "Legendary",
                 "rarity": "legendary",
-                "weight": 8,
                 "freeze_duration": 15,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_freeze_drop.png"),
                 "style": {
@@ -2380,7 +2348,6 @@ class MysteryCardManager:
                 "icon": "CI",
                 "tag": "Rare",
                 "rarity": "rare",
-                "weight": 28,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_combo_sigorta.png"),
                 "style": {
                     "gradient": [(220, 180, 80), (90, 60, 20)],
@@ -2406,7 +2373,6 @@ class MysteryCardManager:
                 "icon": "RD",
                 "tag": "Common",
                 "rarity": "common",
-                "weight": 45,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_ters_borc.png"),
                 "style": {
                     "gradient": [(170, 90, 220), (40, 16, 70)],
@@ -2431,7 +2397,6 @@ class MysteryCardManager:
                 "icon": "HH",
                 "tag": "Rare",
                 "rarity": "rare",
-                "weight": 26,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_delik_avci.png"),
                 "style": {
                     "gradient": [(80, 200, 170), (15, 60, 50)],
@@ -5940,9 +5905,6 @@ class PerkManager:
     def __init__(self, mode: 'MysteryMode') -> None:
         self.mode = mode
         self.active: dict[str, bool] = {}
-        self.next_piece_bomb = False
-        self.lines_since_chrono = 0
-        self.chrono_freeze_timer = 0.0
         self.rewind_uses = 0  # Geri Sarma kullanım hakkı
         # Sinerji Bonus çarpan oranı (kademeye göre 0.10/0.15/0.20).
         self.synergy_rate = 0.10
@@ -5968,26 +5930,9 @@ class PerkManager:
     def notify_lines_cleared(self, lines: int, source: str = "player") -> None:
         if not lines:
             return
-        # Explosive Protocol: if 2 lines cleared -> next piece is a bomb
-        # Trigger bomb only if exactly 2 lines cleared simultaneously while the perk is active
-        # Prevent farming via card/ability clears: only player clears should arm bombs.
-        if self.is_active('explosive_protocol') and lines == 2 and str(source).lower() in {"player", "normal"}:
-            self.next_piece_bomb = True
-            # Player feedback: make it clear this is the PLUS-shaped bomb perk.
-            try:
-                self.mode._set_localized_card_message(
-                    'mystery_msg_bomb_master_next_piece_bomb',
-                    1.1,
-                    'Bomba Ustası: Sonraki parça BOMBA (+)',
-                )
-            except Exception:
-                pass
-        # Chrono Lock counter
-        if self.is_active('chrono_lock'):
-            self.lines_since_chrono += lines
-            if self.lines_since_chrono >= 10:
-                self.lines_since_chrono = 0
-                self.chrono_freeze_timer = 3.0
+        # NOT (2026-10-12): v2'de hiç yok olan erişilemez perk kodları
+        # (explosive_protocol / chrono_lock) denetimle kaldırıldı — hiçbir
+        # katalog kartı bu perk'leri etkinleştirmiyordu.
         # Backwards-compatible Alchemist trigger:
         # Tests and older behavior expect a Quadrix (4 lines) to trigger without
         # needing piece context.
@@ -6033,17 +5978,6 @@ class PerkManager:
         
         # For phase shift (shape mutation), there's no per-piece auto-reset. We leave
         # the per-piece flag on the piece object itself and the Game will check it.
-        # If explosive next piece, mark piece property
-        if self.next_piece_bomb:
-            # Mark the piece as a bomb: keep its shape but color it red and set a flag
-            setattr(piece, 'is_bomb', True)
-            # Keep the original color for UI preview while forcing bomb color in-game
-            setattr(piece, '_original_color', getattr(piece, 'color', None))
-            BOMB_COLOR = (221, 0, 5)
-            piece.color = BOMB_COLOR
-            # Preserve this forced color across theme reapplications
-            setattr(piece, '_force_color', BOMB_COLOR)
-            self.next_piece_bomb = False
 
     def on_piece_locked(self, piece, locked_cells:list[tuple[int,int]]):
         # Reset tunneling and ghost visuals when a tunneled piece locks
@@ -6762,7 +6696,6 @@ class MysteryMode(Game):
         self.energy = 0
         self.energy_max = 100
         self.time_warp_timer = 0.0
-        self.gravity_freeze_timer = 0.0
         self.phase_used_for_piece = False
         self._last_ability_keys = {'z': False, 'x': False, 'g': False, 'h': False, 'm': False, 'c': False, 'rotate': False, 'lshift': False, 'v': False, 'b': False, 'f': False}
         self._slot_ability_requests: set[str] = set()
@@ -6873,7 +6806,6 @@ class MysteryMode(Game):
         self.energy = 0
         self.energy_max = 100
         self.time_warp_timer = 0.0
-        self.gravity_freeze_timer = 0.0
         self.phase_used_for_piece = False
         self._last_ability_keys = {'z': False, 'x': False, 'g': False, 'h': False, 'm': False, 'c': False, 'rotate': False, 'lshift': False, 'v': False, 'b': False, 'f': False}
         # Slot kısayolu (1-6) ile tetiklenen, poll-tabanlı yetenekler için bir
@@ -8102,10 +8034,6 @@ class MysteryMode(Game):
         locked_cells = [(x, y) for x, y in locked_piece.get_cells() if y >= 0]
         # measure previous score to apply synergy multiplier to added points
         prev_score = self.board.score
-        # If chrono freeze active, set fall_speed high to 'pause' gravity
-        if getattr(self.perk_manager, 'chrono_freeze_timer', 0) > 0:
-            self.gravity_freeze_timer = self.perk_manager.chrono_freeze_timer
-            self.perk_manager.chrono_freeze_timer = 0.0
         # Son Düşüş: parça kilitlendiğinde dondurma sona erer
         if getattr(self, '_freeze_drop_active', False):
             self._freeze_drop_active = False
@@ -8932,7 +8860,7 @@ class MysteryMode(Game):
             # Son Düşüş aktifken soft drop engellenir — parça sadece sağ-sol ve sert düşüş yapabilir.
             if getattr(self, '_freeze_drop_active', False):
                 soft_drop_active = False
-            if soft_drop_active and getattr(self, 'gravity_freeze_timer', 0.0) <= 0:
+            if soft_drop_active:
                 try:
                     soft_ms = int(self.settings_manager.get('soft_drop_speed', FAST_FALL_SPEED)) if self.settings_manager else int(FAST_FALL_SPEED)
                 except Exception:
@@ -8946,8 +8874,7 @@ class MysteryMode(Game):
                 self.fall_speed = min(current_ms, soft_ms)
 
             if (not soft_drop_active
-                    and getattr(self, 'time_warp_timer', 0.0) <= 0
-                    and getattr(self, 'gravity_freeze_timer', 0.0) <= 0):
+                    and getattr(self, 'time_warp_timer', 0.0) <= 0):
                 try:
                     target_speed = int(self.get_current_speed())
                     self._smooth_fall_speed_towards_target(target_speed, seconds)
@@ -9027,15 +8954,7 @@ class MysteryMode(Game):
             self.time_warp_timer = max(0.0, self.time_warp_timer - seconds)
             if self.time_warp_timer == 0 and hasattr(self, '_timewarp_old_speed'):
                 self.fall_speed = self._timewarp_old_speed
-        # Gravity freeze (chrono lock)
-        if self.gravity_freeze_timer > 0:
-            self.gravity_freeze_timer = max(0.0, self.gravity_freeze_timer - seconds)
-            if self.gravity_freeze_timer > 0:
-                self.fall_speed = int(1e9)
-            else:
-                self.fall_speed = self.get_current_speed()
-            self._sync_active_cards()
-        
+
         # Speed Burst timer (Hız Patlaması)
         speed_burst_timer = getattr(self, '_speed_burst_timer', 0)
         if speed_burst_timer > 0:
@@ -9602,7 +9521,6 @@ class MysteryMode(Game):
         self._sync_active_cards()
         # Perk manager
         self.perk_manager = PerkManager(self)
-        self.gravity_freeze_timer = 0.0
         self.phase_used_for_piece = False
         # Phase shift (shape mutation) per-run usage limit
         self.phase_shift_uses_remaining = 0
@@ -13909,23 +13827,6 @@ class MysteryMode(Game):
                     )
         else:
             self._active_effect_visuals.pop("time_capsule", None)
-        
-        # Gravity Freeze (Krono Kilidi aktifken)
-        if self.gravity_freeze_timer > 0:
-            cards.append({
-                'id': 'gravity_freeze_active',
-                'title': self._localized_card_text('mystery_active_gravity_freeze_title', 'Gravity Halt'),
-                'description': self._localized_card_text(
-                    'mystery_active_gravity_freeze_desc',
-                    'Gravity is stopped for {seconds}s.',
-                    seconds=f'{float(self.gravity_freeze_timer):.1f}',
-                ),
-                'color': (120, 220, 255),
-                'icon': 'GF',
-                'tag': active_label,
-                'status': f'{float(self.gravity_freeze_timer):.1f}s',
-                'style': {},
-            })
 
         # Ghost Echo: active only when armed; display the number of rows it clears
         if "ghost_echo" in self._active_effect_visuals:
@@ -13952,7 +13853,6 @@ class MysteryMode(Game):
         except Exception:
             catalog_by_id = {}
         perk_to_card_id = {
-            'chrono_lock': 'perk_chrono',
             'synergy_core': 'perk_synergy',
             'second_pocket': 'perk_second_pocket',
             'perk_flexible_border': 'perk_flexible_border',
@@ -13965,14 +13865,6 @@ class MysteryMode(Game):
                 'status': f'{_card_key("V", "hold2")}',
                 'color': (200, 200, 255),
                 'icon': '🎒',
-                'tag': perk_tag
-            },
-            'chrono_lock': {
-                'title': get_card_title('perk_chrono', 'Zaman Durdurucu'),
-                'description': get_card_description('perk_chrono', fallback='PERK: Every 10 lines, gravity stops for 3 seconds.'),
-                'status': active_label,
-                'color': (120, 220, 255),
-                'icon': '⏸️',
                 'tag': perk_tag
             },
             'synergy_core': {
