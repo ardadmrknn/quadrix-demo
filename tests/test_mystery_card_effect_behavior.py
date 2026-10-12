@@ -1463,3 +1463,87 @@ def test_nova_burst_catalog_is_single_sourced_from_family():
     family_spec = {tier['id']: tier for tier in extra.CARD_UPGRADE_FAMILIES['nova_burst']}
     for card_id, (_, blast) in expected.items():
         assert family_spec[card_id]['extra']['blast_size'] == blast
+
+
+# ---------------------------------------------------------------------------
+# Faz 3 / D4 — perk_synergy v2 paritesi: kendini-saymama + kademe oranları
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(('rate', 'expected_multiplier'), [
+    (0.10, 1.10),  # Rare
+    (0.15, 1.15),  # Epic
+    (0.20, 1.20),  # Legendary
+])
+def test_perk_synergy_multiplier_rates_by_tier(rate, expected_multiplier):
+    """Kademe oranları (%10/%15/%20) diğer her aktif perk için çarpana eklenir."""
+    extra, _, _, _ = _import_mystery_mode()
+    manager = extra.PerkManager(SimpleNamespace())
+    manager.activate('synergy_core')
+    manager.activate('second_pocket')
+    manager.synergy_rate = rate
+
+    assert manager.get_multiplier() == pytest.approx(expected_multiplier)
+
+
+def test_perk_synergy_multiplier_scales_with_each_other_active_perk():
+    extra, _, _, _ = _import_mystery_mode()
+    manager = extra.PerkManager(SimpleNamespace())
+    manager.activate('synergy_core')
+    manager.synergy_rate = 0.20
+    manager.activate('second_pocket')
+    manager.activate('perk_alchemist')
+    manager.activate('perk_flexible_border')
+
+    assert manager.get_multiplier() == pytest.approx(1.60)
+
+
+def test_perk_synergy_multiplier_is_one_when_synergy_not_active():
+    extra, _, _, _ = _import_mystery_mode()
+    manager = extra.PerkManager(SimpleNamespace())
+    manager.activate('second_pocket')
+    manager.activate('perk_alchemist')
+    manager.synergy_rate = 0.20
+
+    assert manager.get_multiplier() == 1.0
+
+
+def test_perk_synergy_multiplier_does_not_count_itself():
+    """Sinerji kartı kendisini saymaz; yalnızca diğer aktif perkler katkı verir.
+
+    Demo'nun eski davranışı aktif sayacı `sum(1 for v in self.active.values()
+    if v)` ile hesaplıyordu — synergy_core kendini sayıyor ve kart %X oranını
+    kendi üzerinden de uyguluyordu (v2'de düzeltilen sözleşme ihlali)."""
+    extra, _, _, _ = _import_mystery_mode()
+    manager = extra.PerkManager(SimpleNamespace())
+    manager.activate('synergy_core')
+    manager.synergy_rate = 0.10
+
+    # Yalnızca sinerji kartı aktif: kendisini saymadığı için çarpan 1.0 kalır
+    # (kendisini sayan eski davranış 1.10 üretirdi).
+    assert manager.get_multiplier() == 1.0
+
+    manager.activate('perk_flexible_border')
+    # 1 diğer perk: 1 + 1 * 0.10 = 1.10.
+    assert manager.get_multiplier() == pytest.approx(1.10)
+
+
+def test_perk_synergy_effect_branch_applies_payload_rate():
+    """Kart etkinleştirildiğinde payload'daki kademe oranı PerkManager'a yazılır."""
+    extra, _, MysteryMode, _ = _import_mystery_mode()
+    mode = MysteryMode.__new__(MysteryMode)
+    mode.perk_manager = extra.PerkManager(SimpleNamespace())
+    mode._sync_active_cards = lambda: None
+    mode.effects_enabled = False
+    mode.sound_enabled = False
+
+    mode._apply_card_effect({
+        'id': 'perk_synergy_epic',
+        '_group_id': 'perk_synergy',
+        'title': 'Sinerji Bonus',
+        'value': 1,
+        'payload': {'synergy_rate': 0.15},
+        'color': (255, 220, 140),
+    })
+
+    assert mode.perk_manager.is_active('synergy_core')
+    assert mode.perk_manager.synergy_rate == pytest.approx(0.15)

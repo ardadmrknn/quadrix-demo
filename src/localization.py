@@ -12958,17 +12958,17 @@ TRANSLATIONS = {
         'ko': '시너지 보너스',
     },
     'card_perk_synergy_desc': {
-        'tr': 'Sahip olduğun her özel kart için %10 ekstra puan kazanırsın.',
-        'en': 'You gain +10% score for every special card you own.',
-        'de': 'Für jede besondere Karte, die du hast, bekommst du +10% Punkte.',
-        'fr': 'Tu gagnes +10% de score pour chaque carte spéciale que tu possèdes.',
-        'es': 'Ganas +10% de puntuación por cada carta especial que tengas.',
-        'it': 'Ottieni +10% di punti per ogni carta speciale che possiedi.',
-        'pt': 'Você ganha +10% de pontuação por cada carta especial que tem.',
-        'ru': 'Ты получаешь +10% к очкам за каждую особую карту, которая у тебя есть.',
-        'ja': '所持している特殊カード1枚につき得点が+10%になる。',
-        'zh': '你每拥有一张特殊卡，就多获得 10% 分数。',
-        'ko': '가지고 있는 특수 카드 한 장마다 점수가 10% 늘어난다.',
+        'tr': 'Aktif olan her perk için %{synergy_percent} ekstra puan kazanırsın.',
+        'en': 'You gain +{synergy_percent}% score for every active perk.',
+        'de': 'Du erhältst +{synergy_percent}% Punkte für jeden aktiven Perk.',
+        'fr': 'Tu gagnes +{synergy_percent}% de score pour chaque perk actif.',
+        'es': 'Ganas +{synergy_percent}% de puntuación por cada perk activo.',
+        'it': 'Ottieni +{synergy_percent}% di punti per ogni perk attivo.',
+        'pt': 'Você ganha +{synergy_percent}% de pontuação por cada perk ativo.',
+        'ru': 'Ты получаешь +{synergy_percent}% к очкам за каждый активный перк.',
+        'ja': 'アクティブなパーク1つにつき得点が+{synergy_percent}%される。',
+        'zh': '每有一个激活的天赋，你的分数就增加 {synergy_percent}%。',
+        'ko': '활성화된 퍽 하나당 점수가 +{synergy_percent}% 증가한다.',
     },
     'card_perk_second_pocket_title': {
         'tr': 'Ekstra Cep',
@@ -31680,3 +31680,4 @@ if 'localization' in sys.modules:
     sys.modules['src.localization'] = sys.modules['localization']
 elif 'src.localization' in sys.modules:
     sys.modules['localization'] = sys.modules['src.localization']
+

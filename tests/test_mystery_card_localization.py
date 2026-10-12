@@ -404,3 +404,18 @@ def test_cards_no_piece_warning_and_laser_drill_no_piece_localized():
         assert expected_languages <= set(entries), (key, set(entries) - expected_languages)
         for language, text in entries.items():
             assert text and text.strip(), (key, language)
+
+
+def test_perk_synergy_description_uses_synergy_percent_placeholder_in_all_languages():
+    """Tüm diller aynı placeholder setini taşır; sabit %10 metni kalmaz
+    (v2 paritesi: {synergy_percent} runtime'da synergy_rate'ten türetilir)."""
+    from localization import TRANSLATIONS
+
+    entries = TRANSLATIONS['card_perk_synergy_desc']
+    expected_languages = {'tr', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ja', 'zh', 'ko'}
+    assert expected_languages <= set(entries), set(entries) - expected_languages
+    for language, text in entries.items():
+        assert '{synergy_percent}' in text, (language, text)
+        # Ham oran (0.10) değil; yüzde gösterimi (10) yerleştirilir.
+        assert '{synergy_rate}' not in text, (language, text)
+        assert '10' not in text.replace('{synergy_percent}', ''), (language, text)

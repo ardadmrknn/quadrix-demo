@@ -678,6 +678,12 @@ def _build_card_format_context(card_or_id: Dict[str, Any] | str, value: Any = No
         if isinstance(speed_multiplier, (int, float)) and 'speed_percent' not in context:
             context['speed_percent'] = int(round((float(speed_multiplier) - 1.0) * 100))
 
+        # perk_synergy desc'i {synergy_percent} placeholder'ı kullanır; oran
+        # payload'dan synergy_rate olarak gelir (v2 paritesi).
+        synergy_rate = context.get('synergy_rate')
+        if isinstance(synergy_rate, (int, float)) and 'synergy_percent' not in context:
+            context['synergy_percent'] = int(round(float(synergy_rate) * 100))
+
         line_multiplier = context.get('line_multiplier')
         if isinstance(line_multiplier, (int, float)):
             context['line_multiplier'] = f"{float(line_multiplier):g}"
@@ -6048,7 +6054,13 @@ class PerkManager:
         ile %15/%20). Oran `synergy_rate` üzerinden gelir; tanımsızsa %10.
         """
         base = 1.0
-        active_count = sum(1 for v in self.active.values() if v)
+        # Sinerji Çekirdeği kendisini saymaz; yalnızca diğer aktif perkler
+        # çarpana katkı verir (aksi halde kart %X oranını kendi üzerinden de
+        # uygular ve açıklamadaki "her aktif perk" sözleşmesi bozulur).
+        active_count = sum(
+            1 for key, is_on in self.active.items()
+            if is_on and key != 'synergy_core'
+        )
 
         # Sinerji Çekirdeği aktifse çarpan hesapla
         if self.is_active('synergy_core'):
