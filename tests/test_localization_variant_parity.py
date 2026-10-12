@@ -13,7 +13,21 @@ os.environ.setdefault("TETRIS_LOCALIZATION_HOT_RELOAD", "0")
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 DEMO_LOCALIZATION_PATH = WORKSPACE_ROOT / "quadrix-demo" / "src" / "localization.py"
-MAIN_LOCALIZATION_PATH = WORKSPACE_ROOT / "v2" / "src" / "localization.py"
+# Ana deponun dizin adı kuruluma göre değişebilir (quadrix-main / v2).
+# Uzun süre sabit "v2" yolu dizin bulunamadığı için FileNotFoundError
+# üretti ve guard HİÇ çalışmadı — bu süre zarfında kart-metin drift'i
+# sessizce birikti. İlk var olan aday kullanılır; hiçbiri yoksa en son
+# aday bırakılır ki hata mesajı anlamlı kalsın.
+_MAIN_CANDIDATE_NAMES = ("quadrix-main", "v2")
+_MAIN_DIR = next(
+    (
+        WORKSPACE_ROOT / name
+        for name in _MAIN_CANDIDATE_NAMES
+        if (WORKSPACE_ROOT / name / "src" / "localization.py").exists()
+    ),
+    WORKSPACE_ROOT / _MAIN_CANDIDATE_NAMES[-1],
+)
+MAIN_LOCALIZATION_PATH = _MAIN_DIR / "src" / "localization.py"
 
 FAMILY_PREFIXES = (
     "daily_prompt_",
