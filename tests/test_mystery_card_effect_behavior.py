@@ -1290,3 +1290,39 @@ def test_rewind_power_selection_preserves_existing_snapshot():
     assert mode._rewind_available is True
     # Sözleşme: seçim anlık görüntüyü sıfırlamaz.
     assert mode._last_placed_piece is snapshot
+
+
+def test_speed_burst_catalog_multipliers_are_single_sourced_from_family():
+    """Hız Patlaması çarpan/süre değerleri tek kaynaktan (CARD_UPGRADE_FAMILIES) okunur.
+
+    Katalogdaki eski payload kalıntısı (1.25/1.4/1.6/1.75) family extra'ları
+    tarafından zaten eziliyordu; temizlik sonrası normalize katalog değerleri
+    family değerleriyle birebir olmalı. Bu test her iki yönlü sürüklenmeyi
+    (katalogda çarpan yazma / family değerlerini değiştirip katalogda unutma)
+    yakalar.
+    """
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mgr = extra.MysteryCardManager.__new__(extra.MysteryCardManager)
+    catalog = mgr._build_catalog()
+    by_id = {str(c.get('id')): c for c in catalog}
+
+    expected = {
+        'speed_burst_rare': ((25, 25), 1.3, 1.3),
+        'speed_burst_epic': ((40, 40), 1.5, 1.5),
+        'speed_burst_legendary': ((60, 60), 1.75, 2.0),
+    }
+    for card_id, (value_range, speed_mult, line_mult) in expected.items():
+        card = by_id[card_id]
+        assert card['value_range'] == value_range, (card_id, card['value_range'])
+        assert card['base'] == value_range[0], (card_id, card['base'])
+        payload = card.get('payload') or {}
+        assert payload.get('speed_multiplier') == speed_mult, (card_id, payload)
+        assert payload.get('line_multiplier') == line_mult, (card_id, payload)
+
+    # Family extra payload'ı gerçek etki dalının okuduğu alanla aynı isimde
+    # olmalı; aksi halde runtime default'a (1.5) düşer.
+    family_spec = {tier['id']: tier for tier in extra.CARD_UPGRADE_FAMILIES['speed_burst']}
+    for card_id, (_, speed_mult, line_mult) in expected.items():
+        extra_payload = family_spec[card_id]['extra']['payload']
+        assert extra_payload['speed_multiplier'] == speed_mult
+        assert extra_payload['line_multiplier'] == line_mult

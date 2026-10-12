@@ -370,3 +370,25 @@ def test_rewind_description_discloses_line_clear_limit():
     assert 'geri alınamaz' in entries['tr']
     assert 'pieces that clear lines' in entries['en']
     assert 'cannot be undone' in entries['en']
+
+
+def test_speed_burst_guide_description_matches_family_tuning():
+    """Rehber metni CARD_UPGRADE_FAMILIES gerçek dengesiyle uyumlu olmalı:
+    25-60 sn, %30-75 hız, 1.3x-2x satır puanı (eski: 18-45 sn / %25-60 / 1.3x-1.75x)."""
+    from localization import TRANSLATIONS
+
+    entries = TRANSLATIONS['guide_card_speed_burst_desc']
+    expected_languages = {'tr', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ja', 'zh', 'ko'}
+    assert expected_languages <= set(entries), set(entries) - expected_languages
+    for language, text in entries.items():
+        # Eski (ölü katalog payload'ından kalan) aralıklar tamamen gitmeli.
+        assert '18-45' not in text, (language, text)
+        assert '45' not in text, (language, text)
+        assert '1.75' not in text and '1,75' not in text, (language, text)
+        # Yeni aralıklar: süre 25-60, hız %30-75, satır puanı 2x'e kadar.
+        assert '25-60' in text or ('25' in text and '60' in text), (language, text)
+        assert '30' in text and '75' in text, (language, text)
+        assert ('2x' in text) or ('2倍' in text), (language, text)
+
+    assert '1.3x-2x' in entries['tr']
+    assert '1.3x-2x' in entries['en']

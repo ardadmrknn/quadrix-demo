@@ -1716,12 +1716,16 @@ class MysteryCardManager:
                 "single_use": True,
             },
             # ==================== HIZ PATLAMASI (Enderlik Sistemi) ====================
+            # Süre/temel değer ve payload çarpanları tek kaynaktan gelir:
+            # CARD_UPGRADE_FAMILIES['speed_burst'] extra.payload + value_range.
+            # Katalogda çarpan/d süre yazılmaz; buraya eklenen her değer
+            # family normalizasyonunca ezilir (ölü veri tuzağı).
             {
                 "id": "speed_burst_rare",
                 "_group_id": "speed_burst",
                 "title": "Hız Patlaması",
-                "base": 20,
-                "value_range": (18, 22),
+                "base": 25,
+                "value_range": (25, 25),
                 "description": "{value} saniye boyunca parçalar daha hızlı düşer. Her sildiğin satır 1.3 katı puan kazandırır.",
                 "color": (255, 200, 80),
                 "bg": (50, 38, 12),
@@ -1738,14 +1742,13 @@ class MysteryCardManager:
                     "icon_bg": (200, 150, 50),
                 },
                 "timed_buff": True,
-                "payload": {"speed_multiplier": 1.25, "line_multiplier": 1.3},
             },
             {
                 "id": "speed_burst_epic",
                 "_group_id": "speed_burst",
                 "title": "Hız Patlaması",
-                "base": 30,
-                "value_range": (25, 35),
+                "base": 40,
+                "value_range": (40, 40),
                 "description": "{value} saniye boyunca parçalar daha hızlı düşer. Her sildiğin satır 1.5 katı puan kazandırır.",
                 "color": (255, 180, 50),
                 "bg": (50, 35, 10),
@@ -1762,15 +1765,14 @@ class MysteryCardManager:
                     "icon_bg": (190, 130, 35),
                 },
                 "timed_buff": True,
-                "payload": {"speed_multiplier": 1.4, "line_multiplier": 1.5},
             },
             {
                 "id": "speed_burst_legendary",
                 "_group_id": "speed_burst",
                 "title": "Hız Patlaması",
-                "base": 40,
-                "value_range": (35, 45),
-                "description": "{value} saniye boyunca parçalar daha hızlı düşer. Her sildiğin satır 1.75 katı puan kazandırır.",
+                "base": 60,
+                "value_range": (60, 60),
+                "description": "{value} saniye boyunca parçalar daha hızlı düşer. Her sildiğin satır 2 katı puan kazandırır.",
                 "color": (255, 160, 30),
                 "bg": (48, 30, 8),
                 "icon": "⚡",
@@ -1786,7 +1788,6 @@ class MysteryCardManager:
                     "icon_bg": (180, 120, 25),
                 },
                 "timed_buff": True,
-                "payload": {"speed_multiplier": 1.6, "line_multiplier": 1.75},
             },
             {
                 "id": "quantum_tunneling",
@@ -5968,6 +5969,13 @@ class PerkManager:
         return
 
     def maybe_trigger_alchemist(self, piece, lines: int) -> None:
+        """Altın Dokunuş tetikleyicisi (Quadrix / T-spin benzeri temizlik).
+
+        DURUM NOTU (2026-10-11): `perk_alchemist` şu anda hiçbir katalog kartı
+        tarafından etkinleştirilmez; yalnızca testler `activate()` ile doğrudan
+        çağırır. Mekanik bilinçli olarak korunur (çalışan + testli spesifikasyon);
+        HUD panel girdisi kaldırıldı. Kart kataloğa eklenirse etkinleşir.
+        """
         if not self.is_active('perk_alchemist') or not lines:
             return
         try:
@@ -13229,7 +13237,6 @@ class MysteryMode(Game):
             return keyboard_label
 
         active_label = self._localized_card_text('mystery_status_active', 'Active')
-        gold_label = self._localized_card_text('mystery_status_gold', 'Gold')
         effect_tag = self._localized_card_text('mystery_active_tag_effect', 'Effect')
         perk_tag = self._localized_card_text('mystery_active_tag_perk', 'Perk')
 
@@ -13837,7 +13844,6 @@ class MysteryMode(Game):
             'chrono_lock': 'perk_chrono',
             'synergy_core': 'perk_synergy',
             'second_pocket': 'perk_second_pocket',
-            'perk_alchemist': 'perk_alchemist',
             'perk_flexible_border': 'perk_flexible_border',
         }
         # Only truly persistent perks (no usage limits) go here
@@ -13864,14 +13870,6 @@ class MysteryMode(Game):
                 'status': f'{getattr(self.perk_manager, "get_multiplier", lambda: 1.0)():.2f}x',
                 'color': (255, 220, 140),
                 'icon': '🔗',
-                'tag': perk_tag
-            },
-            'perk_alchemist': {
-                'title': get_card_title('perk_alchemist', 'Altın Dokunuş'),
-                'description': get_card_description('perk_alchemist', fallback='PERK: Clearing 4 lines turns random blocks to gold.'),
-                'status': gold_label,
-                'color': (255, 210, 75),
-                'icon': '✨',
                 'tag': perk_tag
             },
             'perk_flexible_border': {
