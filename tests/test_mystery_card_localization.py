@@ -330,3 +330,26 @@ def test_mystery_sync_active_cards_localizes_time_capsule_and_perk_panel_copy(mo
         assert second_pocket['tag'] == 'Perk'
     finally:
         set_language(previous_language)
+
+
+def test_row_shuffle_description_mentions_no_gravity_and_full_row_clear():
+    """Kart yalnızca alt bölgeyi karıştırır: yerçekimi vaadi YOK, dolu satır
+    temizliği var (davranış: _shuffle_bottom_rows apply_gravity çağırmaz)."""
+    from localization import TRANSLATIONS
+
+    entries = TRANSLATIONS['card_row_shuffle_desc']
+    expected_languages = {'tr', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ja', 'zh', 'ko'}
+    assert expected_languages <= set(entries), set(entries) - expected_languages
+    for language, text in entries.items():
+        assert '{value}' in text, (language, text)
+
+    # Yerçekimi yan etkisi kaldırıldı — açıklamada da yer almamalı.
+    assert 'yerçekimi' not in entries['tr']
+    assert 'dolan satırlar temizlenir' in entries['tr']
+    assert 'gravity' not in entries['en']
+    assert 'full rows are cleared' in entries['en']
+
+    # Rehber metni eski yerçekimi vaadini ("boşluklar kapanır") içermez.
+    guide = TRANSLATIONS['guide_card_row_shuffle_desc']['tr']
+    assert 'kapanır' not in guide
+    assert 'dolan satırlar temizlenir' in guide

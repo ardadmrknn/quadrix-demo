@@ -1109,3 +1109,152 @@ def test_reverse_debt_does_not_queue_board_effect_when_effects_disabled():
     mode._apply_card_effect({'id': 'reverse_debt', 'title': 'Ters Borç', 'value': 1, 'color': (200, 120, 255)})
 
     assert mode._card_board_effects == []
+
+
+# ---------------------------------------------------------------------------
+# Satır Karıştırıcı — yerçekimi kaldırıldı sonrası açıklama-davranış sözleşmesi
+# (Blok Karıştırıcı yalnızca alt bölge hücrelerini karıştırır: tahta geneli
+#  sıkıştırma UYGULAMAZ — dengesiz güçlü bulunduğundan kaldırıldı. "Dolan satır
+#  temizlenir" vaadi kalır; testler üretim metodunu gerçek Board üzerinde
+#  çalıştırır)
+# ---------------------------------------------------------------------------
+
+def _row_shuffle_put_block(board, column, row, color, *, gold=False, owner=None):
+    board.occupancy[row][column] = True
+    board.grid[row][column] = color
+    board.texture_grid[row][column] = None
+    board.gold[row][column] = gold
+    board.owners[row][column] = owner
+
+
+def _row_shuffle_board_state(board, start_row, end_row):
+    return [
+        [
+            (
+                board.occupancy[row][column],
+                board.grid[row][column],
+                board.texture_grid[row][column],
+                board.gold[row][column],
+                board.owners[row][column],
+            )
+            for column in range(board.width)
+        ]
+        for row in range(start_row, end_row)
+    ]
+
+
+def test_row_shuffle_runtime_applies_no_gravity_to_board(monkeypatch):
+    """Karıştırma yerçekimi uygulamaz: askıda blok askıda kalır, bölge dışı
+    tahta bit-bit değişmez; dolan satır yoksa hiçbir yan etki olmaz."""
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+    mode.board = Board(width=4, height=6)
+    mode.board_width = 4
+    # Karıştırmayı no-op yap: hücre multiseti yerinde kalır; geriye kalan
+    # olası tek etki yerçekimi + satır temizleme olur — ikisi de görünür
+    # olmamalı (eski davranış bu bloğu row 5'e düşürürdü).
+    monkeypatch.setattr(extra.random, 'shuffle', lambda seq: None)
+    post_calls = []
+    mode._post_external_line_clear = (
+        lambda cleared, award_energy=False, score_delta=None, source='':
+            post_calls.append((cleared, score_delta, source))
+    )
+
+    # Alt satır (5) 3/4 dolu — tam değil; (satır 4, kolon 2) altı boş askıda blok.
+    for column in range(3):
+        _row_shuffle_put_block(mode.board, column, 5, (200, 30, 30))
+    _row_shuffle_put_block(mode.board, 2, 4, (30, 200, 30))
+
+    before = _row_shuffle_board_state(mode.board, 0, 6)
+
+    mode._shuffle_bottom_rows(1)
+
+    # Yerçekimi yok: tahta olduğu gibi kaldı, temizlik/rapor yok.
+    assert _row_shuffle_board_state(mode.board, 0, 6) == before
+    assert post_calls == []
+    assert mode.board.score == 0
+    assert mode.board.lines_cleared == 0
+
+
+def test_row_shuffle_runtime_permutes_only_bottom_region_cells():
+    """Gerçek karıştırma alt bölge hücre multisetini (renk/gold/owner dahil)
+    korur, bölge dışına hiç dokunmaz; dolan satır oluşmaz."""
+    from collections import Counter
+
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+    mode.board = Board(width=6, height=8)
+    mode.board_width = 6
+    post_calls = []
+    mode._post_external_line_clear = (
+        lambda cleared, award_energy=False, score_delta=None, source='':
+            post_calls.append((cleared, score_delta, source))
+    )
+
+    # Bölge: alt 2 satır (6-7). 5 blok — 6 genişlikte tam satır imkânsız.
+    # Distinct renk/gold/owner ile multiset karşılaştırması anlamlı olur.
+    region_blocks = [
+        (0, 7, (200, 30, 30), False, None),
+        (1, 7, (30, 200, 30), False, None),
+        (2, 7, (30, 30, 200), True, 'T1'),
+        (3, 6, (200, 30, 30), False, None),
+        (4, 6, (30, 200, 30), False, 'T2'),
+    ]
+    for column, row, color, gold, owner in region_blocks:
+        _row_shuffle_put_block(mode.board, column, row, color, gold=gold, owner=owner)
+    # Bölge DIŞI askıda bloklar — yerçekimi olsaydı bölgeye düşerdi.
+    _row_shuffle_put_block(mode.board, 2, 2, (90, 90, 90))
+    _row_shuffle_put_block(mode.board, 5, 5, (120, 120, 120))
+
+    outside_before = _row_shuffle_board_state(mode.board, 0, 6)
+    region_before = _row_shuffle_board_state(mode.board, 6, 8)
+
+    mode._shuffle_bottom_rows(2)
+
+    # Bölge dışı bit-bit aynı — tahta geneli yerçekimi/sıkıştırma YOK.
+    assert _row_shuffle_board_state(mode.board, 0, 6) == outside_before
+    # Bölge içi hücre multiseti korundu (permütasyon, dönüşüm değil).
+    region_after = _row_shuffle_board_state(mode.board, 6, 8)
+    assert Counter(cell for row in region_before for cell in row) == Counter(
+        cell for row in region_after for cell in row
+    )
+    # Kütle: bölge 5 + dış 2 blok — hiçbiri kaybolmadı.
+    assert sum(sum(row) for row in mode.board.occupancy) == 7
+    # 5 blok 6 genişlikte tam satır dolduramaz → temizlik raporlanmaz.
+    assert post_calls == []
+
+
+def test_row_shuffle_runtime_clears_full_rows_via_card_source(monkeypatch):
+    """Bölgede dolu satır temizlenir; puan akışı _post_external_line_clear
+    üzerinden source='card' olarak yürür. Blok yalnızca clear_lines'ın
+    standart satır-kayması kuralıyla iner — yerçekimiyle değil."""
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+    mode.board = Board(width=4, height=6)
+    mode.board_width = 4
+    monkeypatch.setattr(extra.random, 'shuffle', lambda seq: None)
+    post_calls = []
+    mode._post_external_line_clear = (
+        lambda cleared, award_energy=False, score_delta=None, source='':
+            post_calls.append((cleared, score_delta, source))
+    )
+
+    # Alt satır (5) komple dolu; bir üstünde (satır 3, kolon 2) altı boş askıda blok.
+    for column in range(4):
+        _row_shuffle_put_block(mode.board, column, 5, (200, 30, 30))
+    _row_shuffle_put_block(mode.board, 2, 3, (30, 200, 30))
+
+    mode._shuffle_bottom_rows(1)
+
+    # Dolu satır temizlendi ve puan akışı kart kaynağıyla raporlandı.
+    assert post_calls == [(1, 100, 'card')]
+    assert mode.board.score == 100
+    assert mode.board.lines_cleared == 1
+    # Yerçekimi YOK kanıtı: askıda blok yalnızca altı boşalan satıra kayar
+    # (row 3 -> row 4). Eski davranış (yerçekimi) onu önce row 5'e düşürüp
+    # orada kalmasını sağlardı.
+    assert [sum(row) for row in mode.board.occupancy] == [0, 0, 0, 0, 1, 0]
+    assert mode.board.occupancy[4][2] is True
+    assert mode.board.grid[4][2] == (30, 200, 30)
+    # Kartsal temizlik level/combo ekonomisini oyuncu akışına katmaz.
+    assert mode.board.level_lines_cleared == 0

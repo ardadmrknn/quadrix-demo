@@ -43,7 +43,7 @@ Bu belge, **Mystery (Kart Ustalığı) modu** kart seçim ekranında oyuncuya su
 
 ### Blok Karıştırıcı
 - **ID:** `row_shuffle`
-- **Açıklama:** En alttaki `{value}` satırdaki blokların yerlerini karıştırır.
+- **Açıklama:** En alttaki `{value}` satırdaki blokların yerlerini karıştırır; dolan satırlar temizlenir.
 
 ### Tuttuğunu Koparan (Common varyant)
 - **ID:** `hold_destroyer`

@@ -1964,7 +1964,7 @@ class MysteryCardManager:
                 "title": "Blok Karıştırıcı",
                 "base": 3,
                 "value_range": (2, 4),
-                "description": "En alttaki {value} satırdaki blokların yerlerini karıştırır.",
+                "description": "En alttaki {value} satırdaki blokların yerlerini karıştırır; dolan satırlar temizlenir.",
                 "color": (120, 200, 255),
                 "bg": (10, 24, 46),
                 "icon": "🎲",
@@ -14102,11 +14102,10 @@ class MysteryMode(Game):
                     except Exception:
                         pass
         
-        # Karistirma sonrasi bloklarin havada asili kalmamasi icin yercekimi uygula
-        try:
-            self.board.apply_gravity()
-        except Exception:
-            pass
+        # Tasarım kararı: yerçekimi uygulanmaz. Kart yalnızca alt bölgeyi
+        # karıştırır; tahta geneli sütun sıkıştırması (delik kapama + üst yapıyı
+        # çökertme) dengesiz güçlü bulunduğundan bilinçli olarak kaldırıldı.
+        # Dolu satır yalnızca karıştırma şansıyla oluşursa temizlenir.
 
         # Satır temizleme kontrolü
         prev_score = int(getattr(self.board, 'score', 0))
