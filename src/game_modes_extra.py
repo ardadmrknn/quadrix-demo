@@ -115,13 +115,6 @@ MYSTERY_LEVEL_SPEED_POST_L30_STEP_MS = 1
 # hedeflerin accumulator ile güvenli biçimde işlenebileceği pratik
 # alt sınırdır. Temel eğri değişmez; yalnız kart etkisi bu tabanı kullanır.
 MYSTERY_LEVEL_SPEED_EFFECT_MIN_MS = 16
-# Hız çarpanı etkilerinin (speed_burst) tabanı: taban hız eğrisinin
-# (MYSTERY_LEVEL_SPEED_MIN_MS) ALTINA inme izni verir. Etki yokken taban
-# hız değişmez — taban eğri zaten >= MYSTERY_LEVEL_SPEED_MIN_MS'tir.
-# v2 paritesi: speed_burst daha önce 100 ms genel tabanına takılıp L55+
-# seviyelerde fiilen etkisizleşiyordu; bu taban kartın hız vaadini
-# gerçek kılar (etkisiz halde taban oyun hızı HİÇ değişmez).
-MYSTERY_LEVEL_SPEED_EFFECT_MIN_MS = 16
 
 
 def get_mystery_level_fall_speed_ms(level: int) -> int:
