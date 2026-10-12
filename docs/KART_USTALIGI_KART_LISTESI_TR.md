@@ -87,7 +87,8 @@ Bu belge, **Mystery (Kart Ustalığı) modu** kart seçim ekranında oyuncuya su
 
 ### Geri Sarma
 - **ID:** `rewind_power`
-- **Açıklama:** U tuşu ile kullan: Son koyduğun parçayı geri al.
+- **Açıklama:** Son koyduğun parçayı geri al; satır temizleyen parçalar geri alınamaz.
+- **Not (2026-10-11):** Tetikleyici kartın atandığı slot tuşudur (kartların sabit tuşu yoktur). Kart tekrar seçilince (hak tamamlama) mevcut geri-sarma anlık görüntüsü artık silinmez; anlık görüntü yalnızca satır temizleyen kilitlemede veya kullanımda sıfırlanır.
 
 ### Sinerji Bonus
 - **ID:** `perk_synergy`

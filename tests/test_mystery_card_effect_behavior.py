@@ -1258,3 +1258,35 @@ def test_row_shuffle_runtime_clears_full_rows_via_card_source(monkeypatch):
     assert mode.board.grid[4][2] == (30, 200, 30)
     # Kartsal temizlik level/combo ekonomisini oyuncu akışına katmaz.
     assert mode.board.level_lines_cleared == 0
+
+
+def test_rewind_power_selection_preserves_existing_snapshot():
+    """rewind_power tekrar seçilince hak tamamlanır ama anlık görüntü korunur.
+
+    Eski davranış: kart dalı `_last_placed_piece = None` yazıyordu; bu, kartı
+    (ör. Atölye/Lunar ile) hak tamamlamak için yeniden alan oyuncunun zaten
+    kayıtlı olan son parçasını geri alma yeteneğini kaybetmesine yol açıyordu.
+    Anlık görüntü yalnızca satır temizleyen kilitlemede veya kullanımda
+    temizlenmelidir (koddaki tek iki yasal sıfırlama noktası).
+    """
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+    activated = []
+    mode.perk_manager = SimpleNamespace(
+        get_multiplier=lambda: 1.0,
+        notify_lines_cleared=lambda _lines, source='player': None,
+        activate=lambda key: activated.append(key),
+        rewind_uses=1,
+    )
+    snapshot = {'piece': object(), 'cells': [(1, 18)], 'color': (255, 0, 0)}
+    mode._last_placed_piece = snapshot
+    mode._rewind_available = True
+
+    mode._apply_card_effect({'id': 'rewind_power', 'value': 3, 'color': (255, 200, 255)})
+
+    assert activated == ['rewind_power']
+    # Kalan hak 1'di; kart değeri 3 → tamamlandı (eksikse tamamlama kuralı).
+    assert mode.perk_manager.rewind_uses == 3
+    assert mode._rewind_available is True
+    # Sözleşme: seçim anlık görüntüyü sıfırlamaz.
+    assert mode._last_placed_piece is snapshot

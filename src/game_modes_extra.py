@@ -1845,7 +1845,7 @@ class MysteryCardManager:
                 "title": "Geri Sarma",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "Son koyduğun parçayı geri al.",
+                "description": "Son koyduğun parçayı geri al; satır temizleyen parçalar geri alınamaz.",
                 "color": (255, 200, 255),
                 "bg": (38, 12, 38),
                 "icon": "RW",
@@ -11741,7 +11741,11 @@ class MysteryMode(Game):
             if cur < target_charges:
                 self.perk_manager.rewind_uses = target_charges
             self._rewind_available = True
-            self._last_placed_piece = None
+            # _last_placed_piece bilinçli olarak KORUNUR: kart tekrar seçilince
+            # (hak tamamlama) mevcut anlık görüntünün silinmesi "son koyduğun
+            # parçayı geri al" vaadiyle çelişirdi. Anlık görüntü yalnızca
+            # satır temizleyen bir kilitlemede veya geri sarma kullanımında
+            # temizlenir.
             try:
                 self._sync_active_cards()
             except Exception:
@@ -12040,8 +12044,10 @@ class MysteryMode(Game):
             effect_triggered = True
         elif effect_id == "sniper_shot":
             # Keskin Nişancı: kart seçimi yalnızca charge verir; hedefleme
-            # overlay'i otomatik açılmaz. Oyuncu N tuşuna (veya gamepad
-            # `card_sniper` aksiyonuna) basınca overlay açılır.
+            # overlay'i otomatik açılmaz (seçim/slot atama overlay'i açıkken
+            # ikinci bir overlay açılamaz). Tetikleyici plan §3 gereği slota
+            # bağlıdır: oyuncu kartın atandığı slot tuşuna (klavye 1-6 veya
+            # gamepad slot_N aksiyonu) bastığında overlay açılır.
             charges = int(card.get('value', 3))  # Varsayılan 3 hak
             self._sniper_charges = charges
             self._sniper_card = card

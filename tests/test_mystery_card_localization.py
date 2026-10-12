@@ -353,3 +353,20 @@ def test_row_shuffle_description_mentions_no_gravity_and_full_row_clear():
     guide = TRANSLATIONS['guide_card_row_shuffle_desc']['tr']
     assert 'kapanır' not in guide
     assert 'dolan satırlar temizlenir' in guide
+
+
+def test_rewind_description_discloses_line_clear_limit():
+    """Satır temizleyen parçalar geri alınamaz (kilitleme bloğu tasarımı);
+    açıklama bu istisnayı tüm dillerde söylemelidir."""
+    from localization import TRANSLATIONS
+
+    entries = TRANSLATIONS['card_rewind_power_desc']
+    expected_languages = {'tr', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ja', 'zh', 'ko'}
+    assert expected_languages <= set(entries), set(entries) - expected_languages
+    for language, text in entries.items():
+        assert text, (language, text)
+
+    assert 'satır temizleyen' in entries['tr']
+    assert 'geri alınamaz' in entries['tr']
+    assert 'pieces that clear lines' in entries['en']
+    assert 'cannot be undone' in entries['en']
