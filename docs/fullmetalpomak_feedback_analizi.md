@@ -44,7 +44,7 @@ Aşağıda **FullMetalPomak** adlı kullanıcının (deneyimli bir Tetris oyuncu
 > | [#4 Campaign Level 17](#feedback-4-campaign-görev-farkındalığı-level-17-matematikselrng-darboğazı-ve-dinamik-zorluk-önerisi) | **#M** (kampanya dengeleme) | Görev zorluğu; o belge **4 seviye + solvabilite taraması** istiyor |
 > | [#12 SRS/SRS+](#feedback-12-rotasyon-sistemi--srs--srs-uyumu-ve-kick-sistemi-çalışmıyor-geri-bildirimi) | **#A** (SRS / I tablosu) | I parçası kick tablosu — **üçüncü bağımsız kaynak** |
 >
-> **İkinci belgenin bu belgede olmayan 8 yeni kritik bulgusu:**
+> **İkinci belgenin bu belgede olmayan 11 yeni kritik bulgusu:**
 > - **Cascade modu bozuk** — tek hamle TRIPLE yerine QUADRIX sayıyor (o modu oynanamaz kılıyor)
 > - **O parçası 1 sütun solda doğuyor** (spawn_x formülü 2 genişlikli parça için yanlış)
 > - **Hold oryantasyonu sıfırlanmıyor** (Guideline ihlali)
@@ -53,6 +53,9 @@ Aşağıda **FullMetalPomak** adlı kullanıcının (deneyimli bir Tetris oyuncu
 > - **Skor yuvarlama tutarsızlığı** (`int()` ile kesilen 1.5× çarpanı)
 > - **Kart rozeti birim tutarsızlığı** — Hız Patlaması kartında rozet *"40 Hak"* derken açıklama *"40 saniye"* diyor; tek `value` alanı iki birimi temsil ediyor (`limited` + `timed_buff` çakışması), 11 dilin tamamında geçerli
 > - **Survival sarsıntısı ve sabit antivirüs eşiği** — zafer/game-over sarsıntısı `intensity=25–30` (normal temizlemenin ~3 katı) ve `ANTIVIRUS_SCORE=5000` sabit olduğu için geç oyunda anlamsızlaşıyor
+> - **Campaign L12 çözülmemiş placeholder** — hedef metni kullanıcıya ham `{target} Üçlü Temizle 0/1` olarak sızıyor (bu belgedeki #4'ün somut örneği)
+> - **Soft-drop hücre puanı kapalı** — `board.score += 1` yorum satırı; hard drop 2/hücre verirken soft drop 0 veriyor (asimetri)
+> - **Steam persona adı kalıcı cache** — sıralamadaki ad tazelenirken üst ad güncellenmiyor
 >
 > **Çelişen tek nokta:** Bu belgedeki **#8** *"bildirimleri azalt / tahta dışına taşı"* diyor; ikinci belgedeki **#K** *"T-spin için görsel ipucu ekle"* diyor. Bunlar **birlikte** çözülebilir: bildirimi HUD kenarına taşı ve kısa/küçük yap. İkinci belgenin §2.3 bölümüne bakınız.
 

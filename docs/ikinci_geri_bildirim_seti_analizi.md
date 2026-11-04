@@ -1,6 +1,6 @@
 # İkinci Geri Bildirim Seti — Teknik Tetris Oyuncusu Analizi
 
-> **Bu belgenin kaynağı `v2` deposudur.** `quadrix-demo`'ya kopyalanma nedeni: aşağıdaki **en kritik 8 bulgu demo kodunda da birebir mevcuttur** (2026-11-05 doğrulaması). Belgedeki `file:///` bağlantıları ve satır numaraları **v2** ağacına aittir.
+> **Bu belgenin kaynağı `v2` deposudur.** `quadrix-demo`'ya kopyalanma nedeni: aşağıdaki **en kritik 11 bulgu demo kodunda da birebir mevcuttur** (2026-11-05 doğrulaması). Belgedeki `file:///` bağlantıları ve satır numaraları **v2** ağacına aittir.
 >
 > | Bulgu | v2 konumu | Demo konumu |
 > | :--- | :--- | :--- |
@@ -12,15 +12,29 @@
 > | I parçası kick tablosu | `src/pieces.py:69-78` | [`src/pieces.py:72-80`](../../quadrix-demo/src/pieces.py#L72) |
 > | Hız Patlaması rozeti "40 Hak" / açıklama "40 saniye" | `game_modes_extra.py:14226` | [`game_modes_extra.py:12030`](../../quadrix-demo/src/game_modes_extra.py#L12030) |
 > | Survival sarsıntısı + sabit antivirüs eşiği | `game_modes_advanced.py:66` | [`game_modes_advanced.py:66`](../../quadrix-demo/src/game_modes_advanced.py#L66) |
+> | L12 hedef metni ham `{target}` sızıntısı | `localization.py:14105` | [`localization.py:9465`](../../quadrix-demo/src/localization.py#L9465) |
+> | Soft-drop hücre puanı kapalı | `game.py:2922` | [`game.py:2795`](../../quadrix-demo/src/game.py#L2795) |
+> | Steam persona adı kalıcı cache | `steam_integration.py:1890` | [`steam_integration.py:1914`](../../quadrix-demo/src/steam_integration.py#L1914) |
 
 
 > **Kaynak:** `aboooo/` klasörü — `aboooo.html` (teknik rapor) + `images/` altında **18 PNG + 6 GIF** (toplam 24 medya dosyası).
 >
 > **İlişkili belge:** Bu belge, [`fullmetalpomak_feedback_analizi.md`](fullmetalpomak_feedback_analizi.md) belgesinin **tamamlayıcısıdır**. İki set farklı oyunculardan gelmiştir ve **beş konuda bağımsız olarak örtüşmektedir**. Çapraz eşleme için bkz. [§2](#2-i̇ki-geri-bildirim-seti-arasındaki-çapraz-eşleme).
 >
-> **Üçüncü belge:** [`TESTER_INSTAGRAM_FEEDBACK_ANALIZI_TR.md`](TESTER_INSTAGRAM_FEEDBACK_ANALIZI_TR.md) — bu, **FullMetalPomak sohbetinin daha titiz bir analizidir** (16 başlık, 12 maddelik doğrulama planı). Bu belgedeki #A (SRS) için **dördüncü** teyit kaynağı değildir (o sohbette SRS iddiası yok), ancak **#M (kampanya) ve #D/#G/#H** için o belge daha ayrıntılı kod kanıtı sunar.
+> **Üçüncü belge:** [`TESTER_INSTAGRAM_FEEDBACK_ANALIZI_TR.md`](TESTER_INSTAGRAM_FEEDBACK_ANALIZI_TR.md) — FullMetalPomak sohbetinin daha titiz analizi (16 başlık, 12 maddelik doğrulama planı) **ve aynı belgenin §9 bölümü**, bu belgenin kaynağı olan `aboooo.html`'in paralel denetimi.
 >
 > **Bu belgede olmayan, tester belgesine özgü 3 bulgu:** `show_ghost` ayarının çizimle bağlantısız olması · maksimum 3 ardışık parça filtresinin torbayı bozması · workshop parçalarının torbaya otomatik girmesi.
+>
+> ### §9 (d5e3c09) — aynı `aboooo.html` için paralel denetim
+>
+> [`TESTER_INSTAGRAM_FEEDBACK_ANALIZI_TR.md` §9](TESTER_INSTAGRAM_FEEDBACK_ANALIZI_TR.md#9-dünya-şampiyonu-tester-denetimi--aboooohtml) bu belgeyle **aynı HTML'i** işler; yaklaşımı farklıdır: her madde için *iddia / kod kanıtı / kanıtın sınırı* üçlüsünü ayırır ve hüküm vermeden önce runtime ölçümü ister. Bu belge ampirik doğrulamaya, o belge kanıt-sınırı ayrımına ağırlık veriyor.
+>
+> **§9'un bu belgede olmayan 3 bulgusu** (aşağıda #Q, #R, #S olarak eklendi):
+> - **L12 hedef metni çözülmemiş placeholder** (`{target} Üçlü Temizle 0/1`)
+> - **Soft-drop hücre başına puanı kapalı** (`board.score += 1` yorum satırı)
+> - **Steam persona adı kalıcı cache** — sıralama adı güncellenirken üst ad güncellenmiyor
+>
+> **§9'un doğrulama matrisi** (9.19) bu belgenin §6 önerilerinden daha ayrıntılı: 9 kategori × ölçülecek olay listesi. İki matris birlikte kullanılmalıdır.
 >
 > **Analiz yöntemi:** Rapordaki her iddia için ilgili kaynak kod okunmuş, kritik olanlar gerçek `Game` nesnesi kurulup ampirik olarak test edilmiştir (`scratch/fb_probe.py`). **Kod tabanında hiçbir değişiklik yapılmamıştır** — bu belge yalnızca analizdir.
 
@@ -52,8 +66,11 @@ Bunun pratik sonucu: tespitlerinin çoğu **teknik olarak doğrulanabilir** çı
 | **N** | **Metin Kalitesi / UX** | Metinlerde "YZ slop" (anlamsız/alakasız cümleler), eğitim 5/8/11/14 metin sorunları, oyun içi ayarların çoğu değiştirilemiyor, başarım ünlemi, Steam ismi senkronu, eğitim navigasyonu, pencere kapama, inaktif pencere tuşları, Local PvP 0-2 berabere. | **KISMEN — UI akışları manuel doğrulama gerektiriyor** | `localization.py`, `tutorial_lessons.py`, `game_modes.py`, `focus_manager.py` | **Düşük (P3)** |
 | **O** | **Kart Metni / Birim Tutarsızlığı** | **"40 saniye mi 40 hak mı?"** — Hız Patlaması kartında süre rozeti "40 Hak" yazıyor ama açıklama "40 saniye boyunca" diyor. Aynı değer iki farklı birimle sunuluyor. | **DOĞRULANDI** (kod: `limited: True` + `timed_buff: True` → rozet `"{value} Hak"`, `_speed_burst_timer = value` saniye) | [`game_modes_extra.py:890-904`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L890-L904), [`game_modes_extra.py:14226`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L14226), [`localization.py:18275`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/localization.py#L18275) | **Orta (P2)** |
 | **P** | **Survival Ekran Sarsıntısı ve Antivirüs Eşiği** | Hayatta kalma modu bitince tahta fazla titriyor (*"epilepsi krizi"*); ayrıca antivirüs için gereken skor sabit kaldığı için bir noktadan sonra 5000 puan bir satıra bile denk gelmiyor. | **DOĞRULANDI** (kod: sabit `ANTIVIRUS_SCORE = 5000`, zafer sarsıntısı `intensity=25`, game-over `intensity=30`) | [`game_modes_advanced.py:66`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L66), [`163-164`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L163-L164), [`193`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L193), [`223`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L223) | **Orta (P2)** |
+| **Q** | **Campaign L12 Placeholder** | Level 12 hedef metni çözülmemiş şablon olarak görünüyor: **`{target} Üçlü Temizle 0/1`**. | **DOĞRULANDI** (kod: `campaign_cond_multi_clear_3` `{target}` bekliyor, `desc_kwargs` boş kalıyor) | [`level_data.py:493-505`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/campaign/level_data.py#L493-L505), [`localization.py:12188`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/localization.py#L12188) | **Yüksek (P1)** |
+| **R** | **Soft-Drop Hücre Puanı Yok** | Soft drop ile inen parça hücre başına 1 puan kazandırmıyor (GuideLine'da kazandırmalı). | **DOĞRULANDI** (kod: `board.score += 1` yorum satırı) | [`game.py:2916-2922`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L2916-L2922) | **Düşük (P3)** |
+| **S** | **Steam Persona Adı Cache** | Steam adı değişince sıralamadaki ad güncelleniyor ama üstteki kullanıcı adı güncellenmiyor. | **DOĞRULANDI** (kod: persona adı ilk SDK çağrısından sonra kalıcı cache) | [`steam_integration.py:1890-1905`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/steam_integration.py#L1890-L1905), [`2602-2605`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/steam_integration.py#L2602-L2605) | **Düşük (P3)** |
 
-**Doğrulama özeti:** 11 birebir doğrulandı · 3 kısmen/araştırılacak · 2'si manuel test gerektiriyor.
+**Doğrulama özeti:** 14 birebir doğrulandı · 3 kısmen/araştırılacak · 2'si manuel test gerektiriyor.
 
 > **NOT: Bu belgedeki maddelerin ana belgedeki karşılıkları:**
 > **#A** ↔ [#12](fullmetalpomak_feedback_analizi.md#feedback-12-rotasyon-sistemi--srs--srs-uyumu-ve-kick-sistemi-çalışmıyor-geri-bildirimi) · **#D** ↔ [#7](fullmetalpomak_feedback_analizi.md#feedback-7-satır-silme-clear-ve-düşüş-fall-animasyonlarındaki-yarı-donuk-hybrid-durum-çelişkisi) · **#G** ↔ [#9](fullmetalpomak_feedback_analizi.md#feedback-9-tahta-boyutu-2010-vs-222410-buffer-zone-skip_hidden_rows-ve-yüksek-kulede-comeback-imkânsızlığı) · **#H** ↔ [#8](fullmetalpomak_feedback_analizi.md#feedback-8-puan-combo-ve-milestone-bildirimlerinin-tahtayı-kapatması-puan-bildirimleri-kör-edebiliyor) · **#M** ↔ [#4](fullmetalpomak_feedback_analizi.md#feedback-4-campaign-görev-farkındalığı-level-17-matematikselrng-darboğazı-ve-dinamik-zorluk-önerisi)
@@ -637,6 +654,82 @@ Sarsıntı şiddetleri:
 
 ---
 
+## #Q: Campaign L12 — Çözülmemiş Placeholder Hedef Metni
+
+**Oyuncu ifadesi (HTML):**
+> *"Görev 12- hocam."* — yanında `image18.png` ekran görüntüsü.
+
+**Görsel kanıt:** Görev kartında **`{target} Üçlü Temizle 0/1`** yazıyor; `{target}` ham şablon değişkeni kullanıcıya görünüyor.
+
+**Kod kanıtı — üç katmanda uyuşmazlık:**
+
+1. **Override tanımı** ([`level_data.py:493-505`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/campaign/level_data.py#L493-L505)): `_obj_multi_clear(3)` → `desc_key='campaign_cond_multi_clear_3'`, **`desc_kwargs = {}`** (boş).
+2. **Lokasyon metni** ([`localization.py:12188`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/localization.py#L12188)): `'campaign_cond_multi_clear_3'` = `"3'lü satır temizle"` — **`{target}` içermiyor**.
+3. **Ama görünen metin** ([`localization.py:14105`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/localization.py#L14105)): `'campaign_obj_clear_triples'` = `'{target} Üçlü Temizle'` — **`{target}` bekliyor**.
+
+Yani ekranda görünen **`campaign_obj_clear_triples`** anahtarı, `MultiClearObjective` tarafından üretilen **`desc_tr`** alanından geliyor ([`objectives.py:105`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/campaign/objectives.py#L105)), ve o nesnede `description_params` yalnızca `'target'` sağlıyor olsa da `desc_kwargs` boş olduğu için **format parametresi boş kalıyor**.
+
+**Kök neden:** Aynı hedef için **iki ayrı lokasyon anahtarı** var (`campaign_cond_multi_clear_3` ve `campaign_obj_clear_triples`); hangisinin kullanılacağı tutarlı değil. Şablon değişkeni (`{target}`) biçimlendirilmemiş.
+
+**Neden P1:** Bu bir "kötü çeviri" değil, **kullanıcıya sızmış geliştirici artığı**. Oyuncu hedefi anlayamıyor — ve bu, `#M`'deki (kampanya zorluğu) "görev şartları anlaşılmıyor" şikâyetinin somut bir örneği.
+
+**Çözüm:**
+1. **Tek anahtar seç:** `MultiClearObjective` yolunda `campaign_obj_clear_triples` kullanılıyorsa, `description_params`'a `target` değerini **her zaman** geçir; ya da `campaign_cond_multi_clear_3`'ü `{target}` içerecek şekilde düzelt.
+2. **Koruma ekle:** `Objective.describe()` içinde `str.format` sonrası `'{'` kalırsa (biçimlendirilmemiş şablon) bunu logla ve geliştirici görünürlüğüne sun — sessizce oyuncuya sızmasın.
+3. **Test:** Tüm kampanya görevleri için `describe()` çıktısında `{` / `}` karakteri bulunmadığını doğrulayan birim testi. Bu, aynı sınıf hatanın **tüm seviyelerde** tekrarını engeller.
+4. **Tarama:** Aynı desenle (`desc_tr` + ayrı `desc_key`) yazılmış diğer hedef tipleri de taranmalı — `campaign_obj_*` ailesindeki her anahtar için `{target}`/`{value}` varlığı ve parametrenin geçirildiği doğrulanmalı.
+
+---
+
+## #R: Soft-Drop Hücre Başına Puanı Kapalı
+
+**Oyuncu ifadesi (HTML):**
+> *"Ayrıca, Soft Drop ile inen parça satır başına bir(1) skor kazandırır."*
+
+Bu ifade bir hata raporu değil, **tarafsız bir gözlem** — oyuncu kuralı doğru hatırlatıyor (Guideline: soft drop 1 puan/hücre, hard drop 2 puan/hücre).
+
+**Kod kanıtı** ([`game.py:2916-2922`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L2916-L2922)):
+
+```python
+# Let's add 1 point per manual soft-drop input to keep it simple and rewarding.
+# self.board.score += 1        # <-- YORUM SATIRI: kapalı
+```
+
+Soft drop **hızı** değiştiriyor (`_set_fall_speed`) ama **puan vermiyor**. Hard drop veriyor (2/hücre, [`game.py:3055`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L3055)).
+
+**Etki:** Sprint dışı modlarda skor toplama mekaniği **asimetrik** — hard drop ödüllendiriliyor, soft drop ödüllendirilmiyor. Guideline'a göre ikisi de ödüllendirilmeli. Ancak bu bir *bug* olmaktan çok **bilinçli kapatılmış bir satır** (yorumda "for simplicity" yazıyor).
+
+**Çözüm:**
+1. Soft drop gerçekten hücre başına mı indiriyor, yoksa SDF ile çoklu hücre mi atlıyor? Önce ölç: `dy` sayısı kadar puan ekle.
+2. **SDF ile tutarlı ol:** `board.score += int(dy) * 1` — soft drop 1, hard drop 2.
+3. **Mod bazlı düşün:** Sprint/Zen gibi modlarda skor ikincil; ama Classic/Ultra'da asimetri oyuncuya haksızlık.
+
+**Not:** Bu madde **P3** — oynanışı bozmuyor, ama skor sistemi doğruluğu ve sonraki leaderboard karşılaştırmaları için düzeltilmeli.
+
+---
+
+## #S: Steam Persona Adı Cache — Üst Ad Güncellenmiyor
+
+**Oyuncu ifadesi (HTML):**
+> *"Steam ismi değişmesi durumunda, sıralamadaki isim değişiyor ama üstteki isim değişmiyor."*
+
+**Kod kanıtı** ([`steam_integration.py:1890-1905`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/steam_integration.py#L1890-L1905)): persona adı **ilk başarılı SDK çağrısından sonra kalıcı olarak cache'leniyor**.
+
+Üst kullanıcı adı [`get_user_display_name()`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/steam_integration.py#L2602-L2605) üzerinden bu **cache'lenmiş** değeri okuyor. Leaderboard satırları ise **ayrı, taze** veri çekiyor.
+
+**Kök neden:** İki farklı veri kaynağı — biri kalıcı cache (üst ad), diğeri canlı SDK/leaderboard verisi (sıra adı). Steam adı değiştiğinde ikisi ayrışıyor.
+
+**Neden P3:** Kozmetik tutarsızlık; oyun akışını etkilemiyor. Ama oyuncuya "iki farklı kimliğim var" hissi veriyor ve mağaza/profil ekranlarında kafa karışıklığı yaratıyor.
+
+**Çözüm:**
+1. **Cache invalidation:** Profil ekranı açıldığında veya belirli bir süre (ör. 5 dk) geçtiğinde persona adını yeniden oku.
+2. **Tek kaynak:** Hem üst ad hem leaderboard satırı **aynı** `get_persona_name()` erişiminden geçsin; bir tarafta cache, diğerinde canlı veri olmasın.
+3. **Test:** Persona adı değiştirildiğinde (mock SDK ile) tüm UI yüzeylerinin aynı adı gösterdiğini doğrulayan birim testi.
+
+**İlgili bulgu:** Aynı belgede `#N` altındaki "varsayılan/takılı" etiket karışıklığı ve başarım ünlemi de aynı **stale-state** ailesindendir — üçü birlikte **cache tutarlılığı** dalgasında çözülebilir.
+
+---
+
 # 4. Öncelik Sıralaması ve Uygulama Planı
 
 ## 4.1 P0 — Oynanışı bozan (önce bunlar)
@@ -656,6 +749,7 @@ Sarsıntı şiddetleri:
 | 6 | **#C Hold oryantasyon** | Sıfırlanmıyor | Küçük (~25 satır + 4 çağrı yeri) |
 | 7 | **#H Kombo off-by-one** | 1'den başlıyor | Küçük (~5 satır + migration kararı) |
 | 8 | **#K T-spin bildirimi** | Görsel ipucu yok | Küçük (HUD rozeti) |
+| 8b | **#Q L12 placeholder** | Hedef metninde ham `{target}` | Küçük (tek anahtar + format koruması) |
 
 ## 4.3 P2 — Cila ve denge
 
@@ -667,6 +761,8 @@ Sarsıntı şiddetleri:
 | 12 | **#O Kart birim tutarsızlığı** | Küçük (`duration_seconds` alanı + rozet etiketi + 11 dil) |
 | 13 | **#P Survival sarsıntı + antivirüs eşiği** | Küçük (sarsıntı şiddeti + artan eşik formülü) |
 | 14 | **#M Kampanya solvabilite taraması** | Orta (otomasyon) |
+| 14b | **#R Soft-drop puanı** | Küçük (hücre başına +1) |
+| 14c | **#S Steam persona cache** | Küçük (cache invalidation + tek kaynak) |
 
 ## 4.4 Araştırılacak
 
@@ -674,6 +770,7 @@ Sarsıntı şiddetleri:
 | ---: | :--- | :--- |
 | 15 | **#J (Inf) SDF** | Manuel test protokolü; doğrulanmadan düzeltme YOK |
 | 16 | **#N Metin/UI** | Sesli okuma denetimi + UI akışlarının tek tek gezilmesi |
+| 16b | **#R/#S ile birlikte** | Üçü aynı **cache/stale-state** dalgasında |
 
 ---
 
@@ -712,6 +809,9 @@ Bu belge ile [`fullmetalpomak_feedback_analizi.md`](fullmetalpomak_feedback_anal
 | `test_combo_counter_starts_at_zero.py` | İlk temizleme combo 0 (H) |
 | `test_lock_out_full_outside_only.py` | Kısmen görünür parça öldürmez (G) |
 | `test_score_determinism.py` | Aynı durum → aynı puan (F) |
+| `test_campaign_objective_text_format.py` | Tüm kampanya görevlerinin `describe()` çıktısında biçimlendirilmemiş `{` / `}` kalmadığı (Q) |
+| `test_soft_drop_scores_per_cell.py` | Soft drop hücre başına 1 puan, hard drop 2 puan (R) |
+| `test_steam_persona_cache_invalidation.py` | Persona adı değişince tüm UI yüzeylerinde aynı ad (S) |
 
 ---
 
