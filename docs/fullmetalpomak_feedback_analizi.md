@@ -1,14 +1,23 @@
 # FullMetalPomak Geri Bildirim (Feedback) ve Kod Tabanı Analizi
 
-> **Bu belgenin kaynağı `v2` deposudur.** `quadrix-demo`'ya kopyalanma nedeni: aşağıdaki **üç oynanış hatası demo kodunda da birebir mevcuttur.** Belgedeki `file:///` bağlantıları ve satır numaraları **v2** ağacına aittir; demo karşılıkları aşağıdaki tablodadır.
+> **Bu belgenin kaynağı `v2` deposudur.** `quadrix-demo`'ya kopyalanma nedeni: aşağıdaki **oynanış hataları demo kodunda da birebir mevcuttur.** Belgedeki `file:///` bağlantıları ve satır numaraları **v2** ağacına aittir; demo karşılıkları aşağıdaki tablodadır.
 >
-> ### Demo'da Doğrulanan Ortak Hatalar (2026-11-04)
+> ### Demo'da Doğrulanan Ortak Hatalar (2026-11-04, 2026-11-05 güncellemesi)
 >
 > | Hata | v2 konumu | Demo konumu | Belge bölümü |
 > | :--- | :--- | :--- | :--- |
 > | I parçası kick tablosu (Guideline/SRS+ ile eşleşmiyor) | `src/pieces.py:69-95` | [`src/pieces.py:72-80`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/pieces.py#L72-L80) | #12 |
 > | 21-Bag randomizer (`_bag_copies = 3`) | `src/game.py:1459` | [`src/game.py:1365`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/game.py#L1365) | #10 |
 > | Satır temizleme donması (`block_fall_speed = 0.12`) | `src/game.py:1530` | [`src/game.py:1436`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/game.py#L1436), [`src/pvp_game.py:483`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/pvp_game.py#L483) | #7 |
+> | **`show_ghost` ayarı çizimle bağlantısız** (`game.py`'de hiç okunmuyor) | `src/game.py:5928` | [`src/game.py:5546`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/game.py#L5546) — yalnız `effects_enabled` | İlişkili Belge 2 |
+> | **Ghost, parçanın kendi rengiyle çiziliyor** (aynı renk 2px border) | `src/game.py:5943` | [`src/game.py:5561`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/game.py#L5561) | #1 |
+> | **Ardışık aynı parça filtresi** (`_max_consecutive_same_piece = 3`) torbayı bozuyor | `src/game.py:1451` | [`src/game.py:1357`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/game.py#L1357) | #10 |
+> | **Workshop parçaları torbaya otomatik giriyor** | `src/game.py:2154` | [`src/game.py:2043`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/game.py#L2043) | #10 |
+> | **Cascade turları tek skora toplanıyor** (TRIPLE → QUADRIX) | `src/board.py:190-211` | [`src/board.py:191`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/board.py#L191) | İkinci Belge #I |
+> | **Kombo sayacı 1'den başlıyor** | `src/board.py:260-264` | [`src/board.py:268`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/board.py#L268) | İkinci Belge #H |
+> | **Mini T-spin puanı yarı** (100×level, satır ayrımı yok) | `src/board.py:253-255` | [`src/board.py:254-255`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/board.py#L254-L255) | İkinci Belge #E |
+> | **O parçası spawn_x hatası** (`-2` ofseti 2 genişlikli parçada kayma) | `src/game.py:2374-2379` | [`src/game.py:2263-2268`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/game.py#L2263-L2268) | İkinci Belge #B |
+> | **Hold oryantasyonu sıfırlanmıyor** | `src/game_modes_extra.py:8329` | [`src/game_modes_extra.py:7587`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/game_modes_extra.py#L7587) | İkinci Belge #C |
 >
 > Ölçüm betikleri demo ağacında yoktur; ölçümler `v2/scratch/` altındadır ve demo kodunda aynı sonuçları verir (formüller ve tablolar özdeş).
 
@@ -17,6 +26,63 @@
 Aşağıda **FullMetalPomak** adlı kullanıcının (deneyimli bir Tetris oyuncusu/yayıncısı; **24" 1080p monitör** ve **8BitDo Xbox Arcade Stick [XInput / D-Pad modu]** ile testi gerçekleştirmiştir) verdiği tüm geri bildirimlerin dökümü (toplam **13 ana başlık**) ve kod tabanı referanslı teknik kök neden analizleri yer almaktadır.
 
 > **Ek — 2026-11-04 Ampirlik Doğrulama Turu:** Bu belgedeki niteliksel tespitler (özellikle **#7 Satır Silme/Düşüş Senkronu** ve **#10 21-Bag**) gerçek `Game` nesnesi kurulup `update()` döngüsü simüle edilerek **ölçümle** doğrulanmıştır. Ayrıca belgede yer almayan **iki yeni konu** eklenmiştir: **#12 SRS/SRS+ rotasyon sistemi** (ayrı bir kullanıcı geri bildirimi: *"kick sistemi çalışmıyor"*) ve **#13 Speedrun/Pro oyuncu yeterlilik denetimi**. Ölçüm betikleri `v2/scratch/` altındadır (`srs_probe*.py`, `srs_diff.py`, `srs_realistic.py`, `srs_reversible.py`, `sweep_real*.py`, `sweep_resolution.py`, `sweep_settings.py`, `sweep_impact.py`, `sweep_timing.py`) ve `cd v2/scratch && python <betik>` ile çalışırlar. Kod tabanında **hiçbir değişiklik yapılmamıştır**.
+
+---
+
+> ## ILISKILI: İlişkili Belge — İkinci Geri Bildirim Seti
+>
+> Farklı ve teknik bir Tetris oyuncusundan gelen bağımsız bir geri bildirim seti ayrı bir belgede analiz edilmiştir:
+> **[`ikinci_geri_bildirim_seti_analizi.md`](ikinci_geri_bildirim_seti_analizi.md)** (`aboooo/` klasörü, 1 HTML rapor + 24 medya)
+>
+> **Bu belgedeki beş konu o ikinci sette de bağımsız olarak bildirilmiştir** — yani bunlar öznel tercih değil, nesnel kusurdur:
+>
+> | Bu belge | İkinci belge | Ortak konu |
+> | :--- | :--- | :--- |
+> | [#7 Clear/Fall senkronu](#feedback-7-satır-silme-clear-ve-düşüş-fall-animasyonlarındaki-yarı-donuk-hybrid-durum-çelişkisi) | **#D** (ARE / animasyon) | Animasyon sırasında parçanın doğması; yerleşimin animasyon-sonrası tahtaya göre hesaplanması |
+> | [#9 Buffer zone / lock-out](#feedback-9-tahta-boyutu-2010-vs-222410-buffer-zone-skip_hidden_rows-ve-yüksek-kulede-comeback-imkânsızlığı) | **#G** (TOP OUT / LOCK OUT) | Üst satırda ölüm; buffer zone eksikliği |
+> | [#8 Combo gösterimi](#feedback-8-puan-combo-ve-milestone-bildirimlerinin-tahtayı-kapatması-puan-bildirimleri-kör-edebiliyor) | **#H** (kombo sayacı) | Kombo; bu belge görsel kirliliği, o belge **değerin hatalı olduğunu** (1'den başlıyor) buldu |
+> | [#4 Campaign Level 17](#feedback-4-campaign-görev-farkındalığı-level-17-matematikselrng-darboğazı-ve-dinamik-zorluk-önerisi) | **#M** (kampanya dengeleme) | Görev zorluğu; o belge **4 seviye + solvabilite taraması** istiyor |
+> | [#12 SRS/SRS+](#feedback-12-rotasyon-sistemi--srs--srs-uyumu-ve-kick-sistemi-çalışmıyor-geri-bildirimi) | **#A** (SRS / I tablosu) | I parçası kick tablosu — **üçüncü bağımsız kaynak** |
+>
+> **İkinci belgenin bu belgede olmayan 6 yeni kritik bulgusu:**
+> - **Cascade modu bozuk** — tek hamle TRIPLE yerine QUADRIX sayıyor (o modu oynanamaz kılıyor)
+> - **O parçası 1 sütun solda doğuyor** (spawn_x formülü 2 genişlikli parça için yanlış)
+> - **Hold oryantasyonu sıfırlanmıyor** (Guideline ihlali)
+> - **Mini T-spin puanı yarı** (100 vs 200; single/double ayrımı yok)
+> - **Kombo sayacı 1'den başlıyor** (off-by-one)
+> - **Skor yuvarlama tutarsızlığı** (`int()` ile kesilen 1.5× çarpanı)
+>
+> **Çelişen tek nokta:** Bu belgedeki **#8** *"bildirimleri azalt / tahta dışına taşı"* diyor; ikinci belgedeki **#K** *"T-spin için görsel ipucu ekle"* diyor. Bunlar **birlikte** çözülebilir: bildirimi HUD kenarına taşı ve kısa/küçük yap. İkinci belgenin §2.3 bölümüne bakınız.
+
+---
+
+> ## İlişkili Belge 2 — Aynı Sohbetin Daha Titiz Analizi
+>
+> **[`TESTER_INSTAGRAM_FEEDBACK_ANALIZI_TR.md`](TESTER_INSTAGRAM_FEEDBACK_ANALIZI_TR.md)** — **aynı kaynak sohbet** (`message_1.html`), 16 feedback başlığı, 12 maddelik doğrulama planı. Bu belgeden farkı: *"kodda mevcut"* ile *"oyuncuda doğrulanmış"* ayrımını sıkı tutuyor ve hüküm vermeden önce saha testi istiyor.
+>
+> **Bu belgedeki iki maddede önemli düzeltme getiriyor:**
+>
+> | Konu | Bu belgede | Tester belgesinde (daha ayrıntılı) |
+> | :--- | :--- | :--- |
+> | **#10 — 21-Bag** | *"3 kopyalı 21'lik torba"* | Torba modeli **eksik anlatılmış**: (a) [`_max_consecutive_same_piece = 3`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L1451) filtresi sıralamayı bozar, (b) [`_get_workshop_piece_factories`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L2154) ile **workshop parçaları torbaya otomatik girer**. "7×3=21 sabit" yalnızca workshop kapalıyken geçerli. Oyun içi dağılım **sabit değil**. |
+> | **#1 — Ghost/Outline** | *"Contrast düşük, outline görünmüyor"* | Ek kök neden: **`show_ghost` ayarı `game.py`'de hiç okunmuyor**. Ayar modelde/UI'da/lokalizasyonda var, ama ghost çizimi yalnızca `effects_enabled` kontrol ediyor ([`game.py:5928`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L5928)). Bu **ayrı bir kusurdur** ve #1'deki kontrast şikâyetini açıklamaz — ikisi bağımsızdır (aşağıdaki nota bakınız). |
+>
+> **Ayrıca tester belgesinin netleştirdiği bir konu:** Clear/fall akışında `line_clear_animation` 30 karelik flash sayacı ([`game.py:3829`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L3829)) ile `_line_clear_animation_active()` kararı ([`game.py:5262-5274`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L5262)) **ayrı zaman çizelgelerinde** ilerliyor. Bu, #7'deki "yarı-donuk" durumun mekanik açıklamasıdır.
+>
+> ### Düzeltme — `show_ghost` ile #1 kontrast sorunu **bağımsızdır**
+>
+> Bu iki bulguyu ilk değerlendirmede yanlışlıkla birbirine bağlamıştım. Kod tekrar okunduğunda ayrı oldukları netleşti:
+>
+> | Sorun | Mekanizma | Kodu |
+> | :--- | :--- | :--- |
+> | **#1 — Ghost kontrast** | Ghost, **parçanın kendi rengiyle** çiziliyor: `ghost_color = self.current_piece.color`, %50 alfa dolgu + **aynı renkte 2px kenarlık** | [`game.py:5943`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L5943) ve [`game.py:5969-5974`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L5969-L5974) |
+> | **`show_ghost` bağlantısı** | Ayar okunmuyor; ghost her koşulda çiziliyor | [`game.py:5928`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L5928) — yalnızca `effects_enabled` |
+>
+> **Neden bağımsız:** `show_ghost` yalnızca ghost'un **çizilip çizilmeyeceğini** kontrol eder. Çizildiğinde **rengini** etkilemez. T parçası mor + `(190, 80, 255)` renkte `mystery` temasının parlak mor ızgarası (`grid_color = (220, 160, 255)`) üstünde aynı renk tonu kullanılıyor → #1'in kök nedeni budur ve `show_ghost` düzeltilse bile **aynen kalır**. Tersine, ghost rengi düzeltilse bile `show_ghost` ayarı çalışmıyor olmaya devam eder.
+>
+> **Çözümler de ayrı:**
+> - **#1 için:** `ghost_color` parça renginden türetilmemeli. Kullanıcının temasından bağımsız, yüksek kontrastlı bir ghost rengi (beyaz/açık gri) veya parça renginin aydınlatılmış/koyulaştırılmış türevi + **farklı renkte kenarlık** kullanılmalı.
+> - **`show_ghost` için:** çizim bloğuna `settings_manager.get('show_ghost', True)` koşulu eklenmeli (~3 satır).
 
 ---
 
@@ -35,8 +101,8 @@ Aşağıda **FullMetalPomak** adlı kullanıcının (deneyimli bir Tetris oyuncu
 | **9** | **Tahta Geometrisi & Spawn Yüksekliği (20×10 vs Buffer Zone)** | **"Şimdi fark ettim taşı yanlış yerde spawnlıyorsunuz... 20×10 görünüyor ama 22/23×10 oluyor tahtalar."** Tahta üstte dolu olduğunda (satır 18–20 doluyken) taş tahtanın dışında (buffer/vanish zone) doğmak yerine hemen görünür satırlara (`skip_hidden_rows`) indirildiği ve `row 0` kilitlenmesinde anında Game Over verildiği için üst satırlarda yüksek kule *comeback* (kurtarma) hamleleri yapılamıyor. | Ek Görsel 1 (Orta–Alt) | [`BOARD_HEIGHT`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/constants.py#L14), [`HIDDEN_SPAWN_ROWS`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/pieces.py#L99), [`skip_hidden_rows`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/pieces.py#L138-L154), [`Board.lock_piece`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/board.py#L143-L152), [`Game._draw_base_scene`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L5987-L5988) | **Kritik (P0)** |
 | **10** | **Torba (Randomizer) Mimarisi Detayı (21-Bag vs 7-Bag)** | 3'lü torba (`_bag_copies = 3`, 21 taş) kullanıldığında iki `I` çubuğu arasındaki maksimum kuraklık 12 taştan **36 taşa** çıkıyor; modern Guideline beklentisi varsayılan olarak **tekli torba (7-bag)** olması ve çoklu torbanın opsiyonel/sandbox ayarı olarak sunulması. **Doğrulama (2026-11-04):** `_bag_copies = 3` teyit edildi ([`game.py:1459`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L1459)); torba dolum mantığı [`_refill_piece_bag`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L2145-L2166) önce her tipten 3 kopya atıp karıştırıyor. | Ek Görsel 1 (En Alt) & Ek Görsel 2 (Üst) | [`Game._refill_piece_bag`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L2145-L2166), [`Game._choose_piece_from_factories`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L2168-L2215) | **Yüksek (P1)** |
 | **11** | **Ses Tasarımı (TGM Tarzı Unique Spawn SFX & Announcer) + Mağaza Kozmetikleri (Lazer / Kamehameha Sweep & Arka Plan)** | TGM'deki gibi **her taşın kendine özgü bir spawn sesinin** olması (işitsel reaksiyon hızı için), satır temizlemelerde **sesli anons (announcer)** bulunması, Mağaza'ya **lazer/Kamehameha atan pet satır silme efektleri** ve **Cyber/Synth arka planlar** eklenmesi. | Ek Görsel 1 (Alt) & Ek Görsel 2 (Orta–Alt) | [`SoundManager.create_sounds`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/sound.py#L268-L323), [`draw_rainbow_cat_sweep`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/sweep_effects.py#L996-L1062), [`StoreScreen`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/store_screen.py#L162-L220) | **Orta / Özellik (P2)** |
-| **12** | **Rotasyon Sistemi (SRS / SRS+)** ⚠️ *ayrı geri bildirim: "kick sistemi çalışmıyor"* | J/L/S/T/Z rotasyonları Guideline SRS ile **8/8 kusursuz**; ancak **I parçası 8 geçişin hiçbirinde** Guideline veya SRS+ ile eşleşmiyor. Gerçekçi tahtalarda I dönüşlerinin **%94.9'u farklı hücreye** oturuyor, tersine çevrilebilirlik **%43.1 ihlal**. 180° tablosunda `(0,0)` yok → boş tahtada bile kayma. Mevcut parity testi tautolojik olduğu için hatayı yakalamıyor. | 2026-11-04 araştırma turu (tetris.wiki, harddrop.com + ampirik ölçüm) | [`pieces.py:52-95`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/pieces.py#L52-L95), [`Piece.try_rotate_srs`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/pieces.py#L201-L258), [`test_tetrio_srs_plus_parity.py`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/tests/test_tetrio_srs_plus_parity.py) | **Kritik (P0)** |
-| **13** | **Pro / Speedrun Yeterliliği** ⚠️ *ayrı araştırma* | Temel mekanik güçlü (SRS J/L/S/T/Z, T-spin, B2B, lock delay, DAS/ARR/SDF/DCD, Sprint/Ultra). Ancak speedrun için adil değil: **I tablosu** (#12), **satır temizleme donması 0.8–1.6 sn ve çözünürlüğe bağlı** (#7), **21-bag** (#10). Preview 3 parça; finesse/replay yok. | 2026-11-04 araştırma turu | [`game.py:5495-5530`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L5495-L5530), [`board.py:252-280`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/board.py#L252-L280), [`game.py:2010-2074`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L2010-L2074) | **Yüksek (P1)** |
+| **12** | **Rotasyon Sistemi (SRS / SRS+)** UYARI: *ayrı geri bildirim: "kick sistemi çalışmıyor"* | J/L/S/T/Z rotasyonları Guideline SRS ile **8/8 kusursuz**; ancak **I parçası 8 geçişin hiçbirinde** Guideline veya SRS+ ile eşleşmiyor. Gerçekçi tahtalarda I dönüşlerinin **%94.9'u farklı hücreye** oturuyor, tersine çevrilebilirlik **%43.1 ihlal**. 180° tablosunda `(0,0)` yok → boş tahtada bile kayma. Mevcut parity testi tautolojik olduğu için hatayı yakalamıyor. | 2026-11-04 araştırma turu (tetris.wiki, harddrop.com + ampirik ölçüm) | [`pieces.py:52-95`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/pieces.py#L52-L95), [`Piece.try_rotate_srs`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/pieces.py#L201-L258), [`test_tetrio_srs_plus_parity.py`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/tests/test_tetrio_srs_plus_parity.py) | **Kritik (P0)** |
+| **13** | **Pro / Speedrun Yeterliliği** UYARI: *ayrı araştırma* | Temel mekanik güçlü (SRS J/L/S/T/Z, T-spin, B2B, lock delay, DAS/ARR/SDF/DCD, Sprint/Ultra). Ancak speedrun için adil değil: **I tablosu** (#12), **satır temizleme donması 0.8–1.6 sn ve çözünürlüğe bağlı** (#7), **21-bag** (#10). Preview 3 parça; finesse/replay yok. | 2026-11-04 araştırma turu | [`game.py:5495-5530`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L5495-L5530), [`board.py:252-280`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/board.py#L252-L280), [`game.py:2010-2074`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L2010-L2074) | **Yüksek (P1)** |
 
 ---
 
@@ -596,8 +662,19 @@ Bu doğrultuda tüm sohbetin (**toplam 11 madde**) kesin mimari yol haritası ş
    - **I parçası kick tablosunu düzelt ([`pieces.py:69-95`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/pieces.py#L69-L95)):** Guideline SRS veya SRS+ tablosuyla değiştir; 180° I tablosuna `(0,0)` ekle. J/L/S/T/Z'ye **dokunma** — 8/8 birebir doğru.
    - **Parity testini gerçek kaynakla değiştir ([`test_tetrio_srs_plus_parity.py`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/tests/test_tetrio_srs_plus_parity.py)):** Kendi tablosuna karşı `assert` eden tautoloji kaldırılmalı; resmî tablolara karşı diferansiyel test + tersine çevrilebilirlik testi eklenmeli.
    - **`ONLINE_PVP_GARBAGE_ENABLED` kararı ([`online_pvp_game.py:119`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/online_pvp_game.py#L119)):** Şu anda `False`; PvP'de satır temizlemek rakibe hiçbir şey göndermiyor. Açılacaksa atak tablosu hazır (`1:0, 2:1, 3:2, 4:4`); bilinçli kapalıysa dokümante edilmeli.
+   - **ILISKILI: İkinci belgedeki #B (O parçası spawn) ile birlikte yapılmalı:** Aynı "parça geometrisi" dalgası. İkinci belgede O parçasının 1 sütun solda doğduğu ölçümle kanıtlanmıştır; bkz. [`ikinci_geri_bildirim_seti_analizi.md#b-o-parçası-spawn-konumu`](ikinci_geri_bildirim_seti_analizi.md#b-o-parçası-spawn-konumu).
 
 6. **Speedrun / Rekabetçi Mod (P1 — 2026-11-04 turu, bkz. Feedback #13):**
    - Satır temizleme süresini **sabit ms**'ye çevir (piksel yerine zaman) — çözünürlük bağımlılığını kaldırır.
    - Sprint ve PvP'de sweep beklemesini sıfırla (TETR.IO 40 LINES davranışı).
    - Preview sayısını 3 → 5'e çıkarma ve opsiyonel finesse sayacı değerlendirilebilir.
+   - **ILISKILI: İkinci belgedeki #L ile birlikte:** Sprint HUD'ında büyük skor kaldırılmalı, ana istatistik kronometre + kalan satır olmalı. Bkz. [`ikinci_geri_bildirim_seti_analizi.md#l-40l-sprint-hudında-skor-gösterimi`](ikinci_geri_bildirim_seti_analizi.md#l-40l-sprint-hudında-skor-gösterimi).
+
+7. **İkinci Geri Bildirim Setinden Gelen Ek P0 İşleri:**
+   Ayrıntı ve kod referansları için bkz. [`ikinci_geri_bildirim_seti_analizi.md`](ikinci_geri_bildirim_seti_analizi.md) §4.1.
+   - **Cascade modu skorlaması ([`board.py:190-211`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/board.py#L190-L211)):** `while True` cascade döngüsü tüm turları tek `total_lines`'a topluyor → TRIPLE yerine QUADRIX sayılıyor. Her tur ayrı skorlanmalı.
+   - **Hold oryantasyonu sıfırlanmıyor ([`game_modes_extra.py:8329`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L8329)):** Döndürülmüş parça hold'a alınınca spawn oryantasyonuna dönmeli.
+   - **Mini T-spin puanı ([`board.py:253-255`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/board.py#L253-L255)):** 100×level yerine MTSS=200 / MTSD=400×level; `full` tablosunda TSS de eksik (400 yerine 800 olmalı).
+   - **Kombo sayacı off-by-one ([`board.py:260-264`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/board.py#L260-L264)):** İlk temizleme combo 0 olmalı, şu anda 1.
+   - **Skor yuvarlama ([`board.py:276`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/board.py#L276)):** `int(base_score * 1.5)` aşağıya kesiyor → tek skorlama fonksiyonunda sonda tek `round()`.
+   - **T-spin görsel bildirimi ([`game.py:5079`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L5079)):** Bu belgedeki #8 (bildirimler kör ediyor) ile **birlikte** çözülmeli — bildirimi HUD kenarına taşı, kısa/küçük yap.
