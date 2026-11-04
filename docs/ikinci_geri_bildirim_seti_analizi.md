@@ -1,6 +1,6 @@
 # İkinci Geri Bildirim Seti — Teknik Tetris Oyuncusu Analizi
 
-> **Bu belgenin kaynağı `v2` deposudur.** `quadrix-demo`'ya kopyalanma nedeni: aşağıdaki **en kritik 6 bulgu demo kodunda da birebir mevcuttur** (2026-11-05 doğrulaması). Belgedeki `file:///` bağlantıları ve satır numaraları **v2** ağacına aittir.
+> **Bu belgenin kaynağı `v2` deposudur.** `quadrix-demo`'ya kopyalanma nedeni: aşağıdaki **en kritik 7 bulgu demo kodunda da birebir mevcuttur** (2026-11-05 doğrulaması). Belgedeki `file:///` bağlantıları ve satır numaraları **v2** ağacına aittir.
 >
 > | Bulgu | v2 konumu | Demo konumu |
 > | :--- | :--- | :--- |
@@ -10,6 +10,7 @@
 > | O parçası spawn_x hatası | `src/game.py:2374-2379` | [`src/game.py:2263-2268`](../../quadrix-demo/src/game.py#L2263) |
 > | Hold oryantasyonu sıfırlanmıyor | `src/game_modes_extra.py:8329` | [`src/game_modes_extra.py:7587`](../../quadrix-demo/src/game_modes_extra.py#L7587) |
 > | I parçası kick tablosu | `src/pieces.py:69-78` | [`src/pieces.py:72-80`](../../quadrix-demo/src/pieces.py#L72) |
+> | Hız Patlaması rozeti "40 Hak" / açıklama "40 saniye" | `game_modes_extra.py:14226` | [`game_modes_extra.py:12030`](../../quadrix-demo/src/game_modes_extra.py#L12030), [`localization.py:1363`](../../quadrix-demo/src/localization.py#L1363) |
 
 
 > **Kaynak:** `aboooo/` klasörü — `aboooo.html` (teknik rapor) + `images/` altında **18 PNG + 6 GIF** (toplam 24 medya dosyası).
@@ -47,9 +48,10 @@ Bunun pratik sonucu: tespitlerinin çoğu **teknik olarak doğrulanabilir** çı
 | **K** | **Görsel Geri Bildirim** | T-spin olduğunu anlamanın tek yolu skora bakmak; görsel ipucu yok. | **DOĞRULANDI** (kod yorumu: *"T-spin kelimeleri kaldırıldı"*) | [`game.py:5079`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game.py#L5079) | **Yüksek (P1)** |
 | **L** | **40L HUD** | Hız gerektiren modda kocaman skor gösterilmemeli. | **DOĞRULANDI** (Sprint HUD'da skor çizimi var) | [`game_modes.py:28-72`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes.py#L28-L72) | **Orta (P2)** |
 | **M** | **Kampanya Dengeleme** | Görev 7/16/22 (3000 skor), Görev 17 (3 yıldız için max 2 blok israf) başlangıç seviyesi için fazla zor. Tüm görevlerin 3 yıldızla bitirilebilir olduğu varsayılmamalı. | **İDDİA — solvabilite taraması gerekli** | [`difficulty_model.py:216-218`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/campaign/difficulty_model.py#L216-L218) | **Orta (P2)** |
-| **N** | **Metin Kalitesi / UX** | Metinlerde "YZ slop" (anlamsız/alakasız cümleler), eğitim 5/8/11/14 metin sorunları, oyun içi ayarların çoğu değiştirilemiyor, başarım ünlemi, Steam ismi senkronu, eğitim navigasyonu, pencere kapama, inaktif pencere tuşları. | **KISMEN — UI akışları manuel doğrulama gerektiriyor** | `localization.py`, `tutorial_lessons.py`, `game_modes.py`, `focus_manager.py` | **Düşük (P3)** |
+| **N** | **Metin Kalitesi / UX** | Metinlerde "YZ slop" (anlamsız/alakasız cümleler), eğitim 5/8/11/14 metin sorunları, oyun içi ayarların çoğu değiştirilemiyor, başarım ünlemi, Steam ismi senkronu, eğitim navigasyonu, pencere kapama, inaktif pencere tuşları, Local PvP 0-2 berabere. | **KISMEN — UI akışları manuel doğrulama gerektiriyor** | `localization.py`, `tutorial_lessons.py`, `game_modes.py`, `focus_manager.py` | **Düşük (P3)** |
+| **O** | **Kart Metni / Birim Tutarsızlığı** | **"40 saniye mi 40 hak mı?"** — Hız Patlaması kartında süre rozeti "40 Hak" yazıyor ama açıklama "40 saniye boyunca" diyor. Aynı değer iki farklı birimle sunuluyor. | **DOĞRULANDI** (kod: `limited: True` + `timed_buff: True` → rozet `"{value} Hak"`, `_speed_burst_timer = value` saniye) | [`game_modes_extra.py:890-904`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L890-L904), [`game_modes_extra.py:14226`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L14226), [`localization.py:18275`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/localization.py#L18275) | **Orta (P2)** |
 
-**Doğrulama özeti:** 9 birebir doğrulandı · 3 kısmen/araştırılacak · 2'si manuel test gerektiriyor.
+**Doğrulama özeti:** 10 birebir doğrulandı · 3 kısmen/araştırılacak · 2'si manuel test gerektiriyor.
 
 > **NOT: Bu belgedeki maddelerin ana belgedeki karşılıkları:**
 > **#A** ↔ [#12](fullmetalpomak_feedback_analizi.md#feedback-12-rotasyon-sistemi--srs--srs-uyumu-ve-kick-sistemi-çalışmıyor-geri-bildirimi) · **#D** ↔ [#7](fullmetalpomak_feedback_analizi.md#feedback-7-satır-silme-clear-ve-düşüş-fall-animasyonlarındaki-yarı-donuk-hybrid-durum-çelişkisi) · **#G** ↔ [#9](fullmetalpomak_feedback_analizi.md#feedback-9-tahta-boyutu-2010-vs-222410-buffer-zone-skip_hidden_rows-ve-yüksek-kulede-comeback-imkânsızlığı) · **#H** ↔ [#8](fullmetalpomak_feedback_analizi.md#feedback-8-puan-combo-ve-milestone-bildirimlerinin-tahtayı-kapatması-puan-bildirimleri-kör-edebiliyor) · **#M** ↔ [#4](fullmetalpomak_feedback_analizi.md#feedback-4-campaign-görev-farkındalığı-level-17-matematikselrng-darboğazı-ve-dinamik-zorluk-önerisi)
@@ -528,8 +530,71 @@ Kod: `tutorial_lessons.py`, `tutorial_cards.py`.
 | Steam ismi değişince sıralamadaki isim güncellenmiyor | `image1.png` | Cache invalidation: Steam ismi değiştiğinde leaderboard cache temizle |
 | "varsayılan" ve "takılı" aynı anlama geliyor | `image3.png` | Terminolojiyi ayır: "varsayılan" = otomatik seçim, "takılı" = manuel seçim; ya da tek terim kullan |
 | Eğitim menüye değil mod seçimine dönüyor | — | Navigasyon hedefini düzelt |
-| Pencere inaktifken tuşlar bozuk | — | `focus_manager` odak yönetimini gözden geçir |
-| Görev çubuğundan kapatılamıyor | — | `QUIT` olayı işleme |
+| Pencere inaktifken tuşlar bozuk (*"imlecin bulunduğu yerdeki tuşa basamayabiliyor"*) | — | `focus_manager` odak yönetimini gözden geçir; fare konumu tabanlı seçim klavye odağını ezmemeli |
+| Oyun altta iken görev çubuğundan kapatılamıyor | — | `QUIT`/`WM_CLOSE` olayı işleme; pencere simge durumundayken de kapanabilmeli |
+| Local PvP 0-2'ye berabere yazıyor | — | Beraberlik/kaza koşulunu incele: tek taraflı skor 0-2 iken "berabere" hükmü yanlış olabilir |
+
+---
+
+## #O: Kart Metni / Birim Tutarsızlığı — "40 saniye mi 40 hak mı?"
+
+**Oyuncu ifadesi:**
+> *"40 saniye mi 40 hak mı?"* — Hız Patlaması kartı ekran görüntüsüyle birlikte.
+
+**Görsel kanıt:** Kart üzerinde rozet **"40 Hak"** yazıyor; altındaki açıklama **"40 saniye boyunca parçalar daha hızlı düşer. Her sildiğin satır 1.5 katı puan kazandırır."**
+
+**Kod kanıtı — üç nokta birbirini doğruluyor:**
+
+1. **Kart hem `limited` hem `timed_buff` işaretli** ([`game_modes_extra.py:2172`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L2172), [`2198`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L2198)):
+```python
+{
+    "id": "speed_burst_epic",
+    "value": 40,              # <-- tek alan, iki anlam
+    "limited": True,
+    "timed_buff": True,
+    "description": "{value} saniye boyunca parçalar daha hızlı düşer...",
+}
+```
+
+2. **Rozet metni "Hak" diyor** ([`game_modes_extra.py:890-904`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L890-L904)):
+```python
+key = _card_type_label_key(card)          # 'card_type_limited' döner
+if key == 'card_type_limited':
+    val = card.get('value')               # 40
+    label_tmpl = t('card_type_limited_dynamic')   # '{value} Hak'
+    return label_tmpl.format(value=val)   # -> "40 Hak"
+```
+`card_type_limited_dynamic` tüm dillerde "kullanım" anlamı taşıyor: `tr: '{value} Hak'`, `en: '{value} Uses'`, `de: '{value} Verwendungen'` ([`localization.py:18274-18290`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/localization.py#L18274-L18290)).
+
+3. **Ama çalışma zamanında değer SÜRE olarak kullanılıyor** ([`game_modes_extra.py:14226`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L14226)):
+```python
+elif effect_id == "speed_burst":
+    duration = int(value)                      # <-- 40 SANİYE
+    self._speed_burst_timer = duration
+```
+
+**Kök neden:** Tek `value` alanı iki farklı birimi temsil ediyor. `limited: True` bayrağı rozeti "hak" moduna sokuyor; ama etkinin kendisi **süreli** (`timed_buff`). Kod, başka kartlarda bu ayrımı doğru yapıyor — `freeze_drop` ayrı `freeze_duration` alanı kullanıyor ([`game_modes_extra.py:14384`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L14384)) ve hak sayısını `_card_int_value(card, 3)` ile ayrı okuyor. Yani **bu, `speed_burst` ailesine özgü bir eksiklik**, sistemik değil.
+
+**Türkçe'ye özgü ek kusur:** `_card_type_label_key` ([`game_modes_extra.py:881`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L881)) açıklama metninde `'hak'` kelimesi geçerse kartı "limited" sayıyor. Bu sezgisel eşleşme İngilizce metinlerde (`"lives"`, `"uses"`) çalışmaz — yani **aynı kart farklı dilde farklı rozet gösterebilir**. Kırılgan bir bağımlılık.
+
+**Dil tutarlılığı notu:** `card_speed_burst_desc` tüm dillerde `{value} saniye/seconds/Sekunden…` diyor; rozet ise her dilde "kullanım" diyor. **11 dilin tamamında** aynı çelişki var.
+
+**Çözüm:**
+1. **Ayrı alan kullan** — `freeze_drop` deseniyle tutarlı olacak şekilde:
+```python
+{
+    "id": "speed_burst_epic",
+    "value": 40,                    # hak/rozet anlamı (1 kullanım)
+    "duration_seconds": 40,         # süre anlamı
+    "timed_buff": True,
+    "limited": False,               # timed_buff rozeti kullanılsın
+}
+```
+2. **Rozet metnini süreye çevir:** `timed_buff` kartlar için `'{value} sn'` / `'{value} s'` etiketi ekle ([`localization.py`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/localization.py), 11 dil).
+3. **Sezgisel `'hak' in desc` kontrolünü kaldır** ([`game_modes_extra.py:881`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L881)) — kart türü yalnızca açık bayraklardan (`limited` / `timed_buff` / `charges` / `single_use`) belirlenmeli.
+4. **Kapsamı genişlet:** `timed_buff: True` bayrağı taşıyan **3 kart** var; üçü de aynı rozet yolundan geçiyor — hepsi kontrol edilmeli.
+
+**Test:** Her `timed_buff` kartı için rozet ve açıklama metninin **aynı birimi** gösterdiğini doğrulayan birim testi; 11 dilin her biri için.
 
 ---
 
@@ -560,14 +625,15 @@ Kod: `tutorial_lessons.py`, `tutorial_cards.py`.
 | 9 | **#E Mini T-spin puanı** | Küçük (tablo değişikliği) |
 | 10 | **#F Skor yuvarlama** | Küçük (tek skorlama fonksiyonu) |
 | 11 | **#L 40L HUD** | Küçük |
-| 12 | **#M Kampanya solvabilite taraması** | Orta (otomasyon) |
+| 12 | **#O Kart birim tutarsızlığı** | Küçük (`duration_seconds` alanı + rozet etiketi + 11 dil) |
+| 13 | **#M Kampanya solvabilite taraması** | Orta (otomasyon) |
 
 ## 4.4 Araştırılacak
 
 | Sıra | Madde | Önce yapılacak |
 | ---: | :--- | :--- |
-| 13 | **#J (Inf) SDF** | Manuel test protokolü; doğrulanmadan düzeltme YOK |
-| 14 | **#N Metin/UI** | Sesli okuma denetimi + UI akışlarının tek tek gezilmesi |
+| 14 | **#J (Inf) SDF** | Manuel test protokolü; doğrulanmadan düzeltme YOK |
+| 15 | **#N Metin/UI** | Sesli okuma denetimi + UI akışlarının tek tek gezilmesi |
 
 ---
 
@@ -579,6 +645,7 @@ Bu belge ile [`fullmetalpomak_feedback_analizi.md`](fullmetalpomak_feedback_anal
 2. **Cascade + skorlama** (I, E, F, H) — **tek bir "skorlama doğruluğu" dalgası**. Hepsi `board.py` içinde; birlikte ele alınınca tek seferde test edilebilir.
 3. **Animasyon + lock out** (D, #7, G, #9) — **tek bir "oyun akışı" dalgası**. Buffer zone ve ARE aynı mekanizmanın iki yüzü.
 4. **HUD + görsel geri bildirim** (#8, K, L, #1, #2) — **tek bir "arayüz" dalgası**. FullMetalPomak'ın kör etme şikâyeti ile bu belgenin görsel ipucu isteği birlikte çözülür.
+5. **Kart metni + içerik** (#O, #4, M, N) — **tek bir "kart/içerik tutarlılığı" dalgası**. #O'daki birim tutarsızlığı, N.1'deki "text-slop" denetimiyle aynı taramada yakalanabilir.
 5. **Kampanya + içerik** (#4, M, N) — **tek bir "içerik kalitesi" dalgası**. Solvabilite taraması + metin denetimi.
 
 **Kritik uyarı:** 3. dalga (buffer zone) yapılmadan #9 ve #G düzeltilemez — `BOARD_HEIGHT = 20` sabit olduğu sürece Guideline lock-out kuralı uygulanamaz. Bu yüzden **buffer zone işi ilk adım olmalı**.

@@ -44,13 +44,14 @@ Aşağıda **FullMetalPomak** adlı kullanıcının (deneyimli bir Tetris oyuncu
 > | [#4 Campaign Level 17](#feedback-4-campaign-görev-farkındalığı-level-17-matematikselrng-darboğazı-ve-dinamik-zorluk-önerisi) | **#M** (kampanya dengeleme) | Görev zorluğu; o belge **4 seviye + solvabilite taraması** istiyor |
 > | [#12 SRS/SRS+](#feedback-12-rotasyon-sistemi--srs--srs-uyumu-ve-kick-sistemi-çalışmıyor-geri-bildirimi) | **#A** (SRS / I tablosu) | I parçası kick tablosu — **üçüncü bağımsız kaynak** |
 >
-> **İkinci belgenin bu belgede olmayan 6 yeni kritik bulgusu:**
+> **İkinci belgenin bu belgede olmayan 7 yeni kritik bulgusu:**
 > - **Cascade modu bozuk** — tek hamle TRIPLE yerine QUADRIX sayıyor (o modu oynanamaz kılıyor)
 > - **O parçası 1 sütun solda doğuyor** (spawn_x formülü 2 genişlikli parça için yanlış)
 > - **Hold oryantasyonu sıfırlanmıyor** (Guideline ihlali)
 > - **Mini T-spin puanı yarı** (100 vs 200; single/double ayrımı yok)
 > - **Kombo sayacı 1'den başlıyor** (off-by-one)
 > - **Skor yuvarlama tutarsızlığı** (`int()` ile kesilen 1.5× çarpanı)
+> - **Kart rozeti birim tutarsızlığı** — Hız Patlaması kartında rozet *"40 Hak"* derken açıklama *"40 saniye"* diyor; tek `value` alanı iki birimi temsil ediyor (`limited` + `timed_buff` çakışması), 11 dilin tamamında geçerli
 >
 > **Çelişen tek nokta:** Bu belgedeki **#8** *"bildirimleri azalt / tahta dışına taşı"* diyor; ikinci belgedeki **#K** *"T-spin için görsel ipucu ekle"* diyor. Bunlar **birlikte** çözülebilir: bildirimi HUD kenarına taşı ve kısa/küçük yap. İkinci belgenin §2.3 bölümüne bakınız.
 
