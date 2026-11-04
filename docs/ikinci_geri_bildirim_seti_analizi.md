@@ -1,6 +1,6 @@
 # İkinci Geri Bildirim Seti — Teknik Tetris Oyuncusu Analizi
 
-> **Bu belgenin kaynağı `v2` deposudur.** `quadrix-demo`'ya kopyalanma nedeni: aşağıdaki **en kritik 7 bulgu demo kodunda da birebir mevcuttur** (2026-11-05 doğrulaması). Belgedeki `file:///` bağlantıları ve satır numaraları **v2** ağacına aittir.
+> **Bu belgenin kaynağı `v2` deposudur.** `quadrix-demo`'ya kopyalanma nedeni: aşağıdaki **en kritik 8 bulgu demo kodunda da birebir mevcuttur** (2026-11-05 doğrulaması). Belgedeki `file:///` bağlantıları ve satır numaraları **v2** ağacına aittir.
 >
 > | Bulgu | v2 konumu | Demo konumu |
 > | :--- | :--- | :--- |
@@ -10,7 +10,8 @@
 > | O parçası spawn_x hatası | `src/game.py:2374-2379` | [`src/game.py:2263-2268`](../../quadrix-demo/src/game.py#L2263) |
 > | Hold oryantasyonu sıfırlanmıyor | `src/game_modes_extra.py:8329` | [`src/game_modes_extra.py:7587`](../../quadrix-demo/src/game_modes_extra.py#L7587) |
 > | I parçası kick tablosu | `src/pieces.py:69-78` | [`src/pieces.py:72-80`](../../quadrix-demo/src/pieces.py#L72) |
-> | Hız Patlaması rozeti "40 Hak" / açıklama "40 saniye" | `game_modes_extra.py:14226` | [`game_modes_extra.py:12030`](../../quadrix-demo/src/game_modes_extra.py#L12030), [`localization.py:1363`](../../quadrix-demo/src/localization.py#L1363) |
+> | Hız Patlaması rozeti "40 Hak" / açıklama "40 saniye" | `game_modes_extra.py:14226` | [`game_modes_extra.py:12030`](../../quadrix-demo/src/game_modes_extra.py#L12030) |
+> | Survival sarsıntısı + sabit antivirüs eşiği | `game_modes_advanced.py:66` | [`game_modes_advanced.py:66`](../../quadrix-demo/src/game_modes_advanced.py#L66) |
 
 
 > **Kaynak:** `aboooo/` klasörü — `aboooo.html` (teknik rapor) + `images/` altında **18 PNG + 6 GIF** (toplam 24 medya dosyası).
@@ -50,8 +51,9 @@ Bunun pratik sonucu: tespitlerinin çoğu **teknik olarak doğrulanabilir** çı
 | **M** | **Kampanya Dengeleme** | Görev 7/16/22 (3000 skor), Görev 17 (3 yıldız için max 2 blok israf) başlangıç seviyesi için fazla zor. Tüm görevlerin 3 yıldızla bitirilebilir olduğu varsayılmamalı. | **İDDİA — solvabilite taraması gerekli** | [`difficulty_model.py:216-218`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/campaign/difficulty_model.py#L216-L218) | **Orta (P2)** |
 | **N** | **Metin Kalitesi / UX** | Metinlerde "YZ slop" (anlamsız/alakasız cümleler), eğitim 5/8/11/14 metin sorunları, oyun içi ayarların çoğu değiştirilemiyor, başarım ünlemi, Steam ismi senkronu, eğitim navigasyonu, pencere kapama, inaktif pencere tuşları, Local PvP 0-2 berabere. | **KISMEN — UI akışları manuel doğrulama gerektiriyor** | `localization.py`, `tutorial_lessons.py`, `game_modes.py`, `focus_manager.py` | **Düşük (P3)** |
 | **O** | **Kart Metni / Birim Tutarsızlığı** | **"40 saniye mi 40 hak mı?"** — Hız Patlaması kartında süre rozeti "40 Hak" yazıyor ama açıklama "40 saniye boyunca" diyor. Aynı değer iki farklı birimle sunuluyor. | **DOĞRULANDI** (kod: `limited: True` + `timed_buff: True` → rozet `"{value} Hak"`, `_speed_burst_timer = value` saniye) | [`game_modes_extra.py:890-904`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L890-L904), [`game_modes_extra.py:14226`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_extra.py#L14226), [`localization.py:18275`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/localization.py#L18275) | **Orta (P2)** |
+| **P** | **Survival Ekran Sarsıntısı ve Antivirüs Eşiği** | Hayatta kalma modu bitince tahta fazla titriyor (*"epilepsi krizi"*); ayrıca antivirüs için gereken skor sabit kaldığı için bir noktadan sonra 5000 puan bir satıra bile denk gelmiyor. | **DOĞRULANDI** (kod: sabit `ANTIVIRUS_SCORE = 5000`, zafer sarsıntısı `intensity=25`, game-over `intensity=30`) | [`game_modes_advanced.py:66`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L66), [`163-164`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L163-L164), [`193`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L193), [`223`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L223) | **Orta (P2)** |
 
-**Doğrulama özeti:** 10 birebir doğrulandı · 3 kısmen/araştırılacak · 2'si manuel test gerektiriyor.
+**Doğrulama özeti:** 11 birebir doğrulandı · 3 kısmen/araştırılacak · 2'si manuel test gerektiriyor.
 
 > **NOT: Bu belgedeki maddelerin ana belgedeki karşılıkları:**
 > **#A** ↔ [#12](fullmetalpomak_feedback_analizi.md#feedback-12-rotasyon-sistemi--srs--srs-uyumu-ve-kick-sistemi-çalışmıyor-geri-bildirimi) · **#D** ↔ [#7](fullmetalpomak_feedback_analizi.md#feedback-7-satır-silme-clear-ve-düşüş-fall-animasyonlarındaki-yarı-donuk-hybrid-durum-çelişkisi) · **#G** ↔ [#9](fullmetalpomak_feedback_analizi.md#feedback-9-tahta-boyutu-2010-vs-222410-buffer-zone-skip_hidden_rows-ve-yüksek-kulede-comeback-imkânsızlığı) · **#H** ↔ [#8](fullmetalpomak_feedback_analizi.md#feedback-8-puan-combo-ve-milestone-bildirimlerinin-tahtayı-kapatması-puan-bildirimleri-kör-edebiliyor) · **#M** ↔ [#4](fullmetalpomak_feedback_analizi.md#feedback-4-campaign-görev-farkındalığı-level-17-matematikselrng-darboğazı-ve-dinamik-zorluk-önerisi)
@@ -598,6 +600,43 @@ elif effect_id == "speed_burst":
 
 ---
 
+## #P: Survival Modu — Ekran Sarsıntısı ve Antivirüs Eşiği
+
+**Oyuncu ifadesi:**
+> *"Hayatta kalma bittikten sonra tahta BİRAZCIK FAZLA titriyor. Epilepsi krizi resmen. Yine kendini açıklayan bir başlık. Ayrıca, antivirüs için gerekli skor git gide artmalı (yavaş da olsa, lineer de olsa), çünkü bir yerden sonra 5000 skor, bir satıra bile denk gelmiyor."*
+
+**Kod kanıtı** ([`game_modes_advanced.py`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py)):
+
+```python
+ANTIVIRUS_SCORE = 5000      # :66  — her 5000 puanda yenilen sayısı sıfırlanır
+if current_score >= self.last_antivirus_score + self.ANTIVIRUS_SCORE:   # :163
+    self.last_antivirus_score = (current_score // self.ANTIVIRUS_SCORE) * self.ANTIVIRUS_SCORE
+```
+
+Sarsıntı şiddetleri:
+
+| Olay | Kod | Şiddet / süre |
+| :--- | :--- | :--- |
+| Zafer ekranı | [`game_modes_advanced.py:193`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L193) | `intensity=25`, 50 kare |
+| Virus game-over | [`game_modes_advanced.py:223`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L223) | `intensity=30`, 60 kare |
+| Diğer | [`241`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L241), [`500`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L500), [`607`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L607) | 15 / 3–11 |
+
+**İki ayrı sorun:**
+
+1. **Sarsıntı şiddeti çok yüksek:** Zafer ve game-over ekranlarında `intensity=25–30` ve 50–60 kare (≈0.83–1 sn) sürekli sarsıntı. Normal satır temizleme sarsıntısı `3 + lines*2` (en fazla 11) ile karşılaştırıldığında **2.5–3 kat** daha şiddetli. Fotofobi/epilepsi hassasiyeti olan oyuncular için risk.
+
+2. **Antivirüs eşiği sabit ve oransal değil:** `ANTIVIRUS_SCORE = 5000` **her zaman** 5000. Oysa skor artış hızı seviyeyle birlikte büyüyor (satır başına puan × level). Yani oyun ilerledikçe 5000 puan giderek **daha kolay** birikiyor — antivirüs mekanizması zamanla anlamsızlaşıyor. Oyuncunun tespiti doğru: geç oyunda 5000 puan bir satıra denk gelmiyor.
+
+**Çözüm:**
+
+1. **Sarsıntıyı azalt:** Zafer için `intensity` 25 → 8–10, game-over için 30 → 10–12; süre 50–60 kare → 20–25. Alternatif: efektler kapalıyken (mevcut `effects_enabled` anahtarı) tamamen kapat; ayrıca bir "sarsıntı şiddeti" ayarı ekle (Kapalı / Az / Normal).
+2. **Eşiği oransal yap:** Seviye ile ölçekle, ör. `ANTIVIRUS_SCORE = 5000 + (level - 1) * 1000` veya kümülatif: her tetiklemede eşiği %15 artır. Böylece mekanizma oyun boyunca anlamlı kalır.
+3. **HUD'a kalan puanı göster:** Antivirüs çubuğu zaten var ([`1144`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py#L1144) — `av_progress`); eşik değiştiğinde oyuncu görebilmeli.
+
+**Kapsam notu:** Bu bulgu yalnızca **Survival moduna** aittir ([`game_modes_advanced.py`](file:///C:/Users/arda%20demirkan/Desktop/v2_23022026/v2/src/game_modes_advanced.py)); diğer modları etkilemez. Demo sürümünde Survival modunun bulunup bulunmadığı ayrıca kontrol edilmelidir.
+
+---
+
 # 4. Öncelik Sıralaması ve Uygulama Planı
 
 ## 4.1 P0 — Oynanışı bozan (önce bunlar)
@@ -626,14 +665,15 @@ elif effect_id == "speed_burst":
 | 10 | **#F Skor yuvarlama** | Küçük (tek skorlama fonksiyonu) |
 | 11 | **#L 40L HUD** | Küçük |
 | 12 | **#O Kart birim tutarsızlığı** | Küçük (`duration_seconds` alanı + rozet etiketi + 11 dil) |
-| 13 | **#M Kampanya solvabilite taraması** | Orta (otomasyon) |
+| 13 | **#P Survival sarsıntı + antivirüs eşiği** | Küçük (sarsıntı şiddeti + artan eşik formülü) |
+| 14 | **#M Kampanya solvabilite taraması** | Orta (otomasyon) |
 
 ## 4.4 Araştırılacak
 
 | Sıra | Madde | Önce yapılacak |
 | ---: | :--- | :--- |
-| 14 | **#J (Inf) SDF** | Manuel test protokolü; doğrulanmadan düzeltme YOK |
-| 15 | **#N Metin/UI** | Sesli okuma denetimi + UI akışlarının tek tek gezilmesi |
+| 15 | **#J (Inf) SDF** | Manuel test protokolü; doğrulanmadan düzeltme YOK |
+| 16 | **#N Metin/UI** | Sesli okuma denetimi + UI akışlarının tek tek gezilmesi |
 
 ---
 
