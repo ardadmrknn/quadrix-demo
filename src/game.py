@@ -2517,6 +2517,9 @@ class Game:
         Returns:
             bool: Oyun devam edecekse True
         """
+        self._pending_rotate = getattr(self, '_pending_rotate', 0)
+        self._pending_hold = getattr(self, '_pending_hold', False)
+        self._pending_drop = getattr(self, '_pending_drop', False)
         try:
             from gamepad_manager import get_gamepad_manager
             gpm = get_gamepad_manager()
@@ -4656,6 +4659,9 @@ class Game:
 
     def lock_and_new_piece(self):
         """Mevcut parçayı kilitle ve yeni parça oluştur"""
+        if getattr(self, 'line_clear_sweep_active', False):
+            self._pending_next_piece = True
+            return
         if self.effects_enabled:
             # Parçanın HER HÜCRESİNDEN patlama efekti
             cell_size = self.get_cell_size()
@@ -4993,6 +4999,12 @@ class Game:
             return True
         return False
 
+    def _automatic_gravity_paused(self) -> bool:
+        """Normal clear/fall animasyonunda gravity durur; soft drop override eder; Sprint/40L beklemez."""
+        if str(getattr(self, 'game_mode', '')).lower() in {'sprint', '40l', '40_lines', '40-lines'}:
+            return False
+        return self._line_clear_animation_active() and not bool(getattr(self, '_soft_drop_held', False))
+
     def update(self, delta_time):
         """
         Oyun durumunu güncelle
@@ -5242,15 +5254,22 @@ class Game:
         # böylece yeni parça animasyon bitene kadar otomatik aşağı kaymaz.
         # Ancak oyuncu soft drop tutuyorsa (veya hard drop yaptıysa, o zaten
         # handle_input içinde anında işlenir) düşüşe izin verilir.
-        gravity_paused = self._line_clear_animation_active() and not bool(
+        if str(getattr(self, 'game_mode', '')).lower() in {'sprint', '40l', '40_lines', '40-lines'}:
+            gravity_paused = False
+        else:
+            gravity_paused = self._line_clear_animation_active() and not bool(
             getattr(self, '_soft_drop_held', False)
-        )
+            )
         if gravity_paused:
             # Animasyon süresince fall_time birikmesin ki animasyon bitince
             # parça aniden bir kare aşağı zıplamasın.
             self.fall_time = 0
         else:
             self.fall_time += delta_time
+        # Infinite SDF instant soft drop path: one press reaches the floor.
+        if not gravity_paused and getattr(self, '_soft_drop_held', False) and self.get_soft_drop_speed() == 0.0 and self.current_piece is not None:
+            while self.board.is_valid_position(self.current_piece, dy=1):
+                self.current_piece.y += 1
         if not gravity_paused and self.fall_time >= self.fall_speed:
             self.fall_time = 0
             

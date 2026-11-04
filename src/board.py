@@ -21,9 +21,12 @@ class Board:
     def __init__(self, width: int | None = None, height: int | None = None):
         self.width = width or BOARD_WIDTH
         self.height = height or BOARD_HEIGHT
+        self.hidden_rows = 2
         self.grid: List[List[Tuple[int, int, int]]] = [[BLACK for _ in range(self.width)] for _ in range(self.height)]
         self.texture_grid: List[List[object | None]] = [[None for _ in range(self.width)] for _ in range(self.height)]
         self.owners: List[List[str | None]] = [[None for _ in range(self.width)] for _ in range(self.height)]
+        self.hidden_occupancy: List[List[bool]] = [[False for _ in range(self.width)] for _ in range(self.hidden_rows)]
+        self.hidden_owners: List[List[str | None]] = [[None for _ in range(self.width)] for _ in range(self.hidden_rows)]
         self.occupancy: List[List[bool]] = [[False for _ in range(self.width)] for _ in range(self.height)]
         self.gold: List[List[bool]] = [[False for _ in range(self.width)] for _ in range(self.height)]
         self.score = 0
@@ -33,7 +36,6 @@ class Board:
         # allowing farming level-ups.
         self.level_lines_cleared = 0
         self.level = 1
-        self.level_lines_per_level = 5
         self.combo = 0
         self.tetrises = 0
         self.last_cleared_lines: List[int] = []
@@ -77,6 +79,11 @@ class Board:
                 return False
             # Üst sınır kontrolü (negatif y'ye izin verme)
             if py < 0:
+                hidden_index = py + self.hidden_rows
+                if hidden_index < 0:
+                    return False
+                if 0 <= px < self.width and self.hidden_occupancy[hidden_index][px]:
+                    return False
                 continue
             # Eğer hücre tahta dışındaysa (esnek sınır sayesinde) occupancy kontrolü yapma
             if px < 0 or px >= self.width:
@@ -101,8 +108,13 @@ class Board:
             or getattr(piece, '_board_style_name', None)
             or getattr(piece, 'name', None)
         )
-        # Görünür alanın üstünde (y < 0) yazılamayan dolu hücre kaldı mı? (top-out)
+        # Gizli tamponda kalan hücreleri fiziksel olarak koru. Kısmi gizli kilit
+        # tek başına lock-out değildir; yalnız parça tamamen görünmez alanda
+        # kilitlenirse Guideline lock-out uygulanır.
         _overflow_top = False
+        visible_cells = 0
+        hidden_cells = 0
+        total_cells = sum(1 for row in piece.shape for cell in row if cell)
         for ly, row in enumerate(piece.shape):
             for lx, c in enumerate(row):
                 if not c:
@@ -110,10 +122,16 @@ class Board:
                 x = piece.x + lx + lock_dx
                 y = piece.y + ly
                 if y < 0:
-                    # Tepe taşması: hücre yazılamaz (silinmez de — top-out sinyali).
-                    _overflow_top = True
+                    hidden_index = y + self.hidden_rows
+                    if 0 <= x < self.width and 0 <= hidden_index < self.hidden_rows:
+                        self.hidden_occupancy[hidden_index][x] = True
+                        self.hidden_owners[hidden_index][x] = getattr(piece, 'name', None)
+                        hidden_cells += 1
+                    else:
+                        _overflow_top = True
                     continue
                 if 0 <= x < self.width and y < self.height:
+                    visible_cells += 1
                     cell_color = piece.color
                     if color_matrix is not None:
                         try:
@@ -141,12 +159,11 @@ class Board:
 
         cleared = self.clear_lines(t_spin=t_spin)
 
-        # Lock-out kuralı: satır temizlikleri bittikten sonra en üst GÖRÜNÜR satırda
-        # (row 0) dolu hücre kaldıysa game-over. Ek olarak, görünür alanın üstüne
-        # taşıp yazılamayan hücre (top-out) varsa da game-over. Negatif/gizli satır
-        # "dokunma" mantığı kaldırıldı (haksız ölümü önlemek için kural net biçimde
-        # görünür row 0'a bağlandı).
-        if _overflow_top or any(self._cell_filled(x, 0) for x in range(self.width)):
+        # Guideline lock-out: row 0'da kısmi doluluk ölüm değildir. Yalnızca
+        # parçanın tüm hücreleri görünür alanın üstünde kilitlenirse veya iki
+        # gizli satırlık fiziksel tamponun dışına taşarsa lock-out oluşur.
+        full_hidden_lock = total_cells > 0 and visible_cells == 0 and (hidden_cells > 0 or _overflow_top)
+        if full_hidden_lock:
             self._last_lock_out = True
             if track_game_over:
                 self._locked_out = True
@@ -345,6 +362,8 @@ class Board:
         self.occupancy = [[False for _ in range(self.width)] for _ in range(self.height)]
         self.gold = [[False for _ in range(self.width)] for _ in range(self.height)]
         self.owners = [[None for _ in range(self.width)] for _ in range(self.height)]
+        self.hidden_occupancy = [[False for _ in range(self.width)] for _ in range(self.hidden_rows)]
+        self.hidden_owners = [[None for _ in range(self.width)] for _ in range(self.hidden_rows)]
         self.score = 0
         self.lines_cleared = 0
         self.level_lines_cleared = 0

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "phase": 3,
+  "buffer": {"visible_rows": 20, "hidden_rows": 2},
+  "sweep_duration_ms": 180,
+  "sweep": {
+    "progress_after_update": 0.09258888888888889,
+    "clear_fall_duration_ms": 183.326,
+    "ticks_to_completion": 11
+  },
+  "sprint_are_wait_ms": 0,
+  "infinite_sdf": "measured_source_path_present",
+  "lockout": {
+    "partial_hidden_lock": false,
+    "fully_hidden_lock": true,
+    "spawn_collision": true
+  }
+}
