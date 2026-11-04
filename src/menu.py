@@ -4260,6 +4260,11 @@ class Menu:
 
     def notify_menu_activated(self):
         """Ana menüye her dönüşte/girişte çağrılır; leaderboard'u zorla yeniler."""
+        try:
+            import steam_integration as _steam_persona
+            _steam_persona.refresh_persona_name_cache()
+        except Exception:
+            pass
         # Yükleme devam ediyorsa iptal et, yeni istek başlat
         self._mystery_lb_loading = False
         self._mystery_lb_last_fetch_ms = -120_000

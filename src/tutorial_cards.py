@@ -604,6 +604,13 @@ def get_tutorial_card_description(card: Dict[str, Any]) -> str:
 
 def get_tutorial_card_type_label(card: Dict[str, Any]) -> str:
     _ensure_real_card_helpers()
+    if bool(card.get("timed_buff", False)):
+        value = card.get("value")
+        if value is None:
+            value = card.get("base")
+        if value is not None:
+            return t("card_type_timed_dynamic", default="{value} sn").format(value=value)
+        return t("card_type_timed", default="Süreli")
     if callable(_REAL_CARD_TYPE_LABEL_KEY):
         try:
             return t(_REAL_CARD_TYPE_LABEL_KEY(card), default="Sinirli Kullanim")

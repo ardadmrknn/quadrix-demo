@@ -5,10 +5,14 @@ Tüm görevler Objective base class'ından türer.
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
+import logging
 from typing import TYPE_CHECKING, Dict, Any, Optional, List
 
 if TYPE_CHECKING:
     from .campaign_mode import CampaignMode
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class Objective(ABC):
@@ -78,7 +82,19 @@ class Objective(ABC):
         lang = lang or get_language()
         if self.description_key:
             params = self._resolve_description_params(lang)
-            return t(self.description_key, **params)
+            text = t(self.description_key, **params)
+            if "{" in text or "}" in text:
+                _LOGGER.warning(
+                    "Unresolved campaign objective placeholder: key=%s lang=%s text=%r params=%r",
+                    self.description_key,
+                    lang,
+                    text,
+                    params,
+                )
+                text = self.description.get(lang, self.description.get("en", ""))
+                if "{" in text or "}" in text:
+                    text = text.replace("{", "").replace("}", "")
+            return text
         return self.description.get(lang, self.description.get('en', ''))
 
 
@@ -101,11 +117,11 @@ class ClearLinesObjective(Objective):
         elif line_type == 'double':
             desc_tr = f"{target} İkili Temizle"
             desc_en = f"Clear {target} Doubles"
-            desc_key = 'campaign_obj_clear_doubles'
+            desc_key = 'campaign_cond_multi_clear_2'
         elif line_type == 'triple':
             desc_tr = f"{target} Üçlü Temizle"
             desc_en = f"Clear {target} Triples"
-            desc_key = 'campaign_obj_clear_triples'
+            desc_key = 'campaign_cond_multi_clear_3'
         elif line_type == 'tetris':
             desc_tr = f"{target} Quadrix Yap"
             desc_en = f"Make {target} Quadrix"
@@ -197,12 +213,12 @@ class MultiClearObjective(Objective):
         if self.lines_required == 2:
             desc_tr = "2'li satır temizle"
             desc_en = 'Get a Double'
-            desc_key = 'campaign_obj_clear_doubles'
+            desc_key = 'campaign_cond_multi_clear_2'
             desc_params = {}
         elif self.lines_required == 3:
             desc_tr = "3'lü satır temizle"
             desc_en = 'Get a Triple'
-            desc_key = 'campaign_obj_clear_triples'
+            desc_key = 'campaign_cond_multi_clear_3'
             desc_params = {}
         elif self.lines_required >= 4:
             desc_tr = 'Quadrix Yap'
@@ -527,3 +543,5 @@ def create_objective(obj_type: str, **kwargs) -> Objective:
     
     # Varsayılan: satır temizleme
     return ClearLinesObjective(target=kwargs.get('target', 10))
+
+

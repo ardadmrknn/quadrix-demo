@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "phase": 6,
+  "campaign_objective_placeholders": false,
+  "persona_cache_refresh": true,
+  "timed_buff_unit": "seconds",
+  "limited_unit": "uses",
+  "achievement_badge_requires_unclaimed": true,
+  "collection_default_label": "Varsayılan",
+  "collection_equipped_label": "Takılı",
+  "pvp_weighted_model": {
+    "score_points": 1,
+    "lines_points": 1,
+    "board_open_points": 2,
+    "win_threshold": 3
+  },
+  "survival_antivirus_score": 5000,
+  "survival_shake": "deferred",
+  "artistic_polish": "deferred"
+}

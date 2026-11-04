@@ -828,6 +828,17 @@ def _card_type_label_key(card: Dict[str, Any]) -> str:
 
 def _get_card_type_label(card: Dict[str, Any]) -> str:
     """Kartın davranışına göre tür etiketini yerelleştirilmiş ve dinamik olarak döndürür."""
+    if bool(card.get('timed_buff', False)):
+        val = card.get('value')
+        if val is None:
+            val = card.get('base')
+        if val is not None:
+            label_tmpl = t('card_type_timed_dynamic')
+            if label_tmpl != 'card_type_timed_dynamic' and '{value}' in label_tmpl:
+                return label_tmpl.format(value=val)
+            is_tr = t('card_type_limited') == 'Sınırlı'
+            return f"{val} sn" if is_tr else f"{val} sec"
+        return t('card_type_timed')
     key = _card_type_label_key(card)
     if key == 'card_type_limited':
         val = card.get('value')

@@ -1373,6 +1373,16 @@ TRANSLATIONS = {
         'zh': '{value}次',
         'ko': '{value}회',
     },
+    'card_type_timed': {
+        'tr': 'Süreli', 'en': 'Timed', 'de': 'Zeitlich', 'fr': 'Chronométré',
+        'es': 'Temporizado', 'it': 'Temporizzato', 'pt': 'Temporizado',
+        'ru': 'На время', 'ja': '時間制', 'zh': '限时', 'ko': '시간 제한',
+    },
+    'card_type_timed_dynamic': {
+        'tr': '{value} sn', 'en': '{value} sec', 'de': '{value} Sek.', 'fr': '{value} s',
+        'es': '{value} s', 'it': '{value} s', 'pt': '{value} s', 'ru': '{value} с',
+        'ja': '{value}秒', 'zh': '{value}秒', 'ko': '{value}초',
+    },
     'cards_full_warning': {
         'tr': 'Daha fazla bu tür kart ekleyemezsiniz.',
         'en': 'You cannot add more cards of this type.',

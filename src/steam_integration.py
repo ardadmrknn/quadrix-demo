@@ -1911,6 +1911,17 @@ def _precache_all_leaderboard_handles() -> None:
 # Kullanıcı bilgisi
 # ---------------------------------------------------------------------------
 
+def clear_persona_name_cache() -> None:
+    """Steam persona önbelleğini temizle; profil yüzeylerini eşitle."""
+    global _persona_name_cache
+    _persona_name_cache = None
+
+
+def refresh_persona_name_cache() -> str | None:
+    """Persona cache'ini geçersiz kılıp SDK'dan güncel adı oku."""
+    clear_persona_name_cache()
+    return get_persona_name()
+
 def get_persona_name() -> str | None:
     """Oturum açmış Steam kullanıcısının profil adını döndürür."""
     global _persona_name_cache
