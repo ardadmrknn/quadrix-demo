@@ -1441,6 +1441,7 @@ class Game:
         # Combo ve mesajlar
         self.combo_message = ""
         self.combo_message_time = 0
+        self._tspin_indicator_timer = 0.0
         
         # Partiküller
         self.particles = []
@@ -4678,6 +4679,8 @@ class Game:
         
         # T-spin kontrolünü yap
         t_spin_type, _ = self._check_t_spin()
+        if t_spin_type is not None:
+            self._tspin_indicator_timer = 1500.0
         
         try:
             lines_cleared = self.board.lock_piece(self.current_piece, t_spin=t_spin_type)
@@ -5178,6 +5181,9 @@ class Game:
             self.combo_message_time = float(self.combo_message_time) - dt_frames
             if self.combo_message_time <= 0:
                 self.combo_message_time = 0
+        tspin_timer = float(getattr(self, '_tspin_indicator_timer', 0.0) or 0.0)
+        if tspin_timer > 0:
+            self._tspin_indicator_timer = max(0.0, tspin_timer - dt)
         
         # Drop trail efektlerini güncelle
         if self.drop_trails:
@@ -5559,7 +5565,8 @@ class Game:
         current_texture = getattr(self.current_piece, 'texture_surface', None)
 
         # Ghost piece (gölge) çiz
-        if not self.game_over and self.effects_enabled:
+        show_ghost = bool(self.settings_manager.get('show_ghost', True) if getattr(self, 'settings_manager', None) is not None else True)
+        if not self.game_over and self.effects_enabled and show_ghost:
             ghost_y = self.get_ghost_y()
             if ghost_y != self.current_piece.y:
                 ghost_visual_offset = self._get_ghost_visual_offset(ghost_y)
@@ -6075,16 +6082,21 @@ class Game:
         rows_avail = max(24, rows_bottom_cap - stat_y_cur - max(4, int(8 * hud_scale)))
 
         score_color_override = getattr(self, '_score_color_override', None)
-        stat_row_defs = [
+        sprint_mode = str(getattr(self, 'game_mode', '')).lower() in {'sprint', '40l', '40_lines', '40-lines'}
+        stat_row_defs = [] if sprint_mode else [
             (t('score'), f'{self.board.score:,}'.replace(',', '.'), score_color_override or accent_color),
+        ]
+        stat_row_defs.extend([
             (t('lines'), str(self.board.lines_cleared), text_color),
             (t('level'), str(self.board.level), accent_color),
-        ]
+        ])
+        if float(getattr(self, '_tspin_indicator_timer', 0.0) or 0.0) > 0:
+            stat_row_defs.append(('T-SPIN', '', (255, 190, 80)))
         if self.board.combo > 1:
             stat_row_defs.append((t('combo'), f'x{self.board.combo}', (255, 200, 50)))
         elif self.board.tetrises > 0:
             stat_row_defs.append((t('tetris_label'), str(self.board.tetrises), (100, 255, 100)))
-        mandatory_row_count = 3
+        mandatory_row_count = 2 if sprint_mode else 3
 
         stat_plans = []
         for shrink in (1.0, 0.88, 0.76, 0.64, 0.52):

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "phase": 5,
+  "show_ghost_setting": true,
+  "tspin_indicator_ms": 1500,
+  "sprint_score_row": false,
+  "navigation_changes": false,
+  "artistic_polish": "deferred"
+}
