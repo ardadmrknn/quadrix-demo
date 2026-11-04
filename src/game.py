@@ -1886,6 +1886,15 @@ class Game:
         self._apply_block_style(piece)
         return piece
 
+    @staticmethod
+    def _reset_piece_orientation(piece):
+        """Return a held piece to its spawn orientation."""
+        if piece is not None:
+            rotation = int(getattr(piece, 'rotation_state', 0) or 0) % 4
+            if rotation:
+                piece.rotate(-rotation)
+        return piece
+
     def _reset_piece_state(self) -> None:
         """Yeni bir parça spawn olduğunda veya hold yapıldığında durum değişkenlerini sıfırlar"""
         if self.current_piece is not None:
@@ -2260,10 +2269,12 @@ class Game:
         self._position_piece_at_spawn(piece)
         return piece
 
-    def _compute_spawn_x(self, piece_width: int) -> int:
+    def _compute_spawn_x(self, piece_width: int, *, piece=None) -> int:
         piece_width = max(1, piece_width)
         board_width = int(getattr(self, 'board_width', getattr(getattr(self, 'board', None), 'width', BOARD_WIDTH)) or BOARD_WIDTH)
         preferred = max(0, (board_width // 2) - 2)
+        if getattr(piece, 'name', None) == 'O' and not getattr(piece, 'is_workshop_piece', False):
+            preferred = max(0, (board_width - piece_width) // 2)
         max_x = max(0, board_width - piece_width)
         return max(0, min(preferred, max_x))
 
@@ -2278,7 +2289,7 @@ class Game:
         except Exception:
             shape = getattr(piece, 'shape', None)
             piece_width = len(shape[0]) if shape else 1
-        piece.x = self._compute_spawn_x(piece_width) if spawn_x is None else spawn_x
+        piece.x = self._compute_spawn_x(piece_width, piece=piece) if spawn_x is None else spawn_x
         piece.y = self._compute_spawn_y(piece)
         return piece
 
@@ -2828,6 +2839,7 @@ class Game:
                         if self.can_hold2:
                             if getattr(self, 'second_held_piece', None) is None:
                                 stored_piece = self.current_piece
+                                self._reset_piece_orientation(stored_piece)
                                 prepare_hold_piece = getattr(self, '_prepare_piece_for_hold', None)
                                 if callable(prepare_hold_piece):
                                     try:
@@ -2850,6 +2862,7 @@ class Game:
                                 self.next_piece_queue.append(self.spawn_new_piece())
                             else:
                                 stored_piece = self.current_piece
+                                self._reset_piece_orientation(stored_piece)
                                 prepare_hold_piece = getattr(self, '_prepare_piece_for_hold', None)
                                 if callable(prepare_hold_piece):
                                     try:
@@ -2865,7 +2878,7 @@ class Game:
                                             pass
                                     except Exception:
                                         pass
-                                self.current_piece = self.second_held_piece
+                                self.current_piece = self._reset_piece_orientation(self.second_held_piece)
                                 self._reset_piece_state()
                                 self.second_held_piece = stored_piece
                                 self._position_piece_at_spawn(self.current_piece)
@@ -2934,6 +2947,7 @@ class Game:
                             if self.held_piece is None:
                                 held_name = getattr(self.current_piece, 'name', None)
                                 stored_piece = self.current_piece
+                                self._reset_piece_orientation(stored_piece)
                                 prepare_hold_piece = getattr(self, '_prepare_piece_for_hold', None)
                                 if callable(prepare_hold_piece):
                                     try:
@@ -2964,6 +2978,7 @@ class Game:
                             else:
                                 held_name = getattr(self.current_piece, 'name', None)
                                 stored_piece = self.current_piece
+                                self._reset_piece_orientation(stored_piece)
                                 prepare_hold_piece = getattr(self, '_prepare_piece_for_hold', None)
                                 if callable(prepare_hold_piece):
                                     try:
@@ -2979,7 +2994,7 @@ class Game:
                                             pass
                                     except Exception:
                                         pass
-                                self.current_piece = self.held_piece
+                                self.current_piece = self._reset_piece_orientation(self.held_piece)
                                 self._reset_piece_state()
                                 self.held_piece = stored_piece
                                 self._position_piece_at_spawn(self.current_piece)

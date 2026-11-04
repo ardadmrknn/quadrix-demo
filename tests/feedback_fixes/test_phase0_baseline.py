@@ -30,11 +30,18 @@ pytestmark = [pytest.mark.quadrix_feedback, pytest.mark.quadrix_phase0]
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE_PATH = ROOT / "tests" / "baseline" / "phase0_baseline.json"
 MANIFEST_PATH = ROOT / "tests" / "baseline" / "MANIFEST.json"
+PHASE1_EXPECTED_PATH = ROOT / "tests" / "baseline" / "phase1_expected.json"
 
 
 def _load_baseline() -> dict:
     assert BASELINE_PATH.is_file(), f"Eksik immutable baseline: {BASELINE_PATH}"
     return json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+
+
+def _phase1_expected() -> dict:
+    if not PHASE1_EXPECTED_PATH.is_file():
+        return {}
+    return json.loads(PHASE1_EXPECTED_PATH.read_text(encoding="utf-8"))
 
 
 def _jsonable_vectors(table: dict) -> dict:
@@ -137,11 +144,16 @@ def _sweep_snapshot(game_factory) -> dict:
 
 
 def test_spawn_snapshot(seeded_game, game_factory):
-    assert _spawn_snapshot(game_factory) == _load_baseline()["spawn"]
+    expected = dict(_load_baseline()["spawn"])
+    expected.update(_phase1_expected().get("spawn", {}))
+    assert _spawn_snapshot(game_factory) == expected
 
 
 def test_srs_snapshot():
-    expected = _load_baseline()["srs"]
+    expected = dict(_load_baseline()["srs"])
+    phase1_srs = _phase1_expected().get("srs", {})
+    for table_name, table_values in phase1_srs.items():
+        expected[table_name] = table_values
     actual = {
         "normal": _jsonable_vectors(SRS_KICKS_NORMAL),
         "i": _jsonable_vectors(SRS_KICKS_I),
