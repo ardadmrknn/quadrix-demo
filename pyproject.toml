@@ -23,6 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0.3",
+    "pytest-cov>=7.0.0",
     "ruff>=0.15.11",
 ]
 build = [
@@ -37,6 +38,17 @@ macos = [
 pythonpath = [".", "src"]
 addopts = "-ra"
 testpaths = ["tests"]
+markers = [
+    "quadrix_feedback: feedback-fixes acceptance and regression tests",
+    "quadrix_phase0: phase 0 measurement and baseline tests",
+    "quadrix_phase1: phase 1 piece geometry tests",
+    "quadrix_phase2: phase 2 scoring tests",
+    "quadrix_phase3: phase 3 game-flow tests",
+    "quadrix_phase4: phase 4 randomizer tests",
+    "quadrix_phase5: phase 5 HUD and navigation tests",
+    "quadrix_phase6: phase 6 mode and localization tests",
+    "quadrix_phase7: phase 7 campaign scan tests",
+]
 
 [tool.ruff]
 target-version = "py312"

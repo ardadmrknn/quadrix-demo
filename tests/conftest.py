@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import random
 import sys
 import types
 from pathlib import Path
@@ -18,6 +19,130 @@ if str(REPO_ROOT) not in sys.path:
 	sys.path.insert(0, str(REPO_ROOT))
 if str(SRC_ROOT) not in sys.path:
 	sys.path.insert(0, str(SRC_ROOT))
+
+
+class _Phase0Settings:
+	"""Minimal settings boundary for deterministic, headless Game fixtures."""
+
+	def __init__(self, overrides=None):
+		self._values = {
+			"bg_transparency": 0.3,
+			"menu_transparency": 1.0,
+			"effects_opacity": 1.0,
+			"animation_level": "medium-high",
+			"mute_all": True,
+			"music_enabled": False,
+			"music_volume": 0.0,
+			"sfx_volume": 0.0,
+		}
+		if overrides:
+			self._values.update(overrides)
+
+	def get(self, key, default=None):
+		return self._values.get(key, default)
+
+	def get_controls(self):
+		return {}
+
+
+def _make_phase0_game(settings_overrides=None, seed=1234):
+	"""Create the smallest real ``Game`` instance needed by Phase 0 probes."""
+	from board import Board
+	from game import Game
+
+	game = Game.__new__(Game)
+	game.settings_manager = _Phase0Settings(settings_overrides)
+	game.user_manager = None
+	game.game_mode = "classic"
+	game.theme_manager = None
+	game.block_style_manager = None
+	game.block_appearance = None
+	game.effects_enabled = False
+	game.board_width = 10
+	game.board_height = 40
+	game.board = Board(width=game.board_width, height=game.board_height)
+	game._piece_rng_seed = seed
+	game._piece_rng = random.Random(seed)
+	game._piece_bag = []
+	game._bag_copies = 3
+	game._max_consecutive_same_piece = 3
+	game._last_piece_identity = None
+	game._last_piece_streak = 0
+	game.workshop_blocks_by_mode = {}
+	game.current_piece = None
+	game.falling_block_animations = []
+	game.combo_message_time = 0.0
+	game.drop_trails = []
+	game.line_clear_wave_effects = []
+	game.line_clear_sweep_rows = []
+	game.line_clear_sweep_progress = 0.0
+	game.line_clear_sweep_active = False
+	game.line_clear_animation = 0.0
+	game.block_fall_speed = 1.0
+	game.line_clear_pending_rows = []
+	game.line_clear_pending_colors = {}
+	game.fall_time = 0.0
+	game.fall_speed = 1000.0
+	game.game_time = 0.0
+	game.control_bindings = {}
+	game._soft_drop_held = False
+	game.lock_delay = 500.0
+	game.enable_lock_delay = False
+	game.allow_auto_lock = False
+	game.grounded = False
+	game.lock_reset_count = 0
+	game.lock_timer = 0.0
+	game.stall_timer = 0.0
+	game._shape_mutation_cooldown = 0.0
+	game.last_milestone_score = 0
+	game.firework_active = False
+	game.sound = types.SimpleNamespace(play=lambda *_args, **_kwargs: None)
+	game.update_particles = lambda *_args, **_kwargs: None
+	game.update_ambient_particles = lambda *_args, **_kwargs: None
+	game.update_screen_shake = lambda *_args, **_kwargs: None
+	game._update_das = lambda *_args, **_kwargs: None
+	game.get_cell_size = lambda: 32
+	return game
+
+
+@pytest.fixture
+def seeded_game():
+	"""Return a deterministic real-Game factory for baseline probes."""
+	return lambda seed=1234: _make_phase0_game(seed=seed)
+
+
+@pytest.fixture
+def empty_board():
+	from board import Board
+
+	return Board(width=10, height=40)
+
+
+@pytest.fixture
+def filled_board():
+	from board import Board
+
+	def factory(rows=1, holes=None):
+		board = Board(width=10, height=20)
+		holes = set(holes or [])
+		for offset in range(rows):
+			y = board.height - 1 - offset
+			for x in range(board.width):
+				if (x, y) in holes:
+					continue
+				board.occupancy[y][x] = True
+				board.grid[y][x] = (1, 1, 1)
+		# Keep one unrelated occupied cell so a clear never becomes a perfect clear.
+		board.occupancy[0][0] = True
+		board.grid[0][0] = (1, 1, 1)
+		return board
+
+	return factory
+
+
+@pytest.fixture
+def game_factory():
+	return lambda settings_overrides=None: _make_phase0_game(settings_overrides=settings_overrides)
 
 # localization orijinal fonksiyonlarını yedekle
 try:
