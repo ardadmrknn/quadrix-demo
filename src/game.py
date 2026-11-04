@@ -6099,7 +6099,9 @@ class Game:
             stat_row_defs.append((t('combo'), f'x{self.board.combo}', (255, 200, 50)))
         elif self.board.tetrises > 0:
             stat_row_defs.append((t('tetris_label'), str(self.board.tetrises), (100, 255, 100)))
-        mandatory_row_count = 2 if sprint_mode else 3
+        mandatory_row_count = 3
+        if sprint_mode:
+            mandatory_row_count = 2
 
         stat_plans = []
         for shrink in (1.0, 0.88, 0.76, 0.64, 0.52):
