@@ -1,0 +1,27 @@
+{
+  "phase": 3,
+  "repo": "quadrix-demo",
+  "branch": "release/demo",
+  "head": "36db9b0593faa094f1daf6df144f2bbc5c9fdd70",
+  "remote_sync": "0\t0",
+  "date": "2026-11-05T02:22:12+03:00",
+  "markers": "quadrix_phase0 or quadrix_phase1 or quadrix_phase2 or quadrix_phase3",
+  "collect_only": {
+    "path": "reports/feedback_fixes/phase3/collect-only.txt",
+    "exit_code": 0
+  },
+  "focused": {
+    "path": "reports/feedback_fixes/phase3/pytest-phase3.txt",
+    "exit_code": 0
+  },
+  "cumulative": {
+    "path": "reports/feedback_fixes/phase3/pytest-cumulative.txt",
+    "exit_code": 0,
+    "coverage": "reports/feedback_fixes/phase3/coverage.json"
+  },
+  "compileall": {
+    "path": "reports/feedback_fixes/phase3/compileall.txt",
+    "exit_code": 0
+  },
+  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir."
+}
