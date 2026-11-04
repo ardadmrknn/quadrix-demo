@@ -1362,7 +1362,7 @@ class Game:
         # kopya torbaya atılıp karıştırılır.  Torba bitene kadar sırayla çekilir,
         # bitince yeni torba oluşturulur.  Workshop parçaları da otomatik dahil.
         self._piece_bag: list = []
-        self._bag_copies: int = 3  # Her parça tipinden kaç kopya
+        self._bag_copies: int = 1  # Her parça tipinden kaç kopya
 
         # Parça RNG'yi varsa seed'le
         if getattr(self, '_piece_rng_seed', None) is not None and hasattr(self, '_piece_rng'):
@@ -2054,7 +2054,7 @@ class Game:
         if not all_factories:
             all_factories = [self._make_named_piece_factory('I')]
 
-        copies = int(getattr(self, '_bag_copies', 3) or 3)
+        copies = 1
         bag: list = []
         for factory in all_factories:
             for _ in range(copies):
@@ -2079,34 +2079,14 @@ class Game:
 
         bag = self._piece_bag
 
-        # Torbadan üst üste aynı parça kuralını ihlal etmeyecek ilk parçayı bul
-        chosen_piece: Piece | None = None
-        chosen_index: int = 0
-        for i in range(len(bag)):
-            factory = bag[i]
-            try:
-                piece = factory()
-            except Exception:
-                piece = None
-            if piece is None:
-                piece = self._create_named_piece('I')
-
-            identity = self._piece_identity(piece)
-            if not self._would_exceed_max_consecutive(identity):
-                chosen_piece = piece
-                chosen_index = i
-                break
-        else:
-            # Torbadaki tüm parçalar kuralı ihlal ediyor (nadir) — ilkini al
-            factory = bag[0]
-            try:
-                chosen_piece = factory()
-            except Exception:
-                chosen_piece = None
-            if chosen_piece is None:
-                chosen_piece = self._create_named_piece('I')
-            chosen_index = 0
-
+        # Guideline 7-bag sırası filtrelenmeden tüketilir.
+        chosen_index = 0
+        try:
+            chosen_piece = bag[chosen_index]()
+        except Exception:
+            chosen_piece = None
+        if chosen_piece is None:
+            chosen_piece = self._create_named_piece('I')
         bag.pop(chosen_index)
         identity = self._piece_identity(chosen_piece)
         self._note_piece_spawn(identity)

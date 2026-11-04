@@ -32,6 +32,7 @@ BASELINE_PATH = ROOT / "tests" / "baseline" / "phase0_baseline.json"
 MANIFEST_PATH = ROOT / "tests" / "baseline" / "MANIFEST.json"
 PHASE1_EXPECTED_PATH = ROOT / "tests" / "baseline" / "phase1_expected.json"
 PHASE3_EXPECTED_PATH = ROOT / "tests" / "baseline" / "phase3_expected.json"
+PHASE4_EXPECTED_PATH = ROOT / "tests" / "baseline" / "phase4_expected.json"
 
 
 def _load_baseline() -> dict:
@@ -49,6 +50,12 @@ def _phase3_expected() -> dict:
     if not PHASE3_EXPECTED_PATH.is_file():
         return {}
     return json.loads(PHASE3_EXPECTED_PATH.read_text(encoding="utf-8"))
+
+
+def _phase4_expected() -> dict:
+    if not PHASE4_EXPECTED_PATH.is_file():
+        return {}
+    return json.loads(PHASE4_EXPECTED_PATH.read_text(encoding="utf-8"))
 
 
 def _jsonable_vectors(table: dict) -> dict:
@@ -175,7 +182,9 @@ def test_scoring_snapshot(filled_board):
 
 
 def test_bag_snapshot(seeded_game):
-    assert _bag_snapshot(seeded_game) == _load_baseline()["bag"]
+    expected = dict(_load_baseline()["bag"])
+    expected.update(_phase4_expected().get("bag", {}))
+    assert _bag_snapshot(seeded_game) == expected
 
 
 def test_sweep_snapshot(game_factory):
