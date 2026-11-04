@@ -23,5 +23,17 @@
     "path": "reports/feedback_fixes/phase7/compileall.txt",
     "exit_code": 0
   },
-  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir."
+  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir.",
+  "phase_commit_sha": "9152049450653892d412e6df27fac514156a56ce",
+  "phase_commit_message": "test(faz7): demo kümülatif kapı kanıtını ekle",
+  "phase_push_verified": true,
+  "remote_ref_verified": true,
+  "phase_commit_shas": [
+    "8f24ea8557061bc2c71b35815d39e083dc88d345",
+    "9152049450653892d412e6df27fac514156a56ce"
+  ],
+  "phase_commit_messages": [
+    "docs(denge): demo kampanya solvabilite raporu",
+    "test(faz7): demo kÃ¼mÃ¼latif kapÄ± kanÄ±tÄ±nÄ± ekle"
+  ]
 }

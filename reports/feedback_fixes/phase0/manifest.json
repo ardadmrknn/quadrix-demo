@@ -23,5 +23,15 @@
     "path": "reports/feedback_fixes/phase0/compileall.txt",
     "exit_code": 0
   },
-  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir."
+  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir.",
+  "phase_commit_sha": "a3c9fb6d4c3736f74408cd63fe2241715d1a29db",
+  "phase_commit_message": "test(faz0): demo baseline ve test kapılarını kur",
+  "phase_push_verified": true,
+  "remote_ref_verified": true,
+  "phase_commit_shas": [
+    "a3c9fb6d4c3736f74408cd63fe2241715d1a29db"
+  ],
+  "phase_commit_messages": [
+    "test(faz0): demo baseline ve test kapÄ±larÄ±nÄ± kur"
+  ]
 }

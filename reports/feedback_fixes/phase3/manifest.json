@@ -23,5 +23,15 @@
     "path": "reports/feedback_fixes/phase3/compileall.txt",
     "exit_code": 0
   },
-  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir."
+  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir.",
+  "phase_commit_sha": "14b1bd6be251968a8d4ead6eb6678dceaf7df66a",
+  "phase_commit_message": "fix(akış): ARE sweep ve lock-out Guideline düzeltildi",
+  "phase_push_verified": true,
+  "remote_ref_verified": true,
+  "phase_commit_shas": [
+    "14b1bd6be251968a8d4ead6eb6678dceaf7df66a"
+  ],
+  "phase_commit_messages": [
+    "fix(akÄ±ÅŸ): ARE sweep ve lock-out Guideline dÃ¼zeltildi"
+  ]
 }

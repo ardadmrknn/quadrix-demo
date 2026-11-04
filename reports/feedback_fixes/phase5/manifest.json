@@ -23,5 +23,15 @@
     "path": "reports/feedback_fixes/phase5/compileall.txt",
     "exit_code": 0
   },
-  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir."
+  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir.",
+  "phase_commit_sha": "a1cc06fe90aaed0238836095a1ee7399f6b4fd9f",
+  "phase_commit_message": "fix(arayüz): demo ghost T-spin ve Sprint HUD senkronu",
+  "phase_push_verified": true,
+  "remote_ref_verified": true,
+  "phase_commit_shas": [
+    "a1cc06fe90aaed0238836095a1ee7399f6b4fd9f"
+  ],
+  "phase_commit_messages": [
+    "fix(arayÃ¼z): demo ghost T-spin ve Sprint HUD senkronu"
+  ]
 }

@@ -1,0 +1,106 @@
+{
+  "schema_version": 2,
+  "repo": "quadrix-demo",
+  "branch": "release/demo",
+  "current_head": "9bf88ebf5c0a94dd04cb060dc7493228425eb3d7",
+  "remote_head": "9bf88ebf5c0a94dd04cb060dc7493228425eb3d7",
+  "remote_sync": "0 0",
+  "remote_ref_verified": true,
+  "phases": [
+    {
+      "phase": 0,
+      "commit_shas": [
+        "a3c9fb6d4c3736f74408cd63fe2241715d1a29db"
+      ],
+      "commit_messages": [
+        "test(faz0): demo baseline ve test kapÄ±larÄ±nÄ± kur"
+      ],
+      "manifest": "reports/feedback_fixes/phase0/manifest.json"
+    },
+    {
+      "phase": 1,
+      "commit_shas": [
+        "6a2b67956536dcb4b72f9a8a570bb235b2ebaf35"
+      ],
+      "commit_messages": [
+        "fix(parÃ§a): I kick tablosu ve O spawn Guideline SRS'e Ã§ekildi"
+      ],
+      "manifest": "reports/feedback_fixes/phase1/manifest.json"
+    },
+    {
+      "phase": 2,
+      "commit_shas": [
+        "50c0afb72acf09028fefbc998d0208ce46451fc9"
+      ],
+      "commit_messages": [
+        "fix(skor): demo Faz 2 dÃ¼zeltmelerini senkronla"
+      ],
+      "manifest": "reports/feedback_fixes/phase2/manifest.json"
+    },
+    {
+      "phase": 3,
+      "commit_shas": [
+        "14b1bd6be251968a8d4ead6eb6678dceaf7df66a"
+      ],
+      "commit_messages": [
+        "fix(akÄ±ÅŸ): ARE sweep ve lock-out Guideline dÃ¼zeltildi"
+      ],
+      "manifest": "reports/feedback_fixes/phase3/manifest.json"
+    },
+    {
+      "phase": 4,
+      "commit_shas": [
+        "7f75fb04a5cfbc9c4ac5fa18ea9cd23450af63cd"
+      ],
+      "commit_messages": [
+        "fix(randomizer): demo 7-bag ve faz 4 testlerini senkronla"
+      ],
+      "manifest": "reports/feedback_fixes/phase4/manifest.json"
+    },
+    {
+      "phase": 5,
+      "commit_shas": [
+        "a1cc06fe90aaed0238836095a1ee7399f6b4fd9f"
+      ],
+      "commit_messages": [
+        "fix(arayÃ¼z): demo ghost T-spin ve Sprint HUD senkronu"
+      ],
+      "manifest": "reports/feedback_fixes/phase5/manifest.json"
+    },
+    {
+      "phase": 6,
+      "commit_shas": [
+        "b6862cd8865a2006f06b872b85f288c271533e48"
+      ],
+      "commit_messages": [
+        "fix(icerik): demo Faz 6 sozlesmesini senkronla"
+      ],
+      "manifest": "reports/feedback_fixes/phase6/manifest.json"
+    },
+    {
+      "phase": 7,
+      "commit_shas": [
+        "8f24ea8557061bc2c71b35815d39e083dc88d345",
+        "9152049450653892d412e6df27fac514156a56ce"
+      ],
+      "commit_messages": [
+        "docs(denge): demo kampanya solvabilite raporu",
+        "test(faz7): demo kÃ¼mÃ¼latif kapÄ± kanÄ±tÄ±nÄ± ekle"
+      ],
+      "manifest": "reports/feedback_fixes/phase7/manifest.json"
+    }
+  ],
+  "supplemental_commits": [
+    {
+      "sha": "36db9b0593faa094f1daf6df144f2bbc5c9fdd70",
+      "message": "fix(akÄ±ÅŸ): sweep fallback sÃ¼resini Ã§Ã¶zÃ¼nÃ¼rlÃ¼kten baÄŸÄ±msÄ±z yap",
+      "pushed": true
+    },
+    {
+      "sha": "9bf88ebf5c0a94dd04cb060dc7493228425eb3d7",
+      "message": "docs(kanÄ±t): faz kapÄ± manifestlerini kaydet",
+      "pushed": true
+    }
+  ],
+  "scope": "Faz 0–7 kılavuz hedefli feedback marker kapıları; tam depo pytest sonucu değildir."
+}

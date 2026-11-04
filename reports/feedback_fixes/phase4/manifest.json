@@ -23,5 +23,15 @@
     "path": "reports/feedback_fixes/phase4/compileall.txt",
     "exit_code": 0
   },
-  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir."
+  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir.",
+  "phase_commit_sha": "7f75fb04a5cfbc9c4ac5fa18ea9cd23450af63cd",
+  "phase_commit_message": "fix(randomizer): demo 7-bag ve faz 4 testlerini senkronla",
+  "phase_push_verified": true,
+  "remote_ref_verified": true,
+  "phase_commit_shas": [
+    "7f75fb04a5cfbc9c4ac5fa18ea9cd23450af63cd"
+  ],
+  "phase_commit_messages": [
+    "fix(randomizer): demo 7-bag ve faz 4 testlerini senkronla"
+  ]
 }

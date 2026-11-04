@@ -23,5 +23,15 @@
     "path": "reports/feedback_fixes/phase1/compileall.txt",
     "exit_code": 0
   },
-  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir."
+  "note": "Hedefli feedback marker kapısıdır; tam depo pytest sonucu değildir. Demo kapsamındaki marker sayısı v2 ile birebir olmak zorunda değildir.",
+  "phase_commit_sha": "6a2b67956536dcb4b72f9a8a570bb235b2ebaf35",
+  "phase_commit_message": "fix(parça): I kick tablosu ve O spawn Guideline SRS'e çekildi",
+  "phase_push_verified": true,
+  "remote_ref_verified": true,
+  "phase_commit_shas": [
+    "6a2b67956536dcb4b72f9a8a570bb235b2ebaf35"
+  ],
+  "phase_commit_messages": [
+    "fix(parÃ§a): I kick tablosu ve O spawn Guideline SRS'e Ã§ekildi"
+  ]
 }
