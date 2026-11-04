@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "phase": 2,
+  "scoring": {
+    "mini_tspin_points": [100, 200, 400],
+    "full_tspin_points": [400, 800, 1200, 1600],
+    "soft_drop_points_per_successful_cell": 1,
+    "hard_drop_points_per_cell": 2,
+    "cascade_wave_events": true,
+    "highest_combo_migration": false
+  },
+  "evidence": {
+    "tests": [
+      "tests/feedback_fixes/test_phase2_cascade_stages.py",
+      "tests/feedback_fixes/test_phase2_cascade_mode_indexing.py",
+      "tests/feedback_fixes/test_phase2_mini_tspin.py",
+      "tests/feedback_fixes/test_phase2_full_tspin.py",
+      "tests/feedback_fixes/test_phase2_combo_zero_based.py",
+      "tests/feedback_fixes/test_phase2_score_determinism.py",
+      "tests/feedback_fixes/test_phase2_soft_drop_points.py"
+    ],
+    "notes": [
+      "Existing highest_combo values are preserved; no migration was applied.",
+      "Rounding formula was retained because deterministic fixtures showed no unexplained divergence.",
+      "CascadeMode row ownership is checked separately from Board scoring waves."
+    ]
+  }
+}

@@ -5289,6 +5289,8 @@ class Game:
                         if self.lock_reset_count < 15 and self.stall_timer < 3000.0:
                             self.lock_timer = 0.0
             else:
+                if getattr(self, '_soft_drop_held', False):
+                    self.board.score += 1
                 self.last_move_was_rotate = False
                 if self.current_piece.y > self.max_reached_y:
                     self.max_reached_y = self.current_piece.y

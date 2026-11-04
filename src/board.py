@@ -32,8 +32,8 @@ class Board:
         # intentionally increment `lines_cleared` for stats/achievements without
         # allowing farming level-ups.
         self.level_lines_cleared = 0
-        self.level_lines_per_level = 5
         self.level = 1
+        self.level_lines_per_level = 5
         self.combo = 0
         self.tetrises = 0
         self.last_cleared_lines: List[int] = []
@@ -138,7 +138,7 @@ class Board:
                         )
                     else:
                         self.texture_grid[y][x] = None
-        
+
         cleared = self.clear_lines(t_spin=t_spin)
 
         # Lock-out kuralı: satır temizlikleri bittikten sonra en üst GÖRÜNÜR satırda
@@ -154,163 +154,76 @@ class Board:
         return cleared
 
     def clear_lines(self, source: str = "player", t_spin: str | None = None) -> int:
-        """Tüm dolu satırları tek seferde sil (cascade dahil).
-
-        `source`:
-        - "player": normal oyun akışı (level ilerlemesi ve combo reset davranışı uygulanır)
-        - "card" / "ability" / diğer: dış kaynaklı temizlik (level ilerlemesini tetiklemez; satır yoksa combo resetlenmez)
-        """
-        # Optional debug logging (disabled by default; expensive when enabled)
-        if _DEBUG_CLEAR_LINES:
-            try:
-                import traceback
-                _debug_has_full_row = any(
-                    all(self._cell_filled(x, y) for x in range(self.width))
-                    for y in range(self.height)
-                )
-                if _debug_has_full_row:
-                    print("\n" + "=" * 60)
-                    print("[DEBUG] clear_lines(): full row detected")
-                    print("Call Stack (last 5):")
-                    for line in traceback.format_stack()[-6:-1]:
-                        print(line.strip())
-                    print("=" * 60 + "\n")
-            except Exception:
-                pass
-        
+        """Clear full rows, resolving every cascade wave as one scoring event."""
         total_lines = 0
         all_cleared_rows: List[int] = []
-        all_gold_lines: dict[int, bool] = {}
-        all_unit_points: dict[int, int] = {}
-        # Cascade boyunca temizlenen satır renkleri (efekt için). Bu çağrıya özel
-        # yerel birikimdir; cascade turları arası aynı row indeksi tekrar
-        # temizlenirse ilk turun renkleri korunur (setdefault).
         cascade_colors: dict[int, List[Tuple[int, int, int]]] = {}
-        
-        # CASCADE LOOP: Satır silindikten sonra yeni dolu satırlar oluşabilir, onları da sil
+        waves: list[tuple[int, int, int, str | None]] = []
         while True:
-            lines_to_clear: List[int] = []
-            for y in range(self.height):
-                if all(self._cell_filled(x, y) for x in range(self.width)):
-                    lines_to_clear.append(y)
-            
+            lines_to_clear = [y for y in range(self.height) if all(self._cell_filled(x, y) for x in range(self.width))]
             if not lines_to_clear:
-                break  # Artık silinecek satır yok
-            
-            # Gold ve unit point bilgilerini topla
+                break
+            wave_lines = len(lines_to_clear)
+            wave_gold = 0
+            wave_units = 0
             for y in lines_to_clear:
-                all_gold_lines[y] = any(self.gold[y][x] for x in range(self.width))
-                unit_total = 0
+                if any(self.gold[y][x] for x in range(self.width)):
+                    wave_gold += 1
                 for x in range(self.width):
                     if self.occupancy[y][x]:
                         owner = self.owners[y][x]
                         if owner:
-                            unit_total += BLOCK_UNIT_POINTS.get(owner, 1)
-                all_unit_points[y] = unit_total
-            
+                            wave_units += BLOCK_UNIT_POINTS.get(owner, 1)
+                cascade_colors.setdefault(y, [self.grid[y][x] for x in range(self.width)])
             all_cleared_rows.extend(lines_to_clear)
-            total_lines += len(lines_to_clear)
-            
-            # Satır renklerini efekt için kaydet (silmeden ÖNCE)
-            # Cascade'in ardışık turlarında satırlar yukarı kaydığından aynı row
-            # indeksi birden çok turda temizlenebilir. İlk turda kaydedilen renkleri
-            # koru (üzerine yazma) ki cascade boyunca temizlenen satır renkleri
-            # kaybolmasın.
-            for y in lines_to_clear:
-                cascade_colors.setdefault(
-                    y, [self.grid[y][x] for x in range(self.width)]
-                )
-            
-            # Satırları sil (üstten alta doğru - reverse=True ile indeks kayması önlenir)
-            # ÖNEMLİ: Önce tüm satırları sil, SONRA boş satırları ekle!
-            # Böylece del/insert döngüsünde indeks kayması olmaz.
-            num_to_clear = len(lines_to_clear)
+            total_lines += wave_lines
+            waves.append((wave_lines, wave_gold, wave_units, t_spin if not waves else None))
             for y in sorted(lines_to_clear, reverse=True):
-                del self.grid[y]
-                del self.texture_grid[y]
-                del self.occupancy[y]
-                del self.gold[y]
-                del self.owners[y]
-            
-            # Silinen satır sayısı kadar üste boş satır ekle
-            for _ in range(num_to_clear):
+                for grid in (self.grid, self.texture_grid, self.occupancy, self.gold, self.owners):
+                    del grid[y]
+            for _ in range(wave_lines):
                 self.grid.insert(0, [BLACK for _ in range(self.width)])
                 self.texture_grid.insert(0, [None for _ in range(self.width)])
                 self.occupancy.insert(0, [False for _ in range(self.width)])
                 self.gold.insert(0, [False for _ in range(self.width)])
                 self.owners.insert(0, [None for _ in range(self.width)])
-        
         self.last_cleared_lines = all_cleared_rows
-        if total_lines > 0:
+        if total_lines:
             self.last_cleared_colors = cascade_colors
-        
-        # Puan hesaplama
-        if total_lines > 0 or (t_spin is not None and str(source).lower() in {"player", "normal"}):
-            if total_lines > 0:
-                self.lines_cleared += total_lines
-            
-            # --- SCORING RULES ---
-            # 1. Base Points (T-spin or Normal)
-            if t_spin == 'mini':
-                base_score = 100 * self.level
-            elif t_spin == 'full':
-                t_spin_points = [400, 800, 1200, 1600]
-                base_score = t_spin_points[min(total_lines, 3)] * self.level
+        player_source = str(source).lower() in {"player", "normal"}
+        for wave_lines, wave_gold, wave_units, wave_t_spin in waves:
+            level = int(getattr(self, 'level', 1) or 1)
+            if wave_t_spin == 'mini':
+                base_score = [100, 200, 400][min(wave_lines, 2)] * level
+            elif wave_t_spin == 'full':
+                base_score = [400, 800, 1200, 1600][min(wave_lines, 3)] * level
             else:
-                points = [0, 100, 300, 500, 800]
-                base_score = points[min(total_lines, 4)] * self.level
-            
-            # 2. Combo Bonus (Scaled by Level)
-            combo_bonus = 0
-            if total_lines > 0:
-                if self.combo > 0:
-                    combo_bonus = self.combo * 50 * self.level
-                self.combo += 1  # Increment combo for NEXT clear
-            else:
-                self.combo = 0
-            
-            # 3. Back-to-Back Bonus
-            is_b2b_action = (t_spin is not None and total_lines > 0) or (total_lines >= 4)
-            if is_b2b_action:
+                base_score = [0, 100, 300, 500, 800][min(wave_lines, 4)] * level
+            combo_bonus = self.combo * 50 * level if self.combo > 0 else 0
+            self.combo += 1
+            b2b_action = (wave_t_spin is not None and wave_lines > 0) or wave_lines >= 4
+            if b2b_action:
                 if self.back_to_back:
-                    # B2B Bonus: 1.5x base score
                     base_score = int(base_score * 1.5)
                 self.back_to_back = True
-            elif total_lines > 0:
-                # Satır temizlendi ama Quadrix veya T-spin değilse B2B bozulur
-                self.back_to_back = False
-
-            # 4. Perfect Clear Bonus
-            if total_lines > 0:
-                if all(not any(row) for row in self.occupancy):
-                    base_score += 3000 * self.level
-
-            # 5. Gold & Unit Points (Mode specific)
-            if total_lines > 0:
-                self.tetrises += 1 if total_lines >= 4 else 0
-                per_line = base_score / total_lines
-                gold_count = sum(1 for y in all_cleared_rows if all_gold_lines.get(y, False))
-                extra = int(per_line * 4 * gold_count) if gold_count > 0 else 0
-                unit_points_total = sum(all_unit_points.get(y, 0) for y in all_cleared_rows)
-                
-                self.score += base_score + combo_bonus + extra + int(unit_points_total * self.level)
             else:
-                self.score += base_score
-            
-            if total_lines > 0 and str(source).lower() in {"player", "normal"}:
-                try:
-                    self.level_lines_cleared += total_lines
-                except Exception:
-                    self.level_lines_cleared = int(getattr(self, 'level_lines_cleared', 0) or 0) + int(total_lines)
-                try:
-                    lines_per_level = max(1, int(getattr(self, 'level_lines_per_level', 5) or 5))
-                except Exception:
-                    lines_per_level = 5
-                self.level = (int(getattr(self, 'level_lines_cleared', self.lines_cleared)) // lines_per_level) + 1
-        else:
-            # Dış kaynaklı temizlikler combo'yu bozmasın.
-            if str(source).lower() in {"player", "normal"}:
-                self.combo = 0
+                self.back_to_back = False
+            if all(not any(row) for row in self.occupancy):
+                base_score += 3000 * level
+            self.tetrises += 1 if wave_lines >= 4 else 0
+            per_line = base_score / wave_lines
+            extra = int(per_line * 4 * wave_gold) if wave_gold else 0
+            self.score += base_score + combo_bonus + extra + int(wave_units * level)
+            self.lines_cleared += wave_lines
+            if player_source:
+                self.level_lines_cleared += wave_lines
+                self.level = (int(self.level_lines_cleared) // max(1, int(getattr(self, 'level_lines_per_level', 5) or 5))) + 1
+        if not waves and t_spin is not None and player_source:
+            level = int(getattr(self, 'level', 1) or 1)
+            self.score += (100 if t_spin == 'mini' else 400) * level
+            self.combo = 0
+        elif not waves and player_source:
+            self.combo = 0
         return total_lines
 
     def apply_gravity(self) -> None:
@@ -376,7 +289,7 @@ class Board:
             return dest_y
         except Exception:
             return None
-        
+
 
     def clear_top_rows(self, n: int = 6) -> None:
         n = max(0, min(n, self.height))

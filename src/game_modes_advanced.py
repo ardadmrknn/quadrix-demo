@@ -1568,33 +1568,22 @@ class CascadeMode(Game):
     
     def apply_cascade_gravity(self, cleared_rows):
         """Temizlenen satırların üstündeki blokları aşağı düşür"""
-        # Temizlenen satırları sıralı al (yukarıdan aşağıya)
-        cleared_rows = sorted(cleared_rows, reverse=True)
-        
-        for row in cleared_rows:
-            # Bu satırı sil (tüm gridler)
-            del self.board.grid[row]
-            self.board.grid.insert(0, [BLACK for _ in range(self.board_width)])
-            try:
-                del self.board.texture_grid[row]
-                self.board.texture_grid.insert(0, [None for _ in range(self.board_width)])
-            except Exception:
-                pass
-            try:
-                del self.board.occupancy[row]
-                self.board.occupancy.insert(0, [False for _ in range(self.board_width)])
-            except Exception:
-                pass
-            try:
-                del self.board.gold[row]
-                self.board.gold.insert(0, [False for _ in range(self.board_width)])
-            except Exception:
-                pass
-            try:
-                del self.board.owners[row]
-                self.board.owners.insert(0, [None for _ in range(self.board_width)])
-            except Exception:
-                pass
+        # Satırları tek tek silip her adımda row 0'a eklemek indeksleri kaydırır.
+        cleared_rows = sorted({int(row) for row in cleared_rows if 0 <= int(row) < self.board_height}, reverse=True)
+        if not cleared_rows:
+            return
+        grids = (
+            (self.board.grid, [BLACK for _ in range(self.board_width)]),
+            (self.board.texture_grid, [None for _ in range(self.board_width)]),
+            (self.board.occupancy, [False for _ in range(self.board_width)]),
+            (self.board.gold, [False for _ in range(self.board_width)]),
+            (self.board.owners, [None for _ in range(self.board_width)]),
+        )
+        for grid, empty_row in grids:
+            for row in cleared_rows:
+                del grid[row]
+            for _ in cleared_rows:
+                grid.insert(0, list(empty_row))
     
     def create_cascade_particles(self, offset_x, offset_y, cell_size, count=20, level=1):
         """Cascade efekti için özel parçacıklar - seviyeye göre renk değişir"""
