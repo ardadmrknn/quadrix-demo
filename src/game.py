@@ -2601,6 +2601,53 @@ class Game:
         """
         return int(offset_y) + int(row) * int(cell_size) + 1
     
+    # ARE tamponu en fazla bu kadar olay tutar; taşkın girdi kuyruğu
+    # büyütmesin (uzun basılı tutma / otomatik tekrar fırtınası).
+    _ARE_INPUT_BUFFER_LIMIT = 8
+
+    def _buffer_are_input(self, event, bindings) -> None:
+        """S-05: ARE penceresinde rotate/hold/drop olayını tamponla.
+
+        Hareket (move_left/move_right/soft_drop) bilinçli olarak tamponlanmaz:
+        DAS durum makinesi konum değil tuş basılılığı taşır ve yeni taşa
+        aktarılan bir "basılı" durumu ışınlanma etkisi yaratırdı.
+        """
+        if event is None:
+            return
+        buffer_name = None
+        if (self._event_matches_action(event, bindings, 'rotate', gamepad_aliases=('rotate_alt',))
+                or self._event_matches_action(event, bindings, 'rotate_ccw')
+                or self._event_matches_action(event, bindings, 'rotate_180')):
+            buffer_name = '_pending_rotate'
+        elif self._event_matches_action(event, bindings, 'hold'):
+            buffer_name = '_pending_hold'
+        elif self._event_matches_action(event, bindings, 'hard_drop'):
+            buffer_name = '_pending_drop'
+        if buffer_name is None:
+            return
+        buffer = getattr(self, buffer_name, None)
+        if not isinstance(buffer, list):
+            buffer = []
+            setattr(self, buffer_name, buffer)
+        if len(buffer) < self._ARE_INPUT_BUFFER_LIMIT:
+            buffer.append(event)
+
+    def _take_buffered_are_input(self) -> list:
+        """Tamponu boşalt; olaylar `handle_input`'ın kendi döngüsünde uygulanır.
+
+        Yeni taş henüz doğmadıysa tampon olduğu gibi kalır — böylece girdi
+        kaybolmaz, bir sonraki karede yeniden denenir.
+        """
+        if getattr(self, 'current_piece', None) is None:
+            return []
+        buffered = []
+        for buffer_name in ('_pending_rotate', '_pending_hold', '_pending_drop'):
+            buffer = getattr(self, buffer_name, None)
+            if buffer:
+                buffered.extend(buffer)
+                buffer.clear()
+        return buffered
+
     def handle_input(self):
         """
         Kullanıcı girdilerini işle
@@ -2608,9 +2655,6 @@ class Game:
         Returns:
             bool: Oyun devam edecekse True
         """
-        self._pending_rotate = getattr(self, '_pending_rotate', 0)
-        self._pending_hold = getattr(self, '_pending_hold', False)
-        self._pending_drop = getattr(self, '_pending_drop', False)
         try:
             from gamepad_manager import get_gamepad_manager
             gpm = get_gamepad_manager()
@@ -2619,7 +2663,15 @@ class Game:
             gpm = None
             gpm_connected = False
 
-        for event in pygame.event.get():
+        # S-05: ARE penceresinde tamponlanmış girdiler, yeni taş doğduysa
+        # gerçek olay döngüsüne başta enjekte edilir; böylece hiçbir
+        # eylem mantığı kopyalanmaz, aynı işleyiciler çalışır.
+        pending_events = self._take_buffered_are_input()
+        _raw_events = pygame.event.get()
+        if pending_events:
+            _raw_events = pending_events + list(_raw_events)
+
+        for event in _raw_events:
             # Double Input / Ghost Keyboard Input engelleme koruması
             # (v2 paritesi): bağlı gamepad varken son 150 ms'de gamepad'den
             # aktif girdi geldiyse, işletim sisteminin/sürücünün emüle ettiği
@@ -2861,6 +2913,17 @@ class Game:
                         self.sound.duck_music()
                     continue
                 
+                # ARE: yeni parça henüz doğmadıysa parçaya ait eylemler yok
+                # sayılır (ESC/pause yukarıda işlendi). Rotate/hold/drop
+                # yolları `current_piece` üzerinde korumasızdır.
+                if self.current_piece is None:
+                    # S-05: bu pencerede basılan rotate/hold/drop kaybolmaz;
+                    # olay nesnesi tamponlanır ve yeni taş doğunca bir kez
+                    # uygulanır. Hareket girdileri bilinçli olarak tamponlanmaz
+                    # (DAS durum makinesi konum taşımaz).
+                    self._buffer_are_input(event, bindings)
+                    continue
+
                 # Sol hareket - DAS sistemi ile
                 # DUZ-007: _event_matches_action — gamepad move_left event'i
                 # action metadata'sıyla eşleşir (klavye remap bağımsız).
@@ -4750,8 +4813,9 @@ class Game:
 
     def lock_and_new_piece(self):
         """Mevcut parçayı kilitle ve yeni parça oluştur"""
-        if getattr(self, 'line_clear_sweep_active', False):
-            self._pending_next_piece = True
+        # ARE: bu kilitten önce hâlâ oynayan bir temizleme varsa ve animasyon
+        # bitmediyse yeni parçayı doğurma (tetris.wiki/ARE, Sprint hariç).
+        if self._defer_spawn_for_line_clear():
             return
         if self.effects_enabled:
             # Parçanın HER HÜCRESİNDEN patlama efekti
@@ -4973,6 +5037,14 @@ class Game:
                         self.sound.play('tetris')  # Başarı sesi (tetris sesi güzel)
                         print(f"Başarı Açıldı: {achievement['name']} - {achievement['description']}")
         
+        # ARE: satır temizlendiyse yeni parça, sweep ve üstteki blokların
+        # düşüşü bitene kadar doğmaz; `update()` akış bitince doğurur.
+        if lines_cleared > 0 and self._defer_spawn_for_line_clear():
+            return
+        self._spawn_next_piece_from_queue()
+
+    def _spawn_next_piece_from_queue(self) -> None:
+        """Kuyruktan ilk parçayı aktif yap ve kuyruğa yenisini ekle."""
         # Kuyruktan ilk parçayı al ve kuyruğa yeni parça ekle
         self.current_piece = self.next_piece_queue.pop(0)
         self._reset_piece_state()
@@ -4988,7 +5060,32 @@ class Game:
         
         # Tema renklerini uygula
         self.apply_theme_to_pieces()
-    
+
+    def _line_clear_settled(self) -> bool:
+        """Satır temizleme akışı bitti mi? (sweep + üstteki blokların düşüşü)"""
+        if getattr(self, 'line_clear_sweep_active', False):
+            return False
+        return not bool(getattr(self, 'falling_block_animations', None))
+
+    def _defer_spawn_for_line_clear(self) -> bool:
+        """Temizleme animasyonu sürüyorsa yeni parçayı ertele.
+
+        ARE normalde Guideline oyunlarında yoktur; yalnızca satır temizliğinden
+        SONRA uygulanır (tetris.wiki/ARE). Sprint/40L'de yarış süresi şişmesin
+        diye tamamen atlanır (S-05).
+        """
+        if self._is_sprint_mode():
+            return False
+        if not getattr(self, 'effects_enabled', False):
+            return False
+        if self._line_clear_settled():
+            return False
+        # Aktif parça yokken `update()` gravity/lock çalıştırmaz ve çizim
+        # parçayı atlar; oyuncu animasyon bitmeden yeni taşı kontrol edemez.
+        self.current_piece = None
+        self._pending_next_piece = True
+        return True
+
     def finalize_run(self, playtime: int | None = None) -> None:
         """Persist score, stats, and achievements once per run."""
         if self._score_recorded:
@@ -5302,6 +5399,11 @@ class Game:
                 if not (a['current_offset'] >= 0 and a.get('started', False))
             ]
         
+        # ARE: sweep ve blok düşüşü bittiğinde ertelenen parçayı doğur.
+        if getattr(self, '_pending_next_piece', False) and self._line_clear_settled():
+            self._pending_next_piece = False
+            self._spawn_next_piece_from_queue()
+
         if self.combo_message_time > 0:
             self.combo_message_time = float(self.combo_message_time) - dt_frames
             if self.combo_message_time <= 0:
@@ -5698,7 +5800,7 @@ class Game:
 
         # Ghost piece (gölge) çiz
         show_ghost = bool(self.settings_manager.get('show_ghost', True) if getattr(self, 'settings_manager', None) is not None else True)
-        if not self.game_over and self.effects_enabled and show_ghost:
+        if not self.game_over and self.current_piece is not None and self.effects_enabled and show_ghost:
             ghost_y = self.get_ghost_y()
             if ghost_y != self.current_piece.y:
                 ghost_visual_offset = self._get_ghost_visual_offset(ghost_y)
@@ -5745,7 +5847,7 @@ class Game:
                         )
         
         # Mevcut parçayı çiz
-        if not self.game_over:
+        if not self.game_over and self.current_piece is not None:
             for local_y, row in enumerate(self.current_piece.shape):
                 for local_x, cell in enumerate(row):
                     if not cell:
