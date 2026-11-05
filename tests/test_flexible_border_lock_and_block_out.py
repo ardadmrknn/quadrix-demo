@@ -76,19 +76,19 @@ def test_flexible_overflow_lock_uses_board_flag_without_snap():
 # B) Görünür row 0 lock-out kuralı
 # ---------------------------------------------------------------------------
 
-def test_lock_out_when_visible_row0_filled_after_clears():
-    """Kilit + temizlik sonrası görünür row 0'da dolu hücre kalırsa game-over."""
+def test_partial_visible_row0_lock_is_not_game_over():
+    """K3: görünür row 0'da kısmi doluluk tek başına game-over değildir."""
     board = Board(width=10, height=20)
     # I parçası (4 geniş) board width 10'da row 0'ı doldurmaz → satır temizlenmez,
-    # row 0 dolu kalır → lock-out.
+    # K3: görünür row 0'da kısmi doluluk tek başına ölüm değildir.
     piece = create_piece_by_name("I")  # yatay, dolu satır index 1
     piece.x = 0
     piece.y = -1  # dolu satır board y=0'a denk gelir
     board.lock_piece(piece)
 
-    # row 0 dolu → lock-out.
+    # Yeni bir parça doğabildiği sürece oyun devam eder.
     assert any(board.occupancy[0][x] for x in range(board.width))
-    assert board.is_game_over() is True
+    assert board.is_game_over() is False
 
 
 def test_no_game_over_when_row0_empty_after_lock():
@@ -118,17 +118,27 @@ def test_full_top_row_clears_and_no_game_over():
     assert board.is_game_over() is False
 
 
-def test_overflow_top_unwritable_cell_triggers_lock_out():
-    """Görünür alanın üstünde (y<0) yazılamayan dolu hücre kalırsa top-out → game-over."""
+def test_partial_hidden_overflow_does_not_lock_out():
+    """K3: görünür hücre de kilitlenen kısmi gizli taş game-over değildir."""
     board = Board(width=10, height=20)
     piece = create_piece_by_name("I")
     # I parçasını dikey yap (dolu sütun) ki bazı hücreler y<0'da kalsın.
     piece.rotate()
     piece.x = 0
-    piece.y = -3  # bazı dolu hücreler y<0'da kalır
+    piece.y = -2  # iki gizli satır sınırı içinde iki hücre gizli kalır
+    assert board.is_valid_position(piece)
     board.lock_piece(piece)
 
-    assert board.is_game_over() is True
+    assert board.is_game_over() is False
+
+
+def test_piece_cannot_move_above_two_hidden_rows():
+    board = Board(width=10, height=20)
+    piece = create_piece_by_name("I")
+    piece.rotate()
+    piece.y = -3
+
+    assert board.is_valid_position(piece) is False
 
 
 # ---------------------------------------------------------------------------

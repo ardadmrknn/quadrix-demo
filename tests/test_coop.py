@@ -539,7 +539,8 @@ def test_lock_out_freeze_does_not_commit_top_out_piece_to_board():
     cg._event_listeners.append(lambda event_type, event_data: events.append((event_type, event_data)))
     cg._particle_effects_enabled = lambda: True
     cg.create_lock_explosion = lambda *args, **kwargs: explosions.append((args, kwargs))
-    piece = Piece(x=17, y=-1, shape_index=5)
+    # K3: yalnız tümü gizli kilit freeze üretir; kısmi üst kilit geçerlidir.
+    piece = Piece(x=17, y=-2, shape_index=5)
     cg.p2_current_piece = piece
 
     cg._lock_and_new_piece('P2')
@@ -569,6 +570,9 @@ def test_unfrozen_player_has_extended_lock_delay_in_top_four_rows():
         cg.board.owners[1][x] = 'P2'
 
     cg._do_unfreeze('P1')
+
+    # K3: sürenin sonunda freeze, sonraki spawn'ın gerçekten kapalı olmasına bağlıdır.
+    cg.p1_next_piece = Piece(x=0, y=0, shape_index=1)
 
     assert not cg.p1_frozen
     assert cg.p1_current_piece is not None
@@ -624,6 +628,17 @@ def test_unfreeze_lock_delay_rearms_after_each_freeze_cycle():
     cg.p1_current_piece = None
 
     for _cycle in range(2):
+        # Her tur temiz bir spawn alanıyla başlar; gizli satırlar da alandır.
+        for row in cg.board.hidden_occupancy:
+            row[10:20] = [False] * 10
+        for row in cg.board.hidden_grid:
+            row[10:20] = [(0, 0, 0)] * 10
+        for row in cg.board.hidden_texture_grid:
+            row[10:20] = [None] * 10
+        for row in cg.board.hidden_gold:
+            row[10:20] = [False] * 10
+        for row in cg.board.hidden_owners:
+            row[10:20] = [None] * 10
         for y in range(4):
             for x in range(10, 20):
                 cg.board.occupancy[y][x] = False
@@ -641,6 +656,9 @@ def test_unfreeze_lock_delay_rearms_after_each_freeze_cycle():
         cg._p2_pending_unfreeze = True
 
         cg._do_unfreeze('P2')
+
+        # Sonraki spawn sabit O olsun; test 7-bag RNG'sine bağlı kalmasın.
+        cg.p2_next_piece = Piece(x=0, y=0, shape_index=1)
 
         assert not cg.p2_frozen
         assert cg.p2_current_piece is not None

@@ -47,6 +47,11 @@ class CoopBoard(Board):
             if py >= self.height:
                 return False
             if py < 0:
+                hidden_index = py + self.hidden_rows
+                if hidden_index < 0:
+                    return False
+                if 0 <= px < self.width and self.hidden_occupancy[hidden_index][px]:
+                    return False
                 continue
             # Oyuncu bölgesi kontrolü (orta çizgi sert duvar)
             if px not in cols:

@@ -26,6 +26,9 @@ class Board:
         self.texture_grid: List[List[object | None]] = [[None for _ in range(self.width)] for _ in range(self.height)]
         self.owners: List[List[str | None]] = [[None for _ in range(self.width)] for _ in range(self.height)]
         self.hidden_occupancy: List[List[bool]] = [[False for _ in range(self.width)] for _ in range(self.hidden_rows)]
+        self.hidden_grid: List[List[Tuple[int, int, int]]] = [[BLACK for _ in range(self.width)] for _ in range(self.hidden_rows)]
+        self.hidden_texture_grid: List[List[object | None]] = [[None for _ in range(self.width)] for _ in range(self.hidden_rows)]
+        self.hidden_gold: List[List[bool]] = [[False for _ in range(self.width)] for _ in range(self.hidden_rows)]
         self.hidden_owners: List[List[str | None]] = [[None for _ in range(self.width)] for _ in range(self.hidden_rows)]
         self.occupancy: List[List[bool]] = [[False for _ in range(self.width)] for _ in range(self.height)]
         self.gold: List[List[bool]] = [[False for _ in range(self.width)] for _ in range(self.height)]
@@ -124,8 +127,24 @@ class Board:
                 if y < 0:
                     hidden_index = y + self.hidden_rows
                     if 0 <= x < self.width and 0 <= hidden_index < self.hidden_rows:
+                        cell_color = piece.color
+                        if color_matrix is not None:
+                            try:
+                                cm_val = color_matrix[ly][lx]
+                                if cm_val is not None:
+                                    cell_color = cm_val
+                            except Exception:
+                                pass
                         self.hidden_occupancy[hidden_index][x] = True
+                        self.hidden_grid[hidden_index][x] = cell_color
+                        self.hidden_gold[hidden_index][x] = getattr(piece, 'is_gold', False)
                         self.hidden_owners[hidden_index][x] = getattr(piece, 'name', None)
+                        if style_name and callable(TextureSlice):
+                            self.hidden_texture_grid[hidden_index][x] = TextureSlice(
+                                str(style_name), rel_x=lx, rel_y=ly,
+                                width=piece_w or 1, height=piece_h or 1,
+                                rotation=getattr(piece, 'rotation_state', 0),
+                            )
                         hidden_cells += 1
                     else:
                         _overflow_top = True
@@ -195,15 +214,30 @@ class Board:
             all_cleared_rows.extend(lines_to_clear)
             total_lines += wave_lines
             waves.append((wave_lines, wave_gold, wave_units, t_spin if not waves else None))
+            combined = [
+                self.hidden_grid + self.grid,
+                self.hidden_texture_grid + self.texture_grid,
+                self.hidden_occupancy + self.occupancy,
+                self.hidden_gold + self.gold,
+                self.hidden_owners + self.owners,
+            ]
             for y in sorted(lines_to_clear, reverse=True):
-                for grid in (self.grid, self.texture_grid, self.occupancy, self.gold, self.owners):
-                    del grid[y]
+                combined_index = self.hidden_rows + y
+                for grid in combined:
+                    del grid[combined_index]
+            empty_rows = [
+                [BLACK for _ in range(self.width)], [None for _ in range(self.width)],
+                [False for _ in range(self.width)], [False for _ in range(self.width)],
+                [None for _ in range(self.width)],
+            ]
             for _ in range(wave_lines):
-                self.grid.insert(0, [BLACK for _ in range(self.width)])
-                self.texture_grid.insert(0, [None for _ in range(self.width)])
-                self.occupancy.insert(0, [False for _ in range(self.width)])
-                self.gold.insert(0, [False for _ in range(self.width)])
-                self.owners.insert(0, [None for _ in range(self.width)])
+                for grid, empty in zip(combined, empty_rows):
+                    grid.insert(0, empty[:])
+            self.hidden_grid, self.grid = combined[0][:self.hidden_rows], combined[0][self.hidden_rows:]
+            self.hidden_texture_grid, self.texture_grid = combined[1][:self.hidden_rows], combined[1][self.hidden_rows:]
+            self.hidden_occupancy, self.occupancy = combined[2][:self.hidden_rows], combined[2][self.hidden_rows:]
+            self.hidden_gold, self.gold = combined[3][:self.hidden_rows], combined[3][self.hidden_rows:]
+            self.hidden_owners, self.owners = combined[4][:self.hidden_rows], combined[4][self.hidden_rows:]
         self.last_cleared_lines = all_cleared_rows
         if total_lines:
             self.last_cleared_colors = cascade_colors
@@ -363,6 +397,9 @@ class Board:
         self.gold = [[False for _ in range(self.width)] for _ in range(self.height)]
         self.owners = [[None for _ in range(self.width)] for _ in range(self.height)]
         self.hidden_occupancy = [[False for _ in range(self.width)] for _ in range(self.hidden_rows)]
+        self.hidden_grid = [[BLACK for _ in range(self.width)] for _ in range(self.hidden_rows)]
+        self.hidden_texture_grid = [[None for _ in range(self.width)] for _ in range(self.hidden_rows)]
+        self.hidden_gold = [[False for _ in range(self.width)] for _ in range(self.hidden_rows)]
         self.hidden_owners = [[None for _ in range(self.width)] for _ in range(self.hidden_rows)]
         self.score = 0
         self.lines_cleared = 0

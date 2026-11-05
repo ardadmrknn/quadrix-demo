@@ -2009,6 +2009,11 @@ class CoopGame:
             'grid': [row[:] for row in board.grid],
             'texture_grid': [row[:] for row in board.texture_grid],
             'occupancy': [row[:] for row in board.occupancy],
+            'hidden_occupancy': [row[:] for row in board.hidden_occupancy],
+            'hidden_grid': [row[:] for row in board.hidden_grid],
+            'hidden_texture_grid': [row[:] for row in board.hidden_texture_grid],
+            'hidden_gold': [row[:] for row in board.hidden_gold],
+            'hidden_owners': [row[:] for row in board.hidden_owners],
             'gold': [row[:] for row in board.gold],
             'owners': [row[:] for row in board.owners],
             'score': board.score,
@@ -2032,6 +2037,11 @@ class CoopGame:
         board.grid = [row[:] for row in snapshot['grid']]
         board.texture_grid = [row[:] for row in snapshot['texture_grid']]
         board.occupancy = [row[:] for row in snapshot['occupancy']]
+        board.hidden_occupancy = [row[:] for row in snapshot['hidden_occupancy']]
+        board.hidden_grid = [row[:] for row in snapshot['hidden_grid']]
+        board.hidden_texture_grid = [row[:] for row in snapshot['hidden_texture_grid']]
+        board.hidden_gold = [row[:] for row in snapshot['hidden_gold']]
+        board.hidden_owners = [row[:] for row in snapshot['hidden_owners']]
         board.gold = [row[:] for row in snapshot['gold']]
         board.owners = [row[:] for row in snapshot['owners']]
         board.score = snapshot['score']
