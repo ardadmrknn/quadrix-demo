@@ -32,6 +32,25 @@
     "14b1bd6be251968a8d4ead6eb6678dceaf7df66a"
   ],
   "phase_commit_messages": [
-    "fix(akÄ±ÅŸ): ARE sweep ve lock-out Guideline dÃ¼zeltildi"
-  ]
+    "fix(akış): ARE sweep ve lock-out Guideline düzeltildi"
+  ],
+  "latest_verification": {
+    "commit_sha": "6033ead",
+    "remote_ref_verified": true,
+    "marker_command": "python -m pytest tests/feedback_fixes --strict-markers -q -m phase-marker-cumulative",
+    "marker_exit_code": 0,
+    "marker_result": "82 passed",
+    "compileall_command": "python -m compileall -q src tests",
+    "compileall_exit_code": 0,
+    "verified_at": "2026-11-05T04:30:00+03:00",
+    "marker_output": "reports/feedback_fixes/phase7/pytest-cumulative-current.txt",
+    "marker_exit_output": "reports/feedback_fixes/phase7/pytest-cumulative-current-exit.txt",
+    "compileall_exit_output": "reports/feedback_fixes/phase7/compileall-current-exit.txt"
+  },
+  "acceptance_status": "TAMAMLANDI — hedefli marker/compileall kapsamı",
+  "full_suite_snapshot": {
+    "path": "reports/feedback_fixes/final-full-suite-current.txt",
+    "exit_code": 1,
+    "result": "3804 passed, 26 failed, 23 skipped"
+  }
 }

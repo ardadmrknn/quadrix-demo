@@ -32,6 +32,30 @@
     "a1cc06fe90aaed0238836095a1ee7399f6b4fd9f"
   ],
   "phase_commit_messages": [
-    "fix(arayÃ¼z): demo ghost T-spin ve Sprint HUD senkronu"
-  ]
+    "fix(arayüz): demo ghost T-spin ve Sprint HUD senkronu"
+  ],
+  "latest_verification": {
+    "commit_sha": "6033ead",
+    "remote_ref_verified": true,
+    "marker_command": "python -m pytest tests/feedback_fixes --strict-markers -q -m phase-marker-cumulative",
+    "marker_exit_code": 0,
+    "marker_result": "82 passed",
+    "compileall_command": "python -m compileall -q src tests",
+    "compileall_exit_code": 0,
+    "verified_at": "2026-11-05T04:30:00+03:00",
+    "marker_output": "reports/feedback_fixes/phase7/pytest-cumulative-current.txt",
+    "marker_exit_output": "reports/feedback_fixes/phase7/pytest-cumulative-current-exit.txt",
+    "compileall_exit_output": "reports/feedback_fixes/phase7/compileall-current-exit.txt"
+  },
+  "acceptance_status": "KISMİ / UNMEASURED",
+  "manual_acceptance": "reports/feedback_fixes/phase5/manual_acceptance.md",
+  "unmeasured": [
+    "Windows/SDL runtime settings/focus/taskbar close",
+    "physical 8BitDo/XInput/Steam Input"
+  ],
+  "full_suite_snapshot": {
+    "path": "reports/feedback_fixes/final-full-suite-current.txt",
+    "exit_code": 1,
+    "result": "3804 passed, 26 failed, 23 skipped"
+  }
 }

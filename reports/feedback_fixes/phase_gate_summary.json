@@ -2,8 +2,8 @@
   "schema_version": 2,
   "repo": "quadrix-demo",
   "branch": "release/demo",
-  "current_head": "9bf88ebf5c0a94dd04cb060dc7493228425eb3d7",
-  "remote_head": "9bf88ebf5c0a94dd04cb060dc7493228425eb3d7",
+  "current_head": "6033ead",
+  "remote_head": "6033ead",
   "remote_sync": "0 0",
   "remote_ref_verified": true,
   "phases": [
@@ -13,9 +13,17 @@
         "a3c9fb6d4c3736f74408cd63fe2241715d1a29db"
       ],
       "commit_messages": [
-        "test(faz0): demo baseline ve test kapÄ±larÄ±nÄ± kur"
+        "test(faz0): demo baseline ve test kapılarını kur"
       ],
-      "manifest": "reports/feedback_fixes/phase0/manifest.json"
+      "manifest": "reports/feedback_fixes/phase0/manifest.json",
+      "acceptance_status": "TAMAMLANDI — hedefli marker/compileall kapsamı",
+      "latest_verification": {
+        "commit_sha": "6033ead",
+        "marker_result": "82 passed",
+        "compileall_exit_code": 0,
+        "verified_at": "2026-11-05T04:30:00+03:00",
+        "remote_ref_verified": true
+      }
     },
     {
       "phase": 1,
@@ -23,9 +31,17 @@
         "6a2b67956536dcb4b72f9a8a570bb235b2ebaf35"
       ],
       "commit_messages": [
-        "fix(parÃ§a): I kick tablosu ve O spawn Guideline SRS'e Ã§ekildi"
+        "fix(parça): I kick tablosu ve O spawn Guideline SRS'e çekildi"
       ],
-      "manifest": "reports/feedback_fixes/phase1/manifest.json"
+      "manifest": "reports/feedback_fixes/phase1/manifest.json",
+      "acceptance_status": "TAMAMLANDI — hedefli marker/compileall kapsamı",
+      "latest_verification": {
+        "commit_sha": "6033ead",
+        "marker_result": "82 passed",
+        "compileall_exit_code": 0,
+        "verified_at": "2026-11-05T04:30:00+03:00",
+        "remote_ref_verified": true
+      }
     },
     {
       "phase": 2,
@@ -33,9 +49,17 @@
         "50c0afb72acf09028fefbc998d0208ce46451fc9"
       ],
       "commit_messages": [
-        "fix(skor): demo Faz 2 dÃ¼zeltmelerini senkronla"
+        "fix(skor): demo Faz 2 düzeltmelerini senkronla"
       ],
-      "manifest": "reports/feedback_fixes/phase2/manifest.json"
+      "manifest": "reports/feedback_fixes/phase2/manifest.json",
+      "acceptance_status": "TAMAMLANDI — hedefli marker/compileall kapsamı",
+      "latest_verification": {
+        "commit_sha": "6033ead",
+        "marker_result": "82 passed",
+        "compileall_exit_code": 0,
+        "verified_at": "2026-11-05T04:30:00+03:00",
+        "remote_ref_verified": true
+      }
     },
     {
       "phase": 3,
@@ -43,9 +67,17 @@
         "14b1bd6be251968a8d4ead6eb6678dceaf7df66a"
       ],
       "commit_messages": [
-        "fix(akÄ±ÅŸ): ARE sweep ve lock-out Guideline dÃ¼zeltildi"
+        "fix(akış): ARE sweep ve lock-out Guideline düzeltildi"
       ],
-      "manifest": "reports/feedback_fixes/phase3/manifest.json"
+      "manifest": "reports/feedback_fixes/phase3/manifest.json",
+      "acceptance_status": "TAMAMLANDI — hedefli marker/compileall kapsamı",
+      "latest_verification": {
+        "commit_sha": "6033ead",
+        "marker_result": "82 passed",
+        "compileall_exit_code": 0,
+        "verified_at": "2026-11-05T04:30:00+03:00",
+        "remote_ref_verified": true
+      }
     },
     {
       "phase": 4,
@@ -55,7 +87,15 @@
       "commit_messages": [
         "fix(randomizer): demo 7-bag ve faz 4 testlerini senkronla"
       ],
-      "manifest": "reports/feedback_fixes/phase4/manifest.json"
+      "manifest": "reports/feedback_fixes/phase4/manifest.json",
+      "acceptance_status": "TAMAMLANDI — hedefli marker/compileall kapsamı",
+      "latest_verification": {
+        "commit_sha": "6033ead",
+        "marker_result": "82 passed",
+        "compileall_exit_code": 0,
+        "verified_at": "2026-11-05T04:30:00+03:00",
+        "remote_ref_verified": true
+      }
     },
     {
       "phase": 5,
@@ -63,9 +103,17 @@
         "a1cc06fe90aaed0238836095a1ee7399f6b4fd9f"
       ],
       "commit_messages": [
-        "fix(arayÃ¼z): demo ghost T-spin ve Sprint HUD senkronu"
+        "fix(arayüz): demo ghost T-spin ve Sprint HUD senkronu"
       ],
-      "manifest": "reports/feedback_fixes/phase5/manifest.json"
+      "manifest": "reports/feedback_fixes/phase5/manifest.json",
+      "acceptance_status": "KISMİ / UNMEASURED",
+      "latest_verification": {
+        "commit_sha": "6033ead",
+        "marker_result": "82 passed",
+        "compileall_exit_code": 0,
+        "verified_at": "2026-11-05T04:30:00+03:00",
+        "remote_ref_verified": true
+      }
     },
     {
       "phase": 6,
@@ -75,7 +123,15 @@
       "commit_messages": [
         "fix(icerik): demo Faz 6 sozlesmesini senkronla"
       ],
-      "manifest": "reports/feedback_fixes/phase6/manifest.json"
+      "manifest": "reports/feedback_fixes/phase6/manifest.json",
+      "acceptance_status": "KISMİ / UNMEASURED",
+      "latest_verification": {
+        "commit_sha": "6033ead",
+        "marker_result": "82 passed",
+        "compileall_exit_code": 0,
+        "verified_at": "2026-11-05T04:30:00+03:00",
+        "remote_ref_verified": true
+      }
     },
     {
       "phase": 7,
@@ -85,22 +141,37 @@
       ],
       "commit_messages": [
         "docs(denge): demo kampanya solvabilite raporu",
-        "test(faz7): demo kÃ¼mÃ¼latif kapÄ± kanÄ±tÄ±nÄ± ekle"
+        "test(faz7): demo kümülatif kapı kanıtını ekle"
       ],
-      "manifest": "reports/feedback_fixes/phase7/manifest.json"
+      "manifest": "reports/feedback_fixes/phase7/manifest.json",
+      "acceptance_status": "KISMİ — Faz 6 manuel kabulü açık; rapor üretildi",
+      "latest_verification": {
+        "commit_sha": "6033ead",
+        "marker_result": "82 passed",
+        "compileall_exit_code": 0,
+        "verified_at": "2026-11-05T04:30:00+03:00",
+        "remote_ref_verified": true
+      }
     }
   ],
   "supplemental_commits": [
     {
       "sha": "36db9b0593faa094f1daf6df144f2bbc5c9fdd70",
-      "message": "fix(akÄ±ÅŸ): sweep fallback sÃ¼resini Ã§Ã¶zÃ¼nÃ¼rlÃ¼kten baÄŸÄ±msÄ±z yap",
+      "message": "fix(akış): sweep fallback süresini çözünürlükten bağımsız yap",
       "pushed": true
     },
     {
       "sha": "9bf88ebf5c0a94dd04cb060dc7493228425eb3d7",
-      "message": "docs(kanÄ±t): faz kapÄ± manifestlerini kaydet",
+      "message": "docs(kanıt): faz kapı manifestlerini kaydet",
       "pushed": true
     }
   ],
-  "scope": "Faz 0–7 kılavuz hedefli feedback marker kapıları; tam depo pytest sonucu değildir."
+  "scope": "Faz 0–7 kılavuz hedefli feedback marker kapıları; tam depo pytest sonucu değildir.",
+  "snapshot_note": "current_head, remote_head ve remote_sync son doküman/kanıt commitini gösterir; faz manifestlerindeki head alanları ilgili fazın tarihsel kanıt koşusunu, latest_verification ise güncel kapı koşusunu gösterir.",
+  "full_suite_snapshot": {
+    "path": "reports/feedback_fixes/final-full-suite-current.txt",
+    "exit_code": 1,
+    "result": "3804 passed, 26 failed, 23 skipped"
+  },
+  "acceptance_note": "Faz 5 ve Faz 6 için fiziksel cihaz/Windows/Steam/editör kanıtı alınmadı; marker kapısı yeşil olsa da ürün kabulü KISMİ/UNMEASURED olarak tutulur."
 }
