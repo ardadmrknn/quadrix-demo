@@ -830,8 +830,11 @@ class SurvivalMode(Game):
         # KONUMLANDIRMA (Kullanıcı isteği: Board'un soluna yapışık)
         # Panel sağ kenarı = Board sol kenarı - biraz boşluk
         panel_x = board_x - panel_w - s(15)
-        # Üst kenarı board ile aynı hizada
-        panel_y = board_y
+        # Üst kenarı tahtanın — gizli bant dahil — tavan çizgisiyle aynı hizada.
+        # `get_board_offset()` GÖRÜNÜR alanın tepesini döndürür (I-46 sözleşmesi);
+        # gizli bant yüksekliği çıkarılmazsa panel 2 satır (1080p'de 86 px) aşağı
+        # kayar ve üç tavan çizgisi hizası bozulur.
+        panel_y = board_y - self._hidden_rows_px(self.get_cell_size())
         panel_x = max(s(8), min(panel_x, int(active_width) - panel_w - s(8)))
         panel_y = max(s(8), min(panel_y, int(active_height) - panel_h - s(8)))
 
@@ -2592,7 +2595,10 @@ class DailyChallengeMode(Game):
         top_offset = 24
 
         panel_x = max(18, int(board_offset_x) - panel_w - 26)
-        panel_y = int(board_offset_y) + int(top_offset)
+        # `get_board_offset()` görünür alanın tepesini verir; gizli bant kadar
+        # yukarı çekilmezse panel tahtanın 2 satır altından başlar.
+        panel_ceiling_y = int(board_offset_y) - self._hidden_rows_px(self.get_cell_size())
+        panel_y = panel_ceiling_y + int(top_offset)
 
         # Sağdaki skor kartı temeli: koyu gradient + ince border
         pad_x = 18

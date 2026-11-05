@@ -175,7 +175,7 @@ class SprintMode(Game):
         if panel_x < s(10):
             panel_x = s(10)
              
-        panel_y = board_offset_y
+        panel_y = board_offset_y - self._hidden_rows_px(self.get_cell_size())
         panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
         
         # Retro Glass Panel (Templateden şaşma)
@@ -467,7 +467,7 @@ class UltraMode(Game):
         
         panel_x = board_offset_x - panel_width - s(20)
         if panel_x < s(10): panel_x = s(10)
-        panel_y = board_offset_y
+        panel_y = board_offset_y - self._hidden_rows_px(self.get_cell_size())
         
         panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
         
@@ -1360,7 +1360,7 @@ class HardcoreMode(Game):
         if panel_x < s(10):
             panel_x = s(10)
         
-        panel_y = board_offset_y
+        panel_y = board_offset_y - self._hidden_rows_px(self.get_cell_size())
         panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
         
         # Kırmızı temalı panel

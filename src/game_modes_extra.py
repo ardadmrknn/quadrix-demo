@@ -6273,12 +6273,24 @@ class MysteryMode(Game):
         )
         board_area_height_logical = max(160, int(effective_height) - int(INFO_PANEL_HEIGHT))
 
+        # I-46 (S-21 v2 — Mystery paritesi): Bu mod kendi yerleşimini
+        # hesaplıyor ve gizli buffer'ı HİÇ hesaba katmıyordu. Sonuç: hücre boyu
+        # yalnız 20 görünür satıra bölünüyor, taban da 20 satırlık yükseklikten
+        # ortalanıyordu; ekranın üstünde kalan gizli bandın — ve orada spawn
+        # olan parçanın (`get_piece_spawn_y` üst dolu satırı -2'ye koyar) —
+        # bir kısmı ekran dışında kalıyordu (1080p ölçümü: bant tepesi -12 px).
+        # Çözüm ortak yerleşimle aynı: hücre 22 satıra bölünür, `board_y`
+        # toplam bloğun tepesidir, görünür alan `hidden_rows` satır altta başlar.
+        hidden_row_count = max(0, int(getattr(getattr(self, 'board', None), 'hidden_rows', 0) or 0))
+        total_rows = board_rows + hidden_row_count
+
         cell_by_width = max(14, board_area_width_logical // board_cols)
-        cell_by_height = max(14, board_area_height_logical // board_rows)
+        cell_by_height = max(14, board_area_height_logical // total_rows)
         logical_cell_size = max(14, min(cell_by_width, cell_by_height, max_cell_logical))
 
         logical_board_width = board_cols * logical_cell_size
-        logical_board_height = board_rows * logical_cell_size
+        logical_board_height = total_rows * logical_cell_size
+        logical_visible_height = board_rows * logical_cell_size
 
         max_total_panels_logical = max(
             300,
@@ -6321,7 +6333,13 @@ class MysteryMode(Game):
         logical_group_x = max(outer_margin_logical, min(logical_group_x, max_group_x))
 
         logical_board_x = logical_group_x + left_panel_width_logical + panel_gap_logical
-        logical_board_y = max(8, (int(effective_height) - logical_board_height) // 2)
+        # Ortak yerleşimle AYNI dikey kural (kullanıcı kararı: kart modunda da
+        # aynı hiza): tahta ekranın dikey ORTASINA oturur, `top_shift` sıfırdır.
+        # Bu mod kendi hesaplayıcısını kullandığı için kural burada da uygulanır.
+        logical_board_y = max(
+            8,
+            (int(effective_height) - logical_board_height) // 2,
+        )
         logical_panel_x = logical_board_x + logical_board_width + panel_gap_logical
         logical_panel_y = logical_board_y + panel_top_padding_logical
         logical_panel_height = min(
@@ -6342,7 +6360,14 @@ class MysteryMode(Game):
             'board_x': max(0, int(round(float(logical_board_x) * scale_x))),
             'board_y': max(0, int(round(float(logical_board_y) * scale_y))),
             'board_width': max(1, int(round(float(logical_board_width) * scale_x))),
-            'board_height': max(1, int(round(float(logical_board_height) * scale_y))),
+            'board_height': max(1, int(round(float(logical_visible_height) * scale_y))),
+            # Gizli bantın üstünde kalan toplam yükseklik: görünür alanın
+            # tepesi `board_y + hidden_band_height`. Parça spawn'ı (satır -2)
+            # bu bandın içinde kalır — ekran dışına taşmaz.
+            'hidden_band_height': max(
+                0, int(round(float(hidden_row_count * logical_cell_size) * scale_y))
+            ),
+            'hidden_rows': hidden_row_count,
             'left_panel_width': max(1, int(round(float(left_panel_width_logical) * scale_x))),
             'right_panel_width': max(1, int(round(float(right_panel_width_logical) * scale_x))),
             'panel_x': max(0, int(round(float(logical_panel_x) * scale_x))),
@@ -6875,9 +6900,19 @@ class MysteryMode(Game):
         return int(metrics['left_panel_width'])
 
     def get_board_offset(self):
-        """Tahtanın ekrandaki pozisyonunu effective-size tabanlı Mystery layout'tan döndür."""
+        """GÖRÜNÜR alanın ekrandaki pozisyonunu döndür (I-46 sözleşmesi).
+
+        Ortak yol (`Game.get_board_offset`) görünür alanın tepesini verir;
+        gizli satırlar bunun üstünde ayrı banttır. Mystery daha önce toplam
+        bloğun tepesini döndürüyordu — gizli bant hiç ayrılmıyor, satır 0
+        bandın üstüne düşüyor ve üstteki parçanın bir kısmı ekran dışında
+        kalıyordu.
+        """
         metrics = self._get_mystery_layout_metrics()
-        return int(metrics['board_x']), int(metrics['board_y'])
+        return (
+            int(metrics['board_x']),
+            int(metrics['board_y']) + int(metrics.get('hidden_band_height', 0)),
+        )
 
     def get_cell_size(self):
         """Mystery mode için hücre boyutunu effective-size tabanlı layout'tan döndür."""
@@ -10697,15 +10732,25 @@ class MysteryMode(Game):
         max_width = max(base_width, right_edge - min_x)
         width = max(base_width, min(desired_width, max_width))
         x = max(min_x, right_edge - width)
+        # Sol panelin tavanı tahtanın TOPLAM tepesidir (gizli bant dahil):
+        # `get_board_offset()` görünür alanın tepesini döndürür, bu yüzden
+        # gizli bant yüksekliği burada çıkarılır — aksi halde panel tahtanın
+        # 2 satır altından başlar ve üç tavan çizgisi hizası bozulur.
+        ceiling_y = int(board_y) - self._hidden_rows_px(self.get_cell_size())
         # Align vertical inset with the right HUD panel when available.
         hud_panel = getattr(self, '_hud_panel_rect', None)
         if hud_panel is not None:
             try:
-                y = int(getattr(hud_panel, 'y', board_y + 10))
+                y = int(getattr(hud_panel, 'y', ceiling_y + 10))
             except Exception:
-                y = board_y + 10
+                y = ceiling_y + 10
         else:
-            y = max(int(12 * ui_scale), board_y - int(20 * ui_scale))
+            # HUD henüz çizilmediyse tavanı yine de HUD çizgisine oturt:
+            # iç boşluk Mystery yerleşiminin kendi panel/tahta farkından gelir,
+            # sabit piksel yok. `ceiling_y - 20*ui_scale` kullanmak paneli
+            # sağ HUD'un 33 px üstüne çıkarıp tavan hizasını bozuyordu.
+            hud_inset = max(0, int(metrics['panel_y']) - int(metrics['board_y']))
+            y = ceiling_y + hud_inset
         return x, y, width
 
     def get_current_speed(self) -> int:

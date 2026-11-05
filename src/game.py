@@ -105,11 +105,6 @@ from screen_shake import (
 
 GAMEPLAY_UI_REFERENCE_SIZE = (1366.0, 768.0)
 
-# I-46 (S-21): Gizli satır şeridi görünürlüğü. Alfa 0.55 sabit (kılavuz onayı:
-# "blok renginde %55 alfalı ince şerit"); kuantize edilir çünkü blit öncesi
-# alpha kanalı 8 bit — 0.55 * 255 = 140.25 → 140. Kuantizasyon cache anahtarını
-# da sabitler, aksi halde aynı görsel alfa her karede yeni Surface üretirdi.
-HIDDEN_STRIP_ALPHA = 140
 
 # I-47 (S-19): Sprint ailesi tek kaynak. HUD kapısı, otomatik gravity kapısı ve
 # milestone kapısı aynı kümeyi paylaşır; kopya listeler geri gelmemeli.
@@ -400,6 +395,7 @@ class Game:
             int(effective_size[1]),
             board_width,
             board_height,
+            int(getattr(getattr(self, 'board', None), 'hidden_rows', 0) or 0),
             left_group_reserve,
             _layout_safe_key,
         )
@@ -412,6 +408,7 @@ class Game:
                 info_panel_height=INFO_PANEL_HEIGHT,
                 left_group_reserve_px=left_group_reserve,
                 canvas_safe_rect=_layout_safe_key,
+                hidden_rows=int(getattr(getattr(self, 'board', None), 'hidden_rows', 0) or 0),
             )
             self._gameplay_layout_cache_key = cache_key
         return self._gameplay_layout_cache
@@ -460,7 +457,16 @@ class Game:
         panel_width = min(int(layout.panel_width), available_right)
         panel_width = max(min(available_right, 80), panel_width)
 
-        panel_y = int(offset_y) + max(1, int(layout.panel_y - layout.board_y))
+        # TAŞAN HİZASI (kullanıcı kararı): sağ panelin tavan çizgisi tahtanın —
+        # gizli bant dahil — tavan çizgisiyle AYNI hizada olmalı. Sol panel
+        # (SprintMode.draw_mode_info) da aynı hizaya oturur.
+        #
+        # Bu yüzden panel Y'si `layout.panel_y`'den DEĞİL, mutlak tahta
+        # tepesinden türetilir: `layout.panel_y = board_y + panel_top_padding`
+        # olduğu için onu kullanmak paneli tahtadan bir dolgu boyu aşağı
+        # bırakıyordu. `layout.board_y` ise toplam bloğun tepesidir.
+        shake_dy = int(offset_y) - int(layout.visible_top_y)
+        panel_y = int(layout.board_y) + shake_dy
         panel_height = min(
             int(board_height),
             max(80, int(active_height) - panel_y - int(layout.panel_bottom_margin)),
@@ -984,57 +990,59 @@ class Game:
             self._solid_alpha_surface_cache.pop(old_key, None)
         return surface
 
-    def _draw_hidden_row_strip(self, offset_x: int, offset_y: int, cell_size: int) -> None:
-        """I-46: Görünür tepenin üstüne taşan gizli satırları ince şerit olarak çiz.
+    def _draw_hidden_rows(self, offset_x: int, offset_y: int, cell_size: int) -> None:
+        """I-46: Gizli satırları NORMAL blok gibi çiz (TGM/tetr.io buffer bölgesi).
 
-        S-21 yerleşim kararı gereği tahta `hidden_strip_height + hidden_strip_gap`
-        kadar aşağı kaydırıldı; bant tam buraya oturur. Dolu sütun şerit çizer,
-        boş sütun hiçbir şey çizmez. `show_ghost` ayarından bağımsızdır (bu
-        kilitli blok bilgisidir, hayalet parça değil).
+        Gizli satırlar şerit/gölge değildir: aynı doku, aynı renk, aynı boy. Tek
+        farkları ızgara ve arka planın burada ÇİZİLMEMESİ — bloklar arka plan
+        üzerinde serbest durur. Bu sayede ölüm bölgesi okunur olur.
 
-        Kare başına tahsis yok: tek hücrelik yüzey `_get_solid_alpha_surface`
-        LRU cache'inden gelir (anahtar = boyut + kuantize alfa). Renk gizli
-        satırın görünür tahtaya en yakın dolu hücresinden alınır; iki gizli
-        satır tek bantta birleştiği için üstteki satırın rengi baskın olurdu.
+        `offset_y` gizli bandın tepesidir (görünür alanın `hidden_rows *
+        cell_size` kadar üstünde). `show_ghost` ayarından bağımsızdır — bu
+        kilitli blok bilgisidir, hayalet parça değil.
         """
         board = getattr(self, 'board', None)
         hidden_occupancy = getattr(board, 'hidden_occupancy', None)
         hidden_grid = getattr(board, 'hidden_grid', None)
+        hidden_texture_grid = getattr(board, 'hidden_texture_grid', None)
         if not hidden_occupancy or not hidden_grid:
             return
-
-        layout = self._get_gameplay_layout_metrics()
-        strip_h = int(getattr(layout, 'hidden_strip_height', 0) or 0)
-        strip_gap = int(getattr(layout, 'hidden_strip_gap', 0) or 0)
-        if strip_h <= 0:
+        hidden_count = len(hidden_occupancy)
+        if hidden_count <= 0:
             return
 
-        strip_y = int(offset_y) - strip_gap - strip_h
-        # Yerleşim kaydırması alt taşma için kırpılmışsa şerit ekran dışına
-        # çıkabilir; üst kenara yapıştırıp bandı görünür tut (kaydırma zaten
-        # strip_headroom kadar ancak yer açabildi).
-        strip_y = max(0, strip_y)
-        block_w = max(1, int(cell_size) - 2)
+        block_size = max(1, int(cell_size) - 2)
         columns = min(len(hidden_occupancy[0]) if hidden_occupancy else 0, self.board_width)
-
-        for col in range(columns):
-            color = None
-            # Alttan (görünür tahtaya en yakın gizli satırdan) yukarı tara.
-            for row in range(len(hidden_occupancy) - 1, -1, -1):
+        for row in range(hidden_count):
+            row_y = int(offset_y) + row * int(cell_size) + 1
+            for col in range(columns):
                 try:
-                    if hidden_occupancy[row][col]:
-                        color = hidden_grid[row][col]
-                        break
+                    if not hidden_occupancy[row][col]:
+                        continue
+                    color = hidden_grid[row][col]
                 except (IndexError, TypeError):
                     continue
-            if color is None or color == BLACK:
-                continue
-            surface = self._get_solid_alpha_surface(
-                (block_w, strip_h), (*tuple(color)[:3], HIDDEN_STRIP_ALPHA)
-            )
-            self.screen.blit(
-                surface, (int(offset_x) + col * int(cell_size) + 1, strip_y)
-            )
+                if color is None or color == BLACK:
+                    continue
+
+                locked_slice = None
+                texture_surface = None
+                if hidden_texture_grid:
+                    try:
+                        locked_slice = hidden_texture_grid[row][col]
+                    except (IndexError, TypeError):
+                        locked_slice = None
+                if locked_slice and self.block_style_manager:
+                    texture_surface = self.block_style_manager.get_texture_surface(locked_slice.piece_name)
+
+                self.draw_textured_block(
+                    int(offset_x) + col * int(cell_size) + 1,
+                    row_y,
+                    block_size,
+                    color,
+                    texture_surface if (texture_surface and locked_slice) else None,
+                    locked_slice if texture_surface else None,
+                )
 
     def _get_rounded_rect_surface(self, size: tuple[int, int], color, border_radius: int = 0, width: int = 0) -> pygame.Surface:
         if not hasattr(self, '_rounded_rect_surface_cache') or self._rounded_rect_surface_cache is None:
@@ -2560,9 +2568,38 @@ class Game:
         return int(self._get_gameplay_layout_metrics().cell_size)
     
     def get_board_offset(self):
-        """Tahtanın ekrandaki pozisyonunu hesapla (ortalamak için) - CACHE'LENMİŞ"""
+        """GÖRÜNÜR tahtanın ekrandaki pozisyonunu hesapla - CACHE'LENMİŞ
+
+        I-46: Gizli buffer satırları görünür alanın ÜSTÜNDE ayrı bir bantta
+        çizilir. Tüm hücre indekslemeleri (kilitli bloklar, aktif parça, ghost,
+        satır temizleme) görünür alana göre yapıldığı için burada görünür
+        alanın tepesi döndürülür; gizli bant `_hidden_band_origin()` ile
+        hesaplanır.
+        """
         layout = self._get_gameplay_layout_metrics()
-        return int(layout.board_x), int(layout.board_y)
+        return int(layout.board_x), int(layout.visible_top_y)
+
+    def _hidden_row_count(self) -> int:
+        """Gizli buffer satır sayısı (tahta yoksa 0)."""
+        board = getattr(self, 'board', None)
+        return max(0, int(getattr(board, 'hidden_rows', 0) or 0))
+
+    def _hidden_rows_px(self, cell_size: int) -> int:
+        """Gizli buffer satırlarının piksel yüksekliği."""
+        return self._hidden_row_count() * max(1, int(cell_size))
+
+    def _hidden_band_origin(self, offset_x: int, offset_y: int) -> tuple[int, int]:
+        """Gizli bant çiziminin sol-üst noktası (görünür alanın üstünde)."""
+        return int(offset_x), int(offset_y) - self._hidden_rows_px(self.get_cell_size())
+
+    def _cell_row_to_y(self, row: int, offset_y: int, cell_size: int) -> int:
+        """Hücre satırını ekran Y'sine çevir (negatif satır = gizli bant).
+
+        Görünür alanın 0. satırı `offset_y`'dedir; gizli satırlar negatif
+        indekslerle bandın içine düşer. Çizim kırpması bu eşleme üzerinden
+        yapılır, böylece aktif parça gizli bantta da normal blok olarak görünür.
+        """
+        return int(offset_y) + int(row) * int(cell_size) + 1
     
     def handle_input(self):
         """
@@ -5485,10 +5522,12 @@ class Game:
         board_width = self.board_width * cell_size  # Dinamik genişlik
         board_height = self.board_height * cell_size  # Dinamik yükseklik
 
-        # I-46 (S-21): Gizli satır gölge şeridi. Tahtanın arka planından ÖNCE
-        # çizilir; bant tahta gövdesinin dışında (üstünde) kaldığı için
-        # birbirlerini örtmezler.
-        self._draw_hidden_row_strip(offset_x, offset_y, cell_size)
+        # I-46 (S-21 v2): Gizli satırlar NORMAL blok olarak, görünür tahtanın
+        # ÜSTÜNDEKİ ızgarasız/arka plansız bantta çizilir (TGM/tetr.io buffer
+        # bölgesi). Görünür 20 satırın arka planı/ızgarası birebir eskisi gibi
+        # kalır; `offset_y` görünür alanın tepesidir.
+        hidden_x, hidden_y = self._hidden_band_origin(offset_x, offset_y)
+        self._draw_hidden_rows(hidden_x, hidden_y, cell_size)
 
         # Oyun tahtası arka planı (siyah) - esnek sınır GÖRSEL DEĞİŞİKLİK YAPMAZ
         board_rect = pygame.Rect(offset_x, offset_y, board_width, board_height)
@@ -5668,7 +5707,7 @@ class Game:
                     if x < 0 or x >= self.board_width:
                         continue
                     ghost_cell_y = y + (ghost_y - self.current_piece.y)
-                    if ghost_cell_y >= 0:
+                    if ghost_cell_y >= -self._hidden_row_count():
                         block_x = offset_x + x * cell_size + 1
                         block_y = offset_y + ghost_cell_y * cell_size + 1 + int(ghost_visual_offset)
                         block_size = cell_size - 2
@@ -5716,7 +5755,9 @@ class Game:
                     # Esnek sınır: dışarıdaki blokları çizme (görünmez alan)
                     if x < 0 or x >= self.board_width:
                         continue
-                    if y < 0:
+                    # I-46: Gizli bantta duran parça hücreleri de normal blok
+                    # olarak görünür; yalnızca bandın dışına taşanlar kırpılır.
+                    if y < -self._hidden_row_count():
                         continue
                     block_x = offset_x + x * cell_size + 1
                     block_y = offset_y + y * cell_size + 1
