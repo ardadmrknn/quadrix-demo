@@ -932,6 +932,10 @@ class ZenMode(Game):
             self.board.grid = [[BLACK for _ in range(board_width)] for _ in range(board_height)]
             self.board.texture_grid = [[None for _ in range(board_width)] for _ in range(board_height)]
             self.board.occupancy = [[False for _ in range(board_width)] for _ in range(board_height)]
+            if hasattr(self.board, 'gold'):
+                self.board.gold = [[False for _ in range(board_width)] for _ in range(board_height)]
+            if hasattr(self.board, 'owners'):
+                self.board.owners = [[None for _ in range(board_width)] for _ in range(board_height)]
             message = t('zen_message_full_clear')
             cleared_desc = "tüm satırlar"
         else:
@@ -941,8 +945,26 @@ class ZenMode(Game):
                 self.board.grid[i] = [BLACK] * board_width
                 self.board.texture_grid[i] = [None] * board_width
                 self.board.occupancy[i] = [False] * board_width
+                if hasattr(self.board, 'gold'):
+                    self.board.gold[i] = [False] * board_width
+                if hasattr(self.board, 'owners'):
+                    self.board.owners[i] = [None] * board_width
             message = t('zen_message_rows_cleared', rows=rows_to_clear)
             cleared_desc = f"üst {rows_to_clear} satır"
+
+        # Gizli fizik tamponu spawn alanının parçasıdır. Görünür alanı
+        # temizleyip bu satırları bırakmak, bir sonraki parçayı görünmeden
+        # bloke eder; her Zen auto-clear çağrısında tamponu da temizle.
+        hidden_rows = max(0, int(getattr(self.board, 'hidden_rows', 0) or 0))
+        if hidden_rows:
+            self.board.hidden_grid = [[BLACK for _ in range(board_width)] for _ in range(hidden_rows)]
+            self.board.hidden_occupancy = [[False for _ in range(board_width)] for _ in range(hidden_rows)]
+            if hasattr(self.board, 'hidden_texture_grid'):
+                self.board.hidden_texture_grid = [[None for _ in range(board_width)] for _ in range(hidden_rows)]
+            if hasattr(self.board, 'hidden_gold'):
+                self.board.hidden_gold = [[False for _ in range(board_width)] for _ in range(hidden_rows)]
+            if hasattr(self.board, 'hidden_owners'):
+                self.board.hidden_owners = [[None for _ in range(board_width)] for _ in range(hidden_rows)]
         
         # Parçayı spawn konumuna geri al
         self._position_piece_at_spawn(self.current_piece)
@@ -956,6 +978,10 @@ class ZenMode(Game):
                 self.board.grid = [[BLACK for _ in range(board_width)] for _ in range(board_height)]
                 self.board.texture_grid = [[None for _ in range(board_width)] for _ in range(board_height)]
                 self.board.occupancy = [[False for _ in range(board_width)] for _ in range(board_height)]
+                if hasattr(self.board, 'gold'):
+                    self.board.gold = [[False for _ in range(board_width)] for _ in range(board_height)]
+                if hasattr(self.board, 'owners'):
+                    self.board.owners = [[None for _ in range(board_width)] for _ in range(board_height)]
                 self._position_piece_at_spawn(self.current_piece)
                 self._skip_hidden_rows(self.current_piece)
                 message = t('zen_message_full_clear_fallback')

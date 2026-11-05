@@ -2703,46 +2703,50 @@ class OnlineCoopGame:
     def _normalize_board_snapshot(self, data: dict) -> dict | None:
         if data.get('format') == 'semantic_delta_v1':
             raw_cells = data.get('cells')
-            if not isinstance(raw_cells, list):
+            raw_hidden_cells = data.get('hidden_cells', [])
+            if not isinstance(raw_cells, list) or not isinstance(raw_hidden_cells, list):
                 return None
 
             normalized_cells = []
-            for entry in raw_cells:
-                if not isinstance(entry, (list, tuple)) or len(entry) != 13:
-                    return None
-                x = self._clamp_int(entry[0], 0, 19)
-                y = self._clamp_int(entry[1], 0, 19)
-                piece_name = str(entry[2] or '')
-                owner = entry[3] if entry[3] in ('P1', 'P2') else None
-                rel_x = self._clamp_int(entry[4], 0, 3)
-                rel_y = self._clamp_int(entry[5], 0, 3)
-                width = self._clamp_int(entry[6], 1, 4, 1)
-                height = self._clamp_int(entry[7], 1, 4, 1)
-                rotation = self._clamp_int(entry[8], 0, 3, 0)
-                gold = bool(entry[9])
-                fallback_color = (
-                    self._clamp_int(entry[10], 0, 255, 0),
-                    self._clamp_int(entry[11], 0, 255, 0),
-                    self._clamp_int(entry[12], 0, 255, 0),
-                )
-                normalized_cells.append((
-                    x, y, piece_name, owner,
-                    rel_x, rel_y, width, height, rotation,
-                    gold, fallback_color,
-                ))
+            for is_hidden, entries in ((False, raw_cells), (True, raw_hidden_cells)):
+                for entry in entries:
+                    if not isinstance(entry, (list, tuple)) or len(entry) != 13:
+                        return None
+                    x = self._clamp_int(entry[0], 0, 19)
+                    y = -self._clamp_int(entry[1], 0, 1) - 1 if is_hidden else self._clamp_int(entry[1], 0, 19)
+                    piece_name = str(entry[2] or '')
+                    owner = entry[3] if entry[3] in ('P1', 'P2') else None
+                    rel_x = self._clamp_int(entry[4], 0, 3)
+                    rel_y = self._clamp_int(entry[5], 0, 3)
+                    width = self._clamp_int(entry[6], 1, 4, 1)
+                    height = self._clamp_int(entry[7], 1, 4, 1)
+                    rotation = self._clamp_int(entry[8], 0, 3, 0)
+                    gold = bool(entry[9])
+                    fallback_color = (
+                        self._clamp_int(entry[10], 0, 255, 0),
+                        self._clamp_int(entry[11], 0, 255, 0),
+                        self._clamp_int(entry[12], 0, 255, 0),
+                    )
+                    normalized_cells.append((
+                        x, y, piece_name, owner,
+                        rel_x, rel_y, width, height, rotation,
+                        gold, fallback_color,
+                    ))
 
             removed_positions = []
             raw_removed = data.get('removed', [])
-            if raw_removed is not None:
-                if not isinstance(raw_removed, list):
+            raw_hidden_removed = data.get('hidden_removed', [])
+            if raw_removed is not None and raw_hidden_removed is not None:
+                if not isinstance(raw_removed, list) or not isinstance(raw_hidden_removed, list):
                     return None
-                for entry in raw_removed:
-                    if not isinstance(entry, (list, tuple)) or len(entry) != 2:
-                        return None
-                    removed_positions.append((
-                        self._clamp_int(entry[0], 0, 19),
-                        self._clamp_int(entry[1], 0, 19),
-                    ))
+                for is_hidden, entries in ((False, raw_removed), (True, raw_hidden_removed)):
+                    for entry in entries:
+                        if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+                            return None
+                        removed_positions.append((
+                            self._clamp_int(entry[0], 0, 19),
+                            -self._clamp_int(entry[1], 0, 1) - 1 if is_hidden else self._clamp_int(entry[1], 0, 19),
+                        ))
 
             normalized = dict(data)
             normalized['_semantic_board'] = True
@@ -3346,35 +3350,18 @@ class OnlineCoopGame:
                     board.owners = [[None for _ in range(board.width)] for _ in range(board.height)]
                     board.texture_grid = [[None for _ in range(board.width)] for _ in range(board.height)]
                     board.gold = [[False for _ in range(board.width)] for _ in range(board.height)]
+                    if hasattr(board, 'hidden_rows'):
+                        board.hidden_grid = [[_BOARD_EMPTY_COLOR for _ in range(board.width)] for _ in range(board.hidden_rows)]
+                        board.hidden_occupancy = [[False for _ in range(board.width)] for _ in range(board.hidden_rows)]
+                        board.hidden_owners = [[None for _ in range(board.width)] for _ in range(board.hidden_rows)]
+                        board.hidden_texture_grid = [[None for _ in range(board.width)] for _ in range(board.hidden_rows)]
+                        board.hidden_gold = [[False for _ in range(board.width)] for _ in range(board.hidden_rows)]
 
                 for x, y in board_data.get('_removed_cells', []):
-                    board.grid[y][x] = _BOARD_EMPTY_COLOR
-                    board.occupancy[y][x] = False
-                    board.owners[y][x] = None
-                    board.texture_grid[y][x] = None
-                    board.gold[y][x] = False
+                    self._clear_semantic_board_cell(board, x, y)
 
-                for (
-                    x,
-                    y,
-                    piece_name,
-                    owner,
-                    rel_x,
-                    rel_y,
-                    width,
-                    height,
-                    rotation,
-                    is_gold,
-                    fallback_color,
-                ) in board_data.get('_semantic_cells', []):
-                    board.grid[y][x] = self._local_locked_block_color(render_game, piece_name, fallback_color)
-                    board.occupancy[y][x] = True
-                    board.owners[y][x] = owner if owner in ('P1', 'P2') else None
-                    board.gold[y][x] = bool(is_gold)
-                    board.texture_grid[y][x] = (
-                        TextureSlice(piece_name, rel_x=rel_x, rel_y=rel_y, width=width, height=height, rotation=rotation)
-                        if piece_name else None
-                    )
+                for cell in board_data.get('_semantic_cells', []):
+                    self._apply_semantic_board_cell(board, cell, render_game)
             else:
                 grid = board_data.get('grid')
                 occupancy = board_data.get('_occupancy')
@@ -3390,6 +3377,12 @@ class OnlineCoopGame:
                 board.owners = [[owner if owner in ('P1', 'P2') else None for owner in row] for row in owners]
                 board.texture_grid = [[None for _ in range(board.width)] for _ in range(board.height)]
                 board.gold = [[False for _ in range(board.width)] for _ in range(board.height)]
+                if hasattr(board, 'hidden_rows'):
+                    board.hidden_grid = [[_BOARD_EMPTY_COLOR for _ in range(board.width)] for _ in range(board.hidden_rows)]
+                    board.hidden_occupancy = [[False for _ in range(board.width)] for _ in range(board.hidden_rows)]
+                    board.hidden_owners = [[None for _ in range(board.width)] for _ in range(board.hidden_rows)]
+                    board.hidden_texture_grid = [[None for _ in range(board.width)] for _ in range(board.hidden_rows)]
+                    board.hidden_gold = [[False for _ in range(board.width)] for _ in range(board.hidden_rows)]
             board.score = int(board_data.get('team_score', 0) or 0)
             board.lines_cleared = int(board_data.get('total_lines', 0) or 0)
             board.level = int(board_data.get('level', 1) or 1)
@@ -4312,16 +4305,24 @@ class OnlineCoopGame:
         if not self.coop_game:
             return {}
         board = self.coop_game.board
-        texture_grid = getattr(board, 'texture_grid', None)
-        gold_grid = getattr(board, 'gold', None)
+        base_texture_grid = getattr(board, 'texture_grid', None)
+        base_gold_grid = getattr(board, 'gold', None)
         captured: dict[tuple[int, int], tuple] = {}
-        for y in range(getattr(board, 'height', 0)):
+        hidden_rows = max(0, int(getattr(board, 'hidden_rows', 0) or 0))
+        for y in range(-hidden_rows, getattr(board, 'height', 0)):
             for x in range(getattr(board, 'width', 0)):
-                if not board.occupancy[y][x]:
+                hidden = y < 0
+                row_index = y + hidden_rows if hidden else y
+                occupancy_grid = getattr(board, 'hidden_occupancy', []) if hidden else board.occupancy
+                if not occupancy_grid or not occupancy_grid[row_index][x]:
                     continue
+                grid = getattr(board, 'hidden_grid', []) if hidden else board.grid
+                texture_grid = getattr(board, 'hidden_texture_grid', []) if hidden else base_texture_grid
+                gold_grid = getattr(board, 'hidden_gold', []) if hidden else base_gold_grid
+                owners = getattr(board, 'hidden_owners', []) if hidden else getattr(board, 'owners', None)
                 locked_slice = None
-                if isinstance(texture_grid, list) and y < len(texture_grid) and x < len(texture_grid[y]):
-                    locked_slice = texture_grid[y][x]
+                if isinstance(texture_grid, list) and row_index < len(texture_grid) and x < len(texture_grid[row_index]):
+                    locked_slice = texture_grid[row_index][x]
                 piece_name = ''
                 rel_x = 0
                 rel_y = 0
@@ -4335,14 +4336,14 @@ class OnlineCoopGame:
                     width = max(1, int(getattr(locked_slice, 'width', 1) or 1))
                     height = max(1, int(getattr(locked_slice, 'height', 1) or 1))
                     rotation = int(getattr(locked_slice, 'rotation', 0) or 0) % 4
-                color = board.grid[y][x]
+                color = grid[row_index][x]
                 if isinstance(color, (list, tuple)) and len(color) >= 3:
                     r = max(0, min(255, int(color[0])))
                     g = max(0, min(255, int(color[1])))
                     b = max(0, min(255, int(color[2])))
                 else:
                     r, g, b = _BOARD_EMPTY_COLOR
-                owner = board.owners[y][x] if hasattr(board, 'owners') else None
+                owner = owners[row_index][x] if isinstance(owners, list) else None
                 captured[(x, y)] = (
                     piece_name,
                     owner or '',
@@ -4353,15 +4354,68 @@ class OnlineCoopGame:
                     rotation,
                     bool(
                         isinstance(gold_grid, list)
-                        and y < len(gold_grid)
-                        and x < len(gold_grid[y])
-                        and gold_grid[y][x]
+                        and row_index < len(gold_grid)
+                        and x < len(gold_grid[row_index])
+                        and gold_grid[row_index][x]
                     ),
                     r,
                     g,
                     b,
                 )
         return captured
+
+    def _apply_semantic_board_cell(self, board, cell, render_game=None) -> None:
+        x, y, piece_name, owner, rel_x, rel_y, width, height, rotation, is_gold, fallback_color = cell
+        hidden = int(y) < 0
+        row_index = int(y) + int(getattr(board, 'hidden_rows', 2)) if hidden else int(y)
+        if not (0 <= int(x) < int(getattr(board, 'width', 0))):
+            return
+        if hidden:
+            if not (0 <= row_index < len(getattr(board, 'hidden_occupancy', []))):
+                return
+            grids = (board.hidden_grid, board.hidden_occupancy, board.hidden_texture_grid, board.hidden_gold, board.hidden_owners)
+        else:
+            if not (0 <= row_index < len(getattr(board, 'occupancy', []))):
+                return
+            grids = (board.grid, board.occupancy, board.texture_grid, board.gold, board.owners)
+        grid, occupancy, texture_grid, gold_grid, owners = grids
+        filled = True
+        occupancy[row_index][x] = filled
+        grid[row_index][x] = (
+            self._local_locked_block_color(render_game, piece_name, tuple(fallback_color))
+            if filled else _BOARD_EMPTY_COLOR
+        )
+        gold_grid[row_index][x] = bool(is_gold) if filled else False
+        owners[row_index][x] = owner if filled and owner in ('P1', 'P2') else None
+        texture_grid[row_index][x] = (
+            TextureSlice(piece_name, rel_x=rel_x, rel_y=rel_y, width=width, height=height, rotation=rotation)
+            if filled and piece_name else None
+        )
+
+    @staticmethod
+    def _clear_semantic_board_cell(board, x: int, y: int) -> None:
+        hidden = int(y) < 0
+        row_index = int(y) + int(getattr(board, 'hidden_rows', 2)) if hidden else int(y)
+        if not (0 <= int(x) < int(getattr(board, 'width', 0))):
+            return
+        if hidden:
+            if not (0 <= row_index < len(getattr(board, 'hidden_occupancy', []))):
+                return
+            grid, occupancy, texture_grid, gold_grid, owners = (
+                board.hidden_grid, board.hidden_occupancy, board.hidden_texture_grid,
+                board.hidden_gold, board.hidden_owners,
+            )
+        else:
+            if not (0 <= row_index < len(getattr(board, 'occupancy', []))):
+                return
+            grid, occupancy, texture_grid, gold_grid, owners = (
+                board.grid, board.occupancy, board.texture_grid, board.gold, board.owners,
+            )
+        grid[row_index][x] = _BOARD_EMPTY_COLOR
+        occupancy[row_index][x] = False
+        texture_grid[row_index][x] = None
+        gold_grid[row_index][x] = False
+        owners[row_index][x] = None
 
     @staticmethod
     def _serialize_semantic_board_cells(items) -> list[list]:
@@ -4473,7 +4527,12 @@ class OnlineCoopGame:
             'seq': self._board_state_seq,
             'format': 'semantic_delta_v1',
             'full': full_snapshot,
-            'cells': self._serialize_semantic_board_cells(changed_items),
+            'cells': self._serialize_semantic_board_cells(
+                [item for item in changed_items if item[0][1] >= 0]
+            ),
+            'hidden_cells': self._serialize_semantic_board_cells(
+                [((x, -y - 1), payload) for (x, y), payload in changed_items if y < 0]
+            ),
             'team_score': self.coop_game.team_score,
             'total_lines': self.coop_game.total_lines_cleared,
             'level': self.coop_game.level,
@@ -4484,8 +4543,12 @@ class OnlineCoopGame:
             'guest_piece_ack': self._last_guest_piece_state_seq,
             **gameplay_config,
         }
-        if removed_positions:
-            data['removed'] = self._serialize_removed_cells(removed_positions)
+        visible_removed = [position for position in removed_positions if position[1] >= 0]
+        hidden_removed = [(x, -y - 1) for x, y in removed_positions if y < 0]
+        if visible_removed:
+            data['removed'] = self._serialize_removed_cells(visible_removed)
+        if hidden_removed:
+            data['hidden_removed'] = self._serialize_removed_cells(hidden_removed)
 
         self._last_sent_board_cells = current_cells
         self.net.send(data, reliable=False, channel=CHANNEL_STATE)

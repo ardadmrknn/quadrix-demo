@@ -1131,6 +1131,9 @@ class PvPGame:
     @staticmethod
     def _clone_board_for_demobot(board: Board) -> Board:
         sim_board = Board(width=board.width, height=board.height)
+        for attr in ('hidden_grid', 'hidden_occupancy', 'hidden_texture_grid', 'hidden_gold', 'hidden_owners'):
+            if hasattr(board, attr) and hasattr(sim_board, attr):
+                setattr(sim_board, attr, [row[:] for row in getattr(board, attr)])
         sim_board.grid = [row[:] for row in board.grid]
         sim_board.texture_grid = [row[:] for row in board.texture_grid]
         sim_board.owners = [row[:] for row in board.owners]

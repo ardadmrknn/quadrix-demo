@@ -1283,15 +1283,14 @@ class CascadeMode(Game):
 
         # Parçayı tahtaya yerleştir (occupancy/texture/owners ile tutarlı)
         piece = self.current_piece
-        # Top-out: görünür alanın üstünde (y<0) yazılamayan dolu hücre kaldı mı?
+        # Gizli tamponu fiziksel olarak koru. Kısmi gizli kilit yaşar; yalnızca
+        # parçanın tamamı görünmez alanda kalırsa (veya tamponun dışına taşarsa)
+        # lock-out oluşur.
+        hidden_rows = max(0, int(getattr(self.board, 'hidden_rows', 0) or 0))
         _overflow_top = False
-        for ly, row in enumerate(piece.shape):
-            for lx, c in enumerate(row):
-                if c and (piece.y + ly) < 0:
-                    _overflow_top = True
-                    break
-            if _overflow_top:
-                break
+        visible_cells = 0
+        hidden_cells = 0
+        total_cells = sum(1 for row in piece.shape for cell in row if cell)
         piece_w = len(piece.shape[0]) if getattr(piece, 'shape', None) else 0
         piece_h = len(piece.shape) if getattr(piece, 'shape', None) else 0
         for ly, row in enumerate(piece.shape):
@@ -1300,10 +1299,25 @@ class CascadeMode(Game):
                     continue
                 x = piece.x + lx
                 y = piece.y + ly
-                if 0 <= x < self.board_width and 0 <= y < self.board_height:
+                if y < 0:
+                    hidden_index = y + hidden_rows
+                    if 0 <= x < self.board_width and 0 <= hidden_index < hidden_rows:
+                        self.board.hidden_grid[hidden_index][x] = piece.color
+                        self.board.hidden_occupancy[hidden_index][x] = True
+                        if hasattr(self.board, 'hidden_texture_grid'):
+                            self.board.hidden_texture_grid[hidden_index][x] = None
+                        if hasattr(self.board, 'hidden_gold'):
+                            self.board.hidden_gold[hidden_index][x] = bool(getattr(piece, 'is_gold', False))
+                        if hasattr(self.board, 'hidden_owners'):
+                            self.board.hidden_owners[hidden_index][x] = getattr(piece, 'name', None)
+                        hidden_cells += 1
+                    else:
+                        _overflow_top = True
+                elif 0 <= x < self.board_width and y < self.board_height:
                     self.board.grid[y][x] = piece.color
                     self.board.occupancy[y][x] = True
                     self.board.texture_grid[y][x] = None
+                    visible_cells += 1
                     try:
                         self.board.gold[y][x] = bool(getattr(piece, 'is_gold', False))
                     except Exception:
@@ -1460,7 +1474,12 @@ class CascadeMode(Game):
         # Lock-out kuralı: cascade sonrası görünür row 0 dolu kaldıysa ya da tepe
         # taşması (top-out) varsa game-over (Board.lock_piece ile aynı kural;
         # negatif/gizli satır "dokunma" mantığı kaldırıldı).
-        if _overflow_top or any(self.board.occupancy[0][x] for x in range(self.board_width)):
+        full_hidden_lock = (
+            total_cells > 0
+            and visible_cells == 0
+            and (hidden_cells > 0 or _overflow_top)
+        )
+        if full_hidden_lock:
             self.board.mark_locked_out()
             self.game_over = True
             try:
@@ -1572,18 +1591,25 @@ class CascadeMode(Game):
         cleared_rows = sorted({int(row) for row in cleared_rows if 0 <= int(row) < self.board_height}, reverse=True)
         if not cleared_rows:
             return
+        hidden_rows = max(0, int(getattr(self.board, 'hidden_rows', 0) or 0))
         grids = (
-            (self.board.grid, [BLACK for _ in range(self.board_width)]),
-            (self.board.texture_grid, [None for _ in range(self.board_width)]),
-            (self.board.occupancy, [False for _ in range(self.board_width)]),
-            (self.board.gold, [False for _ in range(self.board_width)]),
-            (self.board.owners, [None for _ in range(self.board_width)]),
+            ('grid', 'hidden_grid', [BLACK for _ in range(self.board_width)]),
+            ('texture_grid', 'hidden_texture_grid', [None for _ in range(self.board_width)]),
+            ('occupancy', 'hidden_occupancy', [False for _ in range(self.board_width)]),
+            ('gold', 'hidden_gold', [False for _ in range(self.board_width)]),
+            ('owners', 'hidden_owners', [None for _ in range(self.board_width)]),
         )
-        for grid, empty_row in grids:
+        for visible_name, hidden_name, empty_row in grids:
+            visible = getattr(self.board, visible_name)
+            hidden = getattr(self.board, hidden_name, None)
+            combined = (list(hidden) if isinstance(hidden, list) else []) + visible
             for row in cleared_rows:
-                del grid[row]
+                del combined[hidden_rows + row]
             for _ in cleared_rows:
-                grid.insert(0, list(empty_row))
+                combined.insert(0, list(empty_row))
+            if hidden_rows:
+                setattr(self.board, hidden_name, combined[:hidden_rows])
+            setattr(self.board, visible_name, combined[hidden_rows:])
     
     def create_cascade_particles(self, offset_x, offset_y, cell_size, count=20, level=1):
         """Cascade efekti için özel parçacıklar - seviyeye göre renk değişir"""

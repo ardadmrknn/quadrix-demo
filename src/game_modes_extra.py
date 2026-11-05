@@ -12934,6 +12934,11 @@ class MysteryMode(Game):
 
         # NOT: Zaman Kapsulu yalnızca oyun alanındaki blokların yerleşimini kaydeder.
         board_attrs = (
+            'hidden_grid',
+            'hidden_occupancy',
+            'hidden_texture_grid',
+            'hidden_gold',
+            'hidden_owners',
             'grid',
             'occupancy',
             'texture_grid',
@@ -12951,6 +12956,11 @@ class MysteryMode(Game):
     def _restore_time_capsule_state(self, data: dict[str, Any]) -> None:
         # NOT: Zaman Kapsulu yalnızca oyun alanındaki blokların yerleşimini geri yükler.
         board_attrs = (
+            'hidden_grid',
+            'hidden_occupancy',
+            'hidden_texture_grid',
+            'hidden_gold',
+            'hidden_owners',
             'grid',
             'occupancy',
             'texture_grid',
