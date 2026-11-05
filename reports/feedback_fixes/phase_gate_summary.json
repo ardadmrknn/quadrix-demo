@@ -2,8 +2,8 @@
   "schema_version": 2,
   "repo": "quadrix-demo",
   "branch": "release/demo",
-  "current_head": "e889448e8463b06412d83e00f84024e5e359a9cd",
-  "remote_head": "e889448e8463b06412d83e00f84024e5e359a9cd",
+  "current_head": "01e24447e0754dde6f73fe6b9ffac4df1a702c20",
+  "remote_head": "01e24447e0754dde6f73fe6b9ffac4df1a702c20",
   "remote_sync": "0 0",
   "remote_ref_verified": true,
   "phases": [
