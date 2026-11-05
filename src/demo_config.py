@@ -32,6 +32,13 @@ FULL_APP_NAME = "quadrix_full"
 
 # Kart Ustalığı (Mystery) modunda demo skor sınırı. Bu skora ulaşıldığında
 # "Demo Tamamlandı" paneli açılır ve oyun dondurulur.
+#
+# R22 (F6b.5a) BAĞIMLILIK: Bu tavan, demo Mystery nadirlik eğrisinin neden
+# v2'den KISA olduğunun gerekçesidir. Demo eğrisi L20'de platoya oturur;
+# v2'deki L30/55/75/100/125/150 ankrajları demo'ya BİLİNÇLİ olarak taşınmadı,
+# çünkü bu tavan uzun koşuyu zaten kesiyor ve L50+ bölgesi demoda erişilemez.
+# Tavan kaldırılır veya ciddi biçimde yükseltilirse eğri uzatması yeniden
+# değerlendirilmelidir (bkz. tests/feedback_fixes/test_phase6b_rarity_curve_divergence.py).
 DEMO_MYSTERY_SCORE_CAP = 1000000
 
 DEMO_LOCKED_EXTRAS_MODE_IDS = {
