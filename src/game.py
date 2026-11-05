@@ -83,7 +83,7 @@ except Exception:
         # Keep the import fallback on the same fixed-duration contract as
         # sweep_effects.compute_line_sweep_progress_speed. Rendering maps
         # progress to width; travel_px must not change gameplay timing.
-        base_duration = 0.18
+        base_duration = 0.24
         duration_ratio = max(0.42, 0.965 ** max(0, level_i - 1))
         sweep_duration = max(0.0001, base_duration * duration_ratio)
         return 1.0 / sweep_duration

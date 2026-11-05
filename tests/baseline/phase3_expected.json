@@ -2,11 +2,11 @@
   "schema_version": 1,
   "phase": 3,
   "buffer": {"visible_rows": 20, "hidden_rows": 2},
-  "sweep_duration_ms": 180,
+  "sweep_duration_ms": 240,
   "sweep": {
-    "progress_after_update": 0.09258888888888889,
-    "clear_fall_duration_ms": 183.326,
-    "ticks_to_completion": 11
+    "progress_after_update": 0.06944166666666668,
+    "clear_fall_duration_ms": 249.99,
+    "ticks_to_completion": 15
   },
   "sprint_are_wait_ms": 0,
   "infinite_sdf": "measured_source_path_present",

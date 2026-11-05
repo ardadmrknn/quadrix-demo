@@ -988,7 +988,7 @@ def compute_line_sweep_progress_speed(
     except Exception:
         level_i = 1
 
-    base_duration = 0.18
+    base_duration = 0.24
     duration_ratio = _SWEEP_LEVEL_DURATION_DECAY ** max(0, level_i - 1)
     duration_ratio = max(_SWEEP_LEVEL_MIN_DURATION_RATIO, duration_ratio)
     sweep_duration = max(0.0001, base_duration * duration_ratio)
