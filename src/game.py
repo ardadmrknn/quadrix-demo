@@ -111,6 +111,10 @@ GAMEPLAY_UI_REFERENCE_SIZE = (1366.0, 768.0)
 # da sabitler, aksi halde aynı görsel alfa her karede yeni Surface üretirdi.
 HIDDEN_STRIP_ALPHA = 140
 
+# I-47 (S-19): Sprint ailesi tek kaynak. HUD kapısı, otomatik gravity kapısı ve
+# milestone kapısı aynı kümeyi paylaşır; kopya listeler geri gelmemeli.
+SPRINT_MODE_KEYS = frozenset({'sprint', '40l', '40_lines', '40-lines'})
+
 
 def _gp_binding_button_value(raw, default):
     """Gamepad ayarlarındaki buton değerini güvenli int'e çöz (kare-başı
@@ -5061,9 +5065,13 @@ class Game:
 
     def _automatic_gravity_paused(self) -> bool:
         """Normal clear/fall animasyonunda gravity durur; soft drop override eder; Sprint/40L beklemez."""
-        if str(getattr(self, 'game_mode', '')).lower() in {'sprint', '40l', '40_lines', '40-lines'}:
+        if self._is_sprint_mode():
             return False
         return self._line_clear_animation_active() and not bool(getattr(self, '_soft_drop_held', False))
+
+    def _is_sprint_mode(self) -> bool:
+        """I-47 (S-19): Sprint ailesi mi? Tek kaynak — HUD/gravity/milestone paylaşır."""
+        return str(getattr(self, 'game_mode', '')).lower() in SPRINT_MODE_KEYS
 
     def update(self, delta_time):
         """
@@ -5162,31 +5170,34 @@ class Game:
         
         # Özel milestone eşikleri kontrolü (havai fişek)
         # Eşikler: 1000, 2000, 4000, 8000, 10000, 15000, 20000, 25000, 30000...
-        MILESTONE_THRESHOLDS = [1000, 2000, 4000, 8000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000]
-        
-        current_score = self.board.score
-        next_milestone = None
-        
-        # Sıradaki geçilmemiş milestone'u bul
-        for threshold in MILESTONE_THRESHOLDS:
-            if current_score >= threshold and threshold > self.last_milestone_score:
-                next_milestone = threshold
-                break
-        
-        # 100000+ için her 50000'de bir milestone
-        if next_milestone is None and current_score >= 100000:
-            milestone_after_100k = 100000 + ((current_score - 100000) // 50000) * 50000
-            if milestone_after_100k > self.last_milestone_score:
-                next_milestone = milestone_after_100k
-        
-        if next_milestone is not None:
-            self.last_milestone_score = next_milestone
-            # Havai fişek gösterisi başlat
-            self.create_multiple_fireworks()
-            self.firework_active = True
-            self.firework_time = 120  # 2 saniye göster
-            self.sound.play('tetris')  # Kutlama sesi
-            print(f"{next_milestone} PUAN MILESTONE! Havai fişek gösterisi!")
+        # I-47 (S-19): Sprint/40L'de skor HUD'dan kaldırıldığı için (S-09)
+        # skoru kutlamak tutarsız; bu modlarda milestone bloğu tamamen kapalı.
+        if not self._is_sprint_mode():
+            MILESTONE_THRESHOLDS = [1000, 2000, 4000, 8000, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000]
+
+            current_score = self.board.score
+            next_milestone = None
+
+            # Sıradaki geçilmemiş milestone'u bul
+            for threshold in MILESTONE_THRESHOLDS:
+                if current_score >= threshold and threshold > self.last_milestone_score:
+                    next_milestone = threshold
+                    break
+
+            # 100000+ için her 50000'de bir milestone
+            if next_milestone is None and current_score >= 100000:
+                milestone_after_100k = 100000 + ((current_score - 100000) // 50000) * 50000
+                if milestone_after_100k > self.last_milestone_score:
+                    next_milestone = milestone_after_100k
+
+            if next_milestone is not None:
+                self.last_milestone_score = next_milestone
+                # Havai fişek gösterisi başlat
+                self.create_multiple_fireworks()
+                self.firework_active = True
+                self.firework_time = 120  # 2 saniye göster
+                self.sound.play('tetris')  # Kutlama sesi
+                print(f"{next_milestone} PUAN MILESTONE! Havai fişek gösterisi!")
         
         # Havai fişek süresini güncelle
         if self.firework_active:
@@ -5317,7 +5328,7 @@ class Game:
         # böylece yeni parça animasyon bitene kadar otomatik aşağı kaymaz.
         # Ancak oyuncu soft drop tutuyorsa (veya hard drop yaptıysa, o zaten
         # handle_input içinde anında işlenir) düşüşe izin verilir.
-        if str(getattr(self, 'game_mode', '')).lower() in {'sprint', '40l', '40_lines', '40-lines'}:
+        if self._is_sprint_mode():
             gravity_paused = False
         else:
             gravity_paused = self._line_clear_animation_active() and not bool(
@@ -6164,7 +6175,7 @@ class Game:
         rows_avail = max(24, rows_bottom_cap - stat_y_cur - max(4, int(8 * hud_scale)))
 
         score_color_override = getattr(self, '_score_color_override', None)
-        sprint_mode = str(getattr(self, 'game_mode', '')).lower() in {'sprint', '40l', '40_lines', '40-lines'}
+        sprint_mode = self._is_sprint_mode()
         stat_row_defs = [] if sprint_mode else [
             (t('score'), f'{self.board.score:,}'.replace(',', '.'), score_color_override or accent_color),
         ]
