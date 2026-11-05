@@ -192,9 +192,14 @@ def load_pet_frames(value: str | None) -> list[pygame.Surface] | None:
         if surface.get_width() > 0 and surface.get_height() > 0:
             frames.append(surface)
 
-    result = frames if frames else None
-    _frames_cache[normalized] = result
-    return result
+    # A failed load can be transient: ``convert_alpha`` requires an active
+    # display, and menu/test code may first probe the pet before pygame's
+    # display is initialized.  Do not permanently cache that transient
+    # ``None`` result; a later call after display setup must retry the files.
+    if not frames:
+        return None
+    _frames_cache[normalized] = frames
+    return frames
 
 
 def clear_runtime_cache() -> None:

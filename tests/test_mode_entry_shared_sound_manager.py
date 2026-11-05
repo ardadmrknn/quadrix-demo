@@ -146,18 +146,42 @@ def test_main_mode_entries_reuse_shared_menu_sound():
     tree = _parse(MAIN_PY)
     seen = {name: 0 for name in TARGET_MODE_CALLS}
     missing_sound_manager = []
+    online_factory_calls = []
 
     for name, call in _iter_target_calls(tree):
+        # OnlinePvPGame is constructed inside the guarded factory so that
+        # Steam preflight and fallback cleanup remain centralized. Its
+        # launch call sites are _create_online_pvp_game(...) calls below.
+        if name == "OnlinePvPGame":
+            continue
         seen[name] += 1
         sound_manager_value = _keyword_value(call, "sound_manager")
         if not isinstance(sound_manager_value, ast.Name) or sound_manager_value.id != "menu_sound":
             missing_sound_manager.append(f"{name}@L{call.lineno}")
 
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name) and node.func.id == "_create_online_pvp_game":
+            online_factory_calls.append(node)
+
     unseen = sorted(name for name, count in seen.items() if count == 0)
+    unseen.remove("OnlinePvPGame")
     assert not unseen, f"Expected mode entry call sites were not found in src/main.py: {unseen}"
     assert not missing_sound_manager, (
         "Some mode entry call sites do not reuse shared menu_sound: "
         + ", ".join(missing_sound_manager)
+    )
+    assert online_factory_calls, "Expected guarded OnlinePvPGame factory call sites"
+    missing_online_sound = [
+        f"OnlinePvPFactory@L{call.lineno}"
+        for call in online_factory_calls
+        if not isinstance(_keyword_value(call, "sound_manager"), ast.Name)
+        or _keyword_value(call, "sound_manager").id != "menu_sound"
+    ]
+    assert not missing_online_sound, (
+        "OnlinePvPGame factory calls must forward shared menu_sound: "
+        + ", ".join(missing_online_sound)
     )
 
 

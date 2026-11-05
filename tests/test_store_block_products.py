@@ -18,7 +18,7 @@ def _reset_retro_style_cache() -> None:
 class _DummyUserManager:
     def __init__(self):
         self.profile = {
-            'neural_fragments': 700,
+            'neural_fragments': 15000,
             'owned_cosmetics': [],
             'equipped_cosmetics': {},
         }
@@ -73,13 +73,15 @@ def test_store_can_purchase_and_equip_legacy_block_skin():
         screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
 
         legacy_index = next(index for index, product in enumerate(screen.products) if product.product_id == 'block_skin_legacy_jelly')
+        legacy_product = screen.products[legacy_index]
+        expected_remaining = 15000 - legacy_product.price
         screen.selected_index = legacy_index
         screen.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
         assert screen.is_confirm_open
 
         screen.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
         assert not screen.is_confirm_open
-        assert manager.profile['neural_fragments'] == 250
+        assert manager.profile['neural_fragments'] == expected_remaining
         assert 'block_legacy_jelly' in manager.profile['owned_cosmetics']
         assert manager.profile['equipped_cosmetics']['block_skin'] == 'block_legacy_jelly'
         assert get_shared_falling_blocks_layer('default').block_appearance == LEGACY_BLOCK_APPEARANCE

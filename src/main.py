@@ -1104,7 +1104,14 @@ def _create_online_pvp_game(*, on_failure: Callable[[], None] | None = None, **k
     )
     game = None
     try:
-        game = OnlinePvPGame(**kwargs)
+        # Menu girişlerinde paylaşılan SoundManager'ı açıkça ilet. Yardımcı
+        # test/araç çağrıları manager vermiyorsa eski kwargs sözleşmesini koru.
+        menu_sound = kwargs.pop('sound_manager', None)
+        if menu_sound is not None:
+            game = OnlinePvPGame(sound_manager=menu_sound, **kwargs)
+        else:
+            constructor = OnlinePvPGame
+            game = constructor(**kwargs)
         # İlk input karesinden önce init dene; transient hata fallback UI'da kalır.
         connected = game._init_networking()
         game._auto_connect_attempted = True

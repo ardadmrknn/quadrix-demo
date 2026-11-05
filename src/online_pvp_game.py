@@ -473,6 +473,8 @@ class OnlinePvPGame:
             self.sound.set_volume(settings_manager.get('sfx_volume', 0.5))
             if hasattr(self.sound, 'set_muted'):
                 self.sound.set_muted(bool(settings_manager.get('mute_all', False)))
+        if hasattr(self.sound, 'unduck_music'):
+            self.sound.unduck_music()
 
         # Arka plan
         self.background = BackgroundManager()

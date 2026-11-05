@@ -66,24 +66,26 @@ def test_store_screen_purchase_and_equip_flow():
         from store_screen import StoreScreen
 
         manager = _DummyUserManager()
-        manager.profile['neural_fragments'] = 700
+        manager.profile['neural_fragments'] = 15000
         screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
 
         screen.draw()
         legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+        legacy_price = screen.products[legacy_idx].price
+        expected_remaining = 15000 - legacy_price
         screen.selected_index = legacy_idx
         screen.draw()
 
         # ENTER on an affordable, unowned product opens confirmation
         screen.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
         assert screen.is_confirm_open
-        assert manager.profile['neural_fragments'] == 700
+        assert manager.profile['neural_fragments'] == 15000
         assert 'block_legacy_jelly' not in manager.profile['owned_cosmetics']
 
         # Confirm
         screen.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
         assert not screen.is_confirm_open
-        assert manager.profile['neural_fragments'] == 250
+        assert manager.profile['neural_fragments'] == expected_remaining
         assert 'block_legacy_jelly' in manager.profile['owned_cosmetics']
         assert manager.profile['equipped_cosmetics']['block_skin'] == 'block_legacy_jelly'
 
@@ -103,7 +105,7 @@ def test_store_confirm_modal_cancel_keeps_wallet_intact():
         from store_screen import StoreScreen
 
         manager = _DummyUserManager()
-        manager.profile['neural_fragments'] = 700
+        manager.profile['neural_fragments'] = 15000
         screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
 
         screen.draw()
@@ -116,7 +118,7 @@ def test_store_confirm_modal_cancel_keeps_wallet_intact():
         action = screen.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE))
         assert action is None
         assert not screen.is_confirm_open
-        assert manager.profile['neural_fragments'] == 700
+        assert manager.profile['neural_fragments'] == 15000
         assert 'block_legacy_jelly' not in manager.profile['owned_cosmetics']
     finally:
         pygame.quit()
@@ -129,10 +131,12 @@ def test_store_confirm_modal_buy_button_completes_purchase():
         from store_screen import StoreScreen
 
         manager = _DummyUserManager()
-        manager.profile['neural_fragments'] = 700
+        manager.profile['neural_fragments'] = 15000
         screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
 
         legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+        legacy_price = screen.products[legacy_idx].price
+        expected_remaining = 15000 - legacy_price
         _select_and_render(screen, legacy_idx)
         _click(screen, screen._cta_rect.center)
         assert screen.is_confirm_open
@@ -141,7 +145,7 @@ def test_store_confirm_modal_buy_button_completes_purchase():
 
         _click(screen, screen._confirm_yes_rect.center)
         assert not screen.is_confirm_open
-        assert manager.profile['neural_fragments'] == 250
+        assert manager.profile['neural_fragments'] == expected_remaining
         assert 'block_legacy_jelly' in manager.profile['owned_cosmetics']
         assert manager.profile['equipped_cosmetics']['block_skin'] == 'block_legacy_jelly'
     finally:
@@ -217,22 +221,24 @@ def test_store_cta_click_buys_when_affordable():
         from store_screen import StoreScreen
 
         manager = _DummyUserManager()
-        manager.profile['neural_fragments'] = 700
+        manager.profile['neural_fragments'] = 15000
         screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
 
         legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+        legacy_price = screen.products[legacy_idx].price
+        expected_remaining = 15000 - legacy_price
         _select_and_render(screen, legacy_idx)
         assert screen._cta_rect is not None
         _click(screen, screen._cta_rect.center)
         assert screen.is_confirm_open
-        assert manager.profile['neural_fragments'] == 700
+        assert manager.profile['neural_fragments'] == 15000
 
         screen.draw()
         assert screen._confirm_yes_rect is not None
         _click(screen, screen._confirm_yes_rect.center)
 
         assert not screen.is_confirm_open
-        assert manager.profile['neural_fragments'] == 250
+        assert manager.profile['neural_fragments'] == expected_remaining
         assert 'block_legacy_jelly' in manager.profile['owned_cosmetics']
         assert manager.profile['equipped_cosmetics']['block_skin'] == 'block_legacy_jelly'
     finally:
@@ -309,7 +315,7 @@ def test_store_locked_message_formats_without_raw_placeholders_in_english():
 
         product = screen.products[legacy_idx]
         assert screen._product_title(product) in screen.status_message
-        assert '450 Lunar' in screen.status_message
+        assert f'{product.price} Lunar' in screen.status_message
         assert '50 Lunar' in screen.status_message
         assert '{' not in screen.status_message and '}' not in screen.status_message
     finally:
