@@ -2952,30 +2952,29 @@ class CoopGame:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         return 'menu'
-                    if not getattr(event, 'from_gamepad', False):
-                        if event.key == pygame.K_a:
-                            self.keyboard_assignment = 'neutral' if self.keyboard_assignment == 'P2' else 'P1' if self.keyboard_assignment == 'neutral' else self.keyboard_assignment
-                        elif event.key == pygame.K_d:
-                            self.keyboard_assignment = 'neutral' if self.keyboard_assignment == 'P1' else 'P2' if self.keyboard_assignment == 'neutral' else self.keyboard_assignment
-                        elif event.key == pygame.K_LEFT:
-                            self.keyboard2_assignment = 'neutral' if self.keyboard2_assignment == 'P2' else 'P1' if self.keyboard2_assignment == 'neutral' else self.keyboard2_assignment
-                        elif event.key == pygame.K_RIGHT:
-                            self.keyboard2_assignment = 'neutral' if self.keyboard2_assignment == 'P1' else 'P2' if self.keyboard2_assignment == 'neutral' else self.keyboard2_assignment
-                        elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                            p1 = self.keyboard_assignment == 'P1' or self.keyboard2_assignment == 'P1' or any(v == 'P1' for v in self.gamepad_assignments.values())
-                            p2 = self.keyboard_assignment == 'P2' or self.keyboard2_assignment == 'P2' or any(v == 'P2' for v in self.gamepad_assignments.values())
+                    if getattr(event, 'from_gamepad', False):
+                        device = getattr(event, 'device_index', None); current = self.gamepad_assignments.get(device, 'neutral')
+                        if getattr(event, 'action', None) in ('move_left', 'menu_left'):
+                            self.gamepad_assignments[device] = 'neutral' if current == 'P2' else 'P1' if current == 'neutral' else current
+                        elif getattr(event, 'action', None) in ('move_right', 'menu_right'):
+                            self.gamepad_assignments[device] = 'neutral' if current == 'P1' else 'P2' if current == 'neutral' else current
+                        elif getattr(event, 'action', None) in ('menu_confirm', 'pause'):
+                            p1 = any(v == 'P1' for v in self.gamepad_assignments.values()) or self.keyboard_assignment == 'P1' or self.keyboard2_assignment == 'P1'
+                            p2 = any(v == 'P2' for v in self.gamepad_assignments.values()) or self.keyboard_assignment == 'P2' or self.keyboard2_assignment == 'P2'
                             if p1 and p2:
                                 self._finalize_controller_assignments(); self.controller_lobby_complete = True; self.name_input_active = False
-                    continue
-                if getattr(event, 'from_gamepad', False):
-                    device = getattr(event, 'device_index', None); current = self.gamepad_assignments.get(device, 'neutral')
-                    if getattr(event, 'action', None) in ('move_left', 'menu_left'):
-                        self.gamepad_assignments[device] = 'neutral' if current == 'P2' else 'P1' if current == 'neutral' else current
-                    elif getattr(event, 'action', None) in ('move_right', 'menu_right'):
-                        self.gamepad_assignments[device] = 'neutral' if current == 'P1' else 'P2' if current == 'neutral' else current
-                    elif getattr(event, 'action', None) in ('menu_confirm', 'pause'):
-                        p1 = any(v == 'P1' for v in self.gamepad_assignments.values()) or self.keyboard_assignment == 'P1' or self.keyboard2_assignment == 'P1'
-                        p2 = any(v == 'P2' for v in self.gamepad_assignments.values()) or self.keyboard_assignment == 'P2' or self.keyboard2_assignment == 'P2'
+                        continue
+                    if event.key == pygame.K_a:
+                        self.keyboard_assignment = 'neutral' if self.keyboard_assignment == 'P2' else 'P1' if self.keyboard_assignment == 'neutral' else self.keyboard_assignment
+                    elif event.key == pygame.K_d:
+                        self.keyboard_assignment = 'neutral' if self.keyboard_assignment == 'P1' else 'P2' if self.keyboard_assignment == 'neutral' else self.keyboard_assignment
+                    elif event.key == pygame.K_LEFT:
+                        self.keyboard2_assignment = 'neutral' if self.keyboard2_assignment == 'P2' else 'P1' if self.keyboard2_assignment == 'neutral' else self.keyboard2_assignment
+                    elif event.key == pygame.K_RIGHT:
+                        self.keyboard2_assignment = 'neutral' if self.keyboard2_assignment == 'P1' else 'P2' if self.keyboard2_assignment == 'neutral' else self.keyboard2_assignment
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        p1 = self.keyboard_assignment == 'P1' or self.keyboard2_assignment == 'P1' or any(v == 'P1' for v in self.gamepad_assignments.values())
+                        p2 = self.keyboard_assignment == 'P2' or self.keyboard2_assignment == 'P2' or any(v == 'P2' for v in self.gamepad_assignments.values())
                         if p1 and p2:
                             self._finalize_controller_assignments(); self.controller_lobby_complete = True; self.name_input_active = False
                     continue
