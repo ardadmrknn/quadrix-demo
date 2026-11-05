@@ -20,7 +20,7 @@ import pygame
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
-from platform_utils import IS_WINDOWS, get_mouse_pos as _gmp
+from platform_utils import IS_WINDOWS, get_mouse_pos as _gmp, is_key_held
 
 try:
     from pygame._sdl2 import controller as _sdl2_controller
@@ -1663,7 +1663,7 @@ class GamepadManager:
             value = signature[1] if len(signature) > 1 else None
             if kind == 'key' and isinstance(value, int):
                 pressed = pygame.key.get_pressed()
-                return bool(pressed[value]) if 0 <= value < len(pressed) else False
+                return is_key_held(value, pressed)
             if kind == 'btn' and isinstance(value, int):
                 for gp in list(self.gamepads.values()):
                     if getattr(gp, 'connected', True) and gp.buttons.get(int(value), False):

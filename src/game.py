@@ -37,7 +37,7 @@ from workshop_blocks import WorkshopBlockDefinition, load_workshop_blocks
 from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from localization import t, get_language
-from platform_utils import get_display_flags, create_display, set_app_icon, normalize_mouse_pos, get_mouse_pos, get_render_geometry, get_geometry_generation
+from platform_utils import get_display_flags, create_display, set_app_icon, normalize_mouse_pos, get_mouse_pos, get_render_geometry, get_geometry_generation, is_key_held
 from ui_text_layout import clamp_rect_in_parent
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
@@ -2954,7 +2954,11 @@ class Game:
                 # poll tabanlı telafisi (is_direction_held) korunur; bu yalnız
                 # KEYDOWN hız geçişini sözleşmeye taşır.
                 elif self._event_matches_action(event, bindings, 'soft_drop'):
-                    self.fall_speed = FAST_FALL_SPEED
+                    # `_soft_drop_held` burada da işaretlenir: aksi halde tuşa
+                    # basıldığı kare, `update()` poll'u çalışana kadar puan
+                    # vermez ve spawn hız seçimi tuşu "bırakılmış" görür.
+                    self._soft_drop_held = True
+                    self._set_fall_speed(self.get_soft_drop_speed())
                     # Soft drop points: 1 point per cell (applied during gravity update if fast falling, doing here for responsiveness is tricky without affecting gravity)
                     # Actually, standard Quadrix only awards points if the piece actually moves down due to soft drop.
                     # Implementing that in `_step` or `update` is better, but simple +1 here is acceptable for visual feedback if debounced.
@@ -3190,10 +3194,9 @@ class Game:
             if event.type == pygame.KEYUP:
                 alt_keys = getattr(self, 'alt_control_bindings', {})
                 def _is_pressed(key: int, pressed) -> bool:
-                    try:
-                        return key < len(pressed) and bool(pressed[key])
-                    except Exception:
-                        return False
+                    # ScancodeWrapper keycode ile indekslenir; uzunluk kapısı ok
+                    # tuşlarını eler (bkz. platform_utils.is_key_held).
+                    return is_key_held(key, pressed)
                 # Aşağı tuşu bırakıldığında normal hıza dön
                 # DUZ-007: KEYUP de aynı action sözleşmesini kullanır —
                 # gamepad soft_drop bırakışı da hızı geri yükler.
@@ -4748,6 +4751,56 @@ class Game:
         multiplier = getattr(self, 'score_speed_multiplier', 1.0)
         speed = int(speed * multiplier)
         return max(speed, LEVEL_SPEED_MIN_MS)
+
+    def get_soft_drop_speed(self) -> float:
+        """Soft drop aralığını (ms) döndür. 0.0 = anlık dibe iniş.
+
+        Demo'da `sdf` ayarı yok; aralık doğrudan `soft_drop_speed` ayarıdır.
+        `update()` bu yöntemi çağırıyordu ama tanımı yoktu (AttributeError);
+        hata, basılı-tuş kapısı bozuk olduğu için hiç tetiklenmemişti.
+        """
+        settings_m = getattr(self, 'settings_manager', None)
+        if not settings_m:
+            return float(FAST_FALL_SPEED)
+        try:
+            soft_ms = float(settings_m.get('soft_drop_speed', FAST_FALL_SPEED))
+        except (TypeError, ValueError):
+            return float(FAST_FALL_SPEED)
+        return max(1.0, soft_ms)
+
+    def _set_fall_speed(self, new_speed: float) -> None:
+        """Aralığı değiştirirken birikmiş gravity borcunu satır uzayında taşı.
+
+        Soft drop aralığı anında değişir (örn. 800 -> 50 ms/satır). Borç aynen
+        taşınırsa yavaş gravity altında biriken süre tek karede çoklu satır
+        olarak nakde dönüşür. Geçişte satır ilerlemesi
+        (``fall_time / eski_aralık``) yeni aralığa ölçeklenir.
+        """
+        try:
+            new_interval = float(new_speed)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(new_interval) or new_interval < 0.0:
+            return
+
+        old_interval = getattr(self, 'fall_speed', None)
+        try:
+            old_interval = None if old_interval is None else float(old_interval)
+        except (TypeError, ValueError):
+            old_interval = None
+
+        if old_interval is not None and old_interval > 0.0 and new_interval > 0.0 \
+                and old_interval != new_interval:
+            try:
+                debt = float(getattr(self, 'fall_time', 0.0) or 0.0)
+            except (TypeError, ValueError):
+                debt = 0.0
+            progress = min(1.0, max(0.0, debt) / old_interval)
+            self.fall_time = progress * new_interval
+        elif new_interval <= 0.0:
+            self.fall_time = 0.0
+
+        self.fall_speed = new_interval
     
     def _has_adjacent_block(self, piece):
         """Parçanın en az bir hücresinin yanında (8 yön) bir blok var mı kontrol et.
@@ -5056,8 +5109,14 @@ class Game:
         self.lock_reset_count = 0
         self.can_hold = True  # Yeni parçada tekrar hold kullanılabilir
         self.can_hold2 = True
-        self.fall_speed = self.get_current_speed()
-        
+        # Aşağı tuşu basılıyken doğan parça ilk karesinden itibaren soft drop
+        # hızında iner; koşulsuz `get_current_speed()` ataması spawn'da bir
+        # karelik normal hız sıçraması üretiyordu.
+        if getattr(self, '_soft_drop_held', False):
+            self.fall_speed = self.get_soft_drop_speed()
+        else:
+            self.fall_speed = self.get_current_speed()
+
         # Tema renklerini uygula
         self.apply_theme_to_pieces()
 
@@ -5257,10 +5316,10 @@ class Game:
             pressed = pygame.key.get_pressed()
 
             def _is_pressed(key: int) -> bool:
-                try:
-                    return key < len(pressed) and bool(pressed[key])
-                except Exception:
-                    return False
+                # `pressed` bir ScancodeWrapper'dır ve KEYCODE ile indekslenir.
+                # Uzunluk kapısı (`key < len(pressed)`) ok tuşlarını eler:
+                # K_DOWN = 1073741905 > len(pressed) = 512. Ayrıntı: platform_utils.is_key_held.
+                return is_key_held(key, pressed)
 
             bindings = getattr(self, 'control_bindings', None) or {}
             bound_soft = int(bindings.get('soft_drop', pygame.K_DOWN))
@@ -5280,12 +5339,9 @@ class Game:
                     pass
             soft_prev = bool(getattr(self, '_soft_drop_held', False))
             if soft_now:
-                settings_m = getattr(self, 'settings_manager', None)
-                soft_ms = int(settings_m.get('soft_drop_speed', FAST_FALL_SPEED)) if settings_m else int(FAST_FALL_SPEED)
-                soft_ms = max(20, min(1000, soft_ms))
-                self.fall_speed = soft_ms
+                self._set_fall_speed(self.get_soft_drop_speed())
             elif soft_prev and not soft_now:
-                self.fall_speed = self.get_current_speed()
+                self._set_fall_speed(self.get_current_speed())
             self._soft_drop_held = soft_now
         except Exception:
             pass

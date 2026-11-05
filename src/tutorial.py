@@ -50,7 +50,7 @@ except Exception:
     from text_cache import cache_generation
     from constants import *
     from pieces import create_piece_by_name
-    from platform_utils import create_display, normalize_mouse_pos, get_mouse_pos
+    from platform_utils import create_display, normalize_mouse_pos, get_mouse_pos, is_key_held
     from tutorial_lessons import (
         get_chapters,
         get_chapter,
@@ -2892,18 +2892,8 @@ class TutorialMode(Game):
         return tuple(k for k in keys if isinstance(k, int))
 
     def _is_key_pressed(self, keycode: int, pressed_state=None) -> bool:
-        """Tuş basılı mı? (arrow keys için scancode destekli)."""
-        if pressed_state is None:
-            pressed_state = pygame.key.get_pressed()
-        try:
-            scancode = pygame.key.get_scancode_from_key(keycode)
-            if 0 <= scancode < len(pressed_state) and pressed_state[scancode]:
-                return True
-        except Exception:
-            pass
-        if 0 <= keycode < len(pressed_state):
-            return bool(pressed_state[keycode])
-        return False
+        """Tuş basılı mı? ScancodeWrapper keycode ile indekslenir (ok tuşları dahil)."""
+        return is_key_held(keycode, pressed_state)
 
     def _key_label(self, keycode: int) -> str:
         """Keycode için kullanıcıya gösterilecek kısa etiket üret."""

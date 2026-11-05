@@ -20,7 +20,7 @@ from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from themes import ThemeManager
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from block_skin_assets import get_equipped_block_appearance
-from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap
+from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap, is_key_held
 # FAZ A6: P0 game-over yüzey LRU'ları + kuşak-bazlı safe rect ortak kütüphaneden
 # (PvPGame Game'den bağımsız olduğu için game.py instance helper'ları kullanılamaz).
 from game_over_surfaces import (
@@ -2544,7 +2544,7 @@ class PvPGame:
                     if self.p1_das_direction == -1:
                         pressed = pygame.key.get_pressed()
                         other_key = controls1['move_right']
-                        if other_key < len(pressed) and pressed[other_key]:
+                        if is_key_held(other_key, pressed):
                             moved = self._try_move_right_p1()
                             if moved:
                                 self.sound.play('move')
@@ -2559,7 +2559,7 @@ class PvPGame:
                     if self.p1_das_direction == 1:
                         pressed = pygame.key.get_pressed()
                         other_key = controls1['move_left']
-                        if other_key < len(pressed) and pressed[other_key]:
+                        if is_key_held(other_key, pressed):
                             moved = self._try_move_left_p1()
                             if moved:
                                 self.sound.play('move')
@@ -2577,7 +2577,7 @@ class PvPGame:
                     if self.p2_das_direction == -1:
                         pressed = pygame.key.get_pressed()
                         other_key = controls2['move_right']
-                        if other_key < len(pressed) and pressed[other_key]:
+                        if is_key_held(other_key, pressed):
                             moved = self._try_move_right_p2()
                             if moved:
                                 self.sound.play('move')
@@ -2592,7 +2592,7 @@ class PvPGame:
                     if self.p2_das_direction == 1:
                         pressed = pygame.key.get_pressed()
                         other_key = controls2['move_left']
-                        if other_key < len(pressed) and pressed[other_key]:
+                        if is_key_held(other_key, pressed):
                             moved = self._try_move_left_p2()
                             if moved:
                                 self.sound.play('move')

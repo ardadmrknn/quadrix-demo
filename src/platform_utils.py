@@ -27,6 +27,41 @@ def resource_path(relative_path: str) -> str:
     return os.path.normpath(os.path.join(base_path, relative_path))
 
 
+def is_key_held(key_code, key_state=None) -> bool:
+    """Bir tuş basılı mı? `pygame.key.get_pressed()` sonucu KEYCODE ile indekslenir.
+
+    NEDEN: `pygame.key.get_pressed()` bir `ScancodeWrapper` döndürür; bu nesne
+    512 elemanlıdır ama `__getitem__` verilen keycode'u `SDL_GetScancodeFromKey`
+    ile scancode'a çevirip iç demete uygular (pygame-ce `src_c/key.c`,
+    `pg_scancodewrapper_subscript`). Bu yüzden `key_code < len(key_state)`
+    biçimindeki uzunluk kapıları YANLIŞTIR: ok tuşları `K_DOWN =
+    1073741905`, `K_LEFT = 1073741904` gibi 512'nin çok üstünde keycode'lar
+    taşır, kapı daima `False` döner. Üstelik aralık dışı indeksleme
+    `IndexError` fırlatmaz, `False` döner; yani `try/except` bu hatayı
+    kurtaramaz.
+
+    Args:
+        key_code: `pygame.K_*` sabiti veya `event.key` değeri.
+        key_state: Önceden alınmış `pygame.key.get_pressed()` sonucu (isteğe bağlı).
+
+    Returns:
+        Tuş basılıysa `True`; geçersiz keycode veya klavye durumu okunamıyorsa `False`.
+    """
+    try:
+        code = int(key_code)
+    except (TypeError, ValueError):
+        return False
+    if code < 0:
+        return False
+    try:
+        state = pygame.key.get_pressed() if key_state is None else key_state
+        if state is None:
+            return False
+        return bool(state[code])
+    except Exception:
+        return False
+
+
 _REFRESH_RATE_CACHE_HZ = 0
 _REFRESH_RATE_CACHE_AT = 0.0
 _REFRESH_RATE_CACHE_TTL_S = 1.0
