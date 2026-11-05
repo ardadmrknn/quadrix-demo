@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+import time
 from datetime import datetime
 
 from atomic_io import atomic_write_json
@@ -29,6 +30,9 @@ class ScoreManager:
             'total_tetrises': 0,
             'total_playtime': 0
         }
+        self._dirty = False
+        self._retry_at = 0.0
+        self._retry_delay_seconds = 2.0
         self.load()
     
     def load(self):
@@ -51,8 +55,22 @@ class ScoreManager:
                 'stats': self.stats
             }
             atomic_write_json(self.filename, data, indent=2, ensure_ascii=False)
+            self._dirty = False
+            self._retry_at = 0.0
+            return True
         except Exception as e:
             print(f"[UYARI] Highscores kaydedilemedi: {e}")
+            self._dirty = True
+            self._retry_at = time.monotonic() + self._retry_delay_seconds
+            return False
+
+    def flush_if_due(self, force=False):
+        """Başarısız skor yazımını kontrollü aralıkla yeniden dene."""
+        if not self._dirty:
+            return False
+        if not force and time.monotonic() < self._retry_at:
+            return False
+        return bool(self.save())
     
     def add_score(self, score, lines, level, tetrises=0, playtime=0):
         """Yeni skor ekle"""
@@ -76,6 +94,7 @@ class ScoreManager:
         self.stats['total_tetrises'] += tetrises
         self.stats['total_playtime'] += playtime
         
+        self._dirty = True
         self.save()
         
         # Kaçıncı sırada?

@@ -2900,6 +2900,11 @@ def main():
                 achievement_manager.flush_achievements_if_due(force=True)
         except Exception:
             pass
+        try:
+            if score_manager is not None:
+                score_manager.flush_if_due(force=True)
+        except Exception:
+            pass
         # OP-004: debounced users.json yazımı da restart'a taşınmalı.
         try:
             user_manager.flush_users_if_due(force=True)
@@ -5530,6 +5535,11 @@ def main():
                 achievement_manager.flush_achievements_if_due()
             except Exception:
                 pass
+        try:
+            if score_manager is not None:
+                score_manager.flush_if_due()
+        except Exception:
+            pass
         # OP-004: debounced users.json yazımı (hold istatistiği sıcak yolu).
         try:
             user_manager.flush_users_if_due()
@@ -5545,6 +5555,11 @@ def main():
             achievement_manager.flush_achievements_if_due(force=True)
         except Exception:
             pass
+    try:
+        if score_manager is not None:
+            score_manager.flush_if_due(force=True)
+    except Exception:
+        pass
     # OP-004: temiz çıkışta debounced users.json yazımını garantiye al.
     try:
         user_manager.flush_users_if_due(force=True)

@@ -764,8 +764,16 @@ class Game:
         slot_h = max(28, int(slot_base * hud_f))
         vertical = bool(label_text and value_text and l_w + row_gap + v_w > avail_w)
         if vertical:
-            v_gap = max(2, int(4 * hud_f))
-            row_h = max(slot_h, label_h + v_gap + value_h)
+            # Dikey çizim yolu yatay ölçümdeki row_gap'i kullanır. Satır
+            # yüksekliği değer bloğu ile ayırıcı arasındaki boşluğu da
+            # rezerve etmelidir; aksi halde büyük skor ayırıcının altına
+            # veya sonraki satıra taşabilir.
+            separator_gap = max(2, int(2 * hud_f))
+            separator_margin = max(4, int(6 * hud_f))
+            row_h = max(
+                slot_h,
+                label_h + row_gap + value_h + separator_gap + separator_margin,
+            )
         else:
             row_h = max(slot_h, label_h, value_h)
         return {
@@ -4885,6 +4893,14 @@ class Game:
     def finalize_run(self, playtime: int | None = None) -> None:
         """Persist score, stats, and achievements once per run."""
         if self._score_recorded:
+            score_manager = getattr(self, 'score_manager', None)
+            flush_scores = getattr(score_manager, 'flush_if_due', None)
+            if callable(flush_scores):
+                flush_scores(force=True)
+            user_manager = getattr(self, 'user_manager', None)
+            flush_users = getattr(user_manager, 'flush_users_if_due', None)
+            if callable(flush_users):
+                flush_users(force=True)
             return
         # Eğitim modunda hiçbir skor/istatistik/başarım kaydı yapılmaz.
         if getattr(self, '_suppress_progression_tracking', False):
@@ -6160,12 +6176,18 @@ class Game:
                 )
             self.screen.blit(v_surf, v_rect)
 
-            # Alt çizgi
+            # Alt çizgi; dikey satırda değer bloğunun altına, ayrılmış
+            # separator_margin içinde çizilir. Yatay yerleşimin mevcut
+            # görsel konumu korunur.
             inset = max(6, int(10 * hud_scale))
-            line_y = min(
-                y_pos + max(20, int(32 * hud_scale)),
-                y_pos + plan['row_h'] - max(4, int(6 * hud_scale)),
-            )
+            separator_margin = max(4, int(6 * hud_scale))
+            if plan['vertical']:
+                line_y = y_pos + plan['row_h'] - separator_margin
+            else:
+                line_y = min(
+                    y_pos + max(20, int(32 * hud_scale)),
+                    y_pos + plan['row_h'] - separator_margin,
+                )
             pygame.draw.line(self.screen, (255, 255, 255, 30), (content_x + inset, line_y), (content_x + content_w - inset, line_y))
             return plan['row_h']
 
