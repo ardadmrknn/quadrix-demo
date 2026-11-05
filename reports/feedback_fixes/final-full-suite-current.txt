@@ -1,0 +1,801 @@
+........................................................................ [  1%]
+........................................................................ [  3%]
+........................................................................ [  5%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+........................................................................ [ 11%]
+........................................................................ [ 13%]
+........................................................................ [ 14%]
+........................................................................ [ 16%]
+........................................................................ [ 18%]
+........................................................................ [ 20%]
+........................................................................ [ 22%]
+........................................................................ [ 24%]
+........................................................................ [ 26%]
+............s........................................................... [ 28%]
+........................................................................ [ 29%]
+........................................................................ [ 31%]
+........................................................................ [ 33%]
+........................................................................ [ 35%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+................................................................s....... [ 42%]
+................................................FFF..................... [ 44%]
+........................................................................ [ 46%]
+.........................................................F..F........... [ 48%]
+........................................................................ [ 50%]
+........................................................................ [ 52%]
+........................................................................ [ 54%]
+........................................................................ [ 56%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+..........................................................F............. [ 61%]
+........................................................................ [ 63%]
+F...............................................................ssssssss [ 65%]
+sss........F...................ssssss................................... [ 67%]
+........................................................................ [ 69%]
+..................................................F...F...........F.FF.. [ 71%]
+........................................................................ [ 72%]
+........................................................................ [ 74%]
+............................................F........................... [ 76%]
+..................F..................................................... [ 78%]
+........................................................................ [ 80%]
+F....................................................................... [ 82%]
+........................................................................ [ 84%]
+.............................ssss....................................... [ 85%]
+...........F.......FFF..F..FF........................................... [ 87%]
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+..............F.........F.....................F......................... [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+.....................................                                    [100%]
+================================== FAILURES ===================================
+__________________ test_full_matrix_parity_with_legacy_chain __________________
+
+    def test_full_matrix_parity_with_legacy_chain():
+        """Her dil x her anahtar x default varyant�: flat == eski zincir."""
+        mod = _with_module()
+        original_lang = str(mod.get_language() or 'en')
+        try:
+            for lang in mod.SUPPORTED_LANGUAGES:
+                mod.set_language(lang)
+>               assert mod._current_language == lang
+E               AssertionError: assert 'tr' == 'en'
+E                 
+E                 - en
+E                 + tr
+
+tests\test_localization_flat_table_parity.py:60: AssertionError
+_____________________ test_fallback_path_semantics_split ______________________
+
+    def test_fallback_path_semantics_split():
+        """\u0130ki d\xfc\u015f\xfc\u015f yolu ayr\u0131m\u0131: yok \u2192 kwargs's\u0131z; var-ama-dil-yok \u2192 kwargs'l\u0131."""
+        mod = _with_module()
+        original_lang = str(mod.get_language() or 'en')
+        original_table = mod.TRANSLATIONS
+        try:
+            mod.set_language('en')
+            synthetic = {
+                'k_nolang': {'fr': 'fr-deger'},      # en/tr yok \u2192 i\xe7 d\xfc\u015f\xfc\u015f
+                'k_empty': {'en': ''},                # bo� string DE�ER
+                'k_plain': {'en': 'EN', 'tr': 'TR'},  # normal isabet
+            }
+            mod.TRANSLATIONS = synthetic
+    
+            # Anahtar hi� yok: kwargs UYGULANMAZ (eski `return default or key`).
+            assert mod.get_text('k_hic_yok', default='D {v}', v=1) == 'D {v}'
+    
+            # Anahtar var ama en/tr yok: default-or-key + kwargs UYGULANIR.
+            assert mod.get_text('k_nolang', default='D {v}', v=1) == 'D 1'
+    
+            # Bo� string VARLIK semanti�i: default'a D��MEZ.
+            assert mod.get_text('k_empty', default='DOLGUN') == ''
+    
+            # Normal isaret.
+>           assert mod.get_text('k_plain') == 'EN'
+E           AssertionError: assert 'TR' == 'EN'
+E             
+E             - EN
+E             + TR
+
+tests\test_localization_flat_table_parity.py:101: AssertionError
+_______________ test_hot_reload_rebind_invalidates_flat_tables ________________
+
+    def test_hot_reload_rebind_invalidates_flat_tables():
+        """TRANSLATIONS yeniden ba�lan�nca flat tablolar d��er (kimlik kap�s�)."""
+        mod = _with_module()
+        original_lang = str(mod.get_language() or 'en')
+        original_table = mod.TRANSLATIONS
+        try:
+            mod.set_language('en')
+            first = mod.get_text('k_probe', default='ILK')
+            assert first == 'ILK'
+            before = mod._get_flat_text_table(mod._current_language)
+    
+            # Hot-reload sim�lasyonu: YEN� dict nesnesi (yeniden ba�lama) �
+            # ayn� anahtar art�k farkl� de�er d�nd�rmeli.
+            rebound = dict(original_table)
+            rebound['k_probe'] = {'en': 'YENI', 'tr': 'YENI_TR'}
+            mod.TRANSLATIONS = rebound
+>           assert mod.get_text('k_probe', default='ILK') == 'YENI'
+E           AssertionError: assert 'YENI_TR' == 'YENI'
+E             
+E             - YENI
+E             + YENI_TR
+
+tests\test_localization_flat_table_parity.py:126: AssertionError
+_______________ test_main_mode_entries_reuse_shared_menu_sound ________________
+
+    def test_main_mode_entries_reuse_shared_menu_sound():
+        tree = _parse(MAIN_PY)
+        seen = {name: 0 for name in TARGET_MODE_CALLS}
+        missing_sound_manager = []
+    
+        for name, call in _iter_target_calls(tree):
+            seen[name] += 1
+            sound_manager_value = _keyword_value(call, "sound_manager")
+            if not isinstance(sound_manager_value, ast.Name) or sound_manager_value.id != "menu_sound":
+                missing_sound_manager.append(f"{name}@L{call.lineno}")
+    
+        unseen = sorted(name for name, count in seen.items() if count == 0)
+        assert not unseen, f"Expected mode entry call sites were not found in src/main.py: {unseen}"
+>       assert not missing_sound_manager, (
+            "Some mode entry call sites do not reuse shared menu_sound: "
+            + ", ".join(missing_sound_manager)
+        )
+E       AssertionError: Some mode entry call sites do not reuse shared menu_sound: OnlinePvPGame@L1107
+E       assert not ['OnlinePvPGame@L1107']
+
+tests\test_mode_entry_shared_sound_manager.py:158: AssertionError
+___ test_gameplay_mode_constructors_reset_pause_duck_before_starting_music ____
+
+    def test_gameplay_mode_constructors_reset_pause_duck_before_starting_music():
+        constructor_targets = [
+            (ROOT / "src/game.py", "Game", "sound", "unduck_music", "_start_music_playlist"),
+            (ROOT / "src/pvp_game.py", "PvPGame", "sound", "unduck_music", "_start_pvp_music"),
+            (ROOT / "src/coop_game.py", "CoopGame", "sound", "unduck_music", "_start_music"),
+            (ROOT / "src/online_pvp_game.py", "OnlinePvPGame", "sound", "unduck_music", "_start_pvp_music"),
+        ]
+    
+        missing_calls = []
+        misordered_calls = []
+    
+        for path, class_name, owner_attr, reset_method, start_method in constructor_targets:
+            init_node = _find_class_init(path, class_name)
+            assert init_node is not None, f"{class_name}.__init__ not found in {path.name}"
+    
+            reset_lines = _find_self_method_call_lines(init_node, owner_attr, reset_method)
+            start_lines = _find_self_method_call_lines(init_node, "", start_method)
+            if not start_lines:
+                for node in ast.walk(init_node):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    func = node.func
+                    if isinstance(func, ast.Attribute) and func.attr == start_method:
+                        owner = func.value
+                        if isinstance(owner, ast.Name) and owner.id == "self":
+                            start_lines.append(node.lineno)
+            start_lines = sorted(start_lines)
+    
+            if not reset_lines:
+                missing_calls.append(class_name)
+                continue
+            if start_lines and reset_lines[0] > start_lines[0]:
+                misordered_calls.append(class_name)
+    
+>       assert not missing_calls, "Pause duck reset missing before music start: " + ", ".join(missing_calls)
+E       AssertionError: Pause duck reset missing before music start: OnlinePvPGame
+E       assert not ['OnlinePvPGame']
+
+tests\test_mode_entry_shared_sound_manager.py:235: AssertionError
+_____ test_on_lobby_list_complete_does_not_join_ambiguous_code_collision ______
+
+    def test_on_lobby_list_complete_does_not_join_ambiguous_code_collision():
+        game = _make_game()
+        game._searching_by_code = True
+        game._search_code = '123456'
+        game._pending_lobby_list = [
+            {'id': 11, 'code': '123456', 'visibility': 'private', 'requires_code': True, 'metadata_ready': True},
+            {'id': 22, 'code': '123456', 'visibility': 'private', 'requires_code': True, 'metadata_ready': True},
+        ]
+    
+        game._on_lobby_list_complete(online_pvp_module.NetEvent('lobby_list_complete', 0, ''))
+    
+        game.net.join_lobby.assert_not_called()
+>       assert 'birden fazla' in game._status_msg.lower()
+E       AssertionError: assert 'birden fazla' in '\u044d\u0442\u043e\u0442 \u043a\u043e\u0434 \u0441\u043e\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u0438\u043c \u043b\u043e\u0431\u0431\u0438'
+E        +  where '\u044d\u0442\u043e\u0442 \u043a\u043e\u0434 \u0441\u043e\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u0438\u043c \u043b\u043e\u0431\u0431\u0438' = <built-in method lower of str object at 0x000001C591A6F7D0>()
+E        +    where <built-in method lower of str object at 0x000001C591A6F7D0> = '\u042d\u0442\u043e\u0442 \u043a\u043e\u0434 \u0441\u043e\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u0438\u043c \u043b\u043e\u0431\u0431\u0438'.lower
+E        +      where '\u042d\u0442\u043e\u0442 \u043a\u043e\u0434 \u0441\u043e\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u0438\u043c \u043b\u043e\u0431\u0431\u0438' = <online_pvp_game.OnlinePvPGame object at 0x000001C5A1B878D0>._status_msg
+
+tests\test_online_pvp_code_search_validation.py:184: AssertionError
+---------------------------- Captured stdout call -----------------------------
+[OnlinePvP] Kod aramas�: 2 lobi aras�nda aran�yor.
+_____ test_validate_joined_lobby_access_rejects_unauthorized_private_join _____
+
+    def test_validate_joined_lobby_access_rejects_unauthorized_private_join():
+        game = _make_game()
+        game.net = types.SimpleNamespace(
+            lobby_id=77,
+            get_lobby_data_for=lambda _lobby_id, key: {
+                'visibility': 'private',
+                'requires_code': '1',
+                'metadata_ready': '1',
+                'lobby_code': '123456',
+            }.get(key, ''),
+        )
+        game._return_to_pvp_lobby_menu = Mock()
+    
+        assert game._validate_joined_lobby_access() is False
+        game._return_to_pvp_lobby_menu.assert_called_once_with()
+>       assert 'kod veya davet gerekli' in game._status_msg.lower()
+E       AssertionError: assert 'kod veya davet gerekli' in '\u0434\u043b\u044f \u044d\u0442\u043e\u0433\u043e \u043f\u0440\u0438\u0432\u0430\u0442\u043d\u043e\u0433\u043e \u043b\u043e\u0431\u0431\u0438 \u043d\u0443\u0436\u0435\u043d \u043a\u043e\u0434 \u0438\u043b\u0438 \u043f\u0440\u0438\u0433\u043b\u0430\u0448\u0435\u043d\u0438\u0435'
+E        +  where '\u0434\u043b\u044f \u044d\u0442\u043e\u0433\u043e \u043f\u0440\u0438\u0432\u0430\u0442\u043d\u043e\u0433\u043e \u043b\u043e\u0431\u0431\u0438 \u043d\u0443\u0436\u0435\u043d \u043a\u043e\u0434 \u0438\u043b\u0438 \u043f\u0440\u0438\u0433\u043b\u0430\u0448\u0435\u043d\u0438\u0435' = <built-in method lower of str object at 0x000001C591A8C270>()
+E        +    where <built-in method lower of str object at 0x000001C591A8C270> = '\u0414\u043b\u044f \u044d\u0442\u043e\u0433\u043e \u043f\u0440\u0438\u0432\u0430\u0442\u043d\u043e\u0433\u043e \u043b\u043e\u0431\u0431\u0438 \u043d\u0443\u0436\u0435\u043d \u043a\u043e\u0434 \u0438\u043b\u0438 \u043f\u0440\u0438\u0433\u043b\u0430\u0448\u0435\u043d\u0438\u0435'.lower
+E        +      where '\u0414\u043b\u044f \u044d\u0442\u043e\u0433\u043e \u043f\u0440\u0438\u0432\u0430\u0442\u043d\u043e\u0433\u043e \u043b\u043e\u0431\u0431\u0438 \u043d\u0443\u0436\u0435\u043d \u043a\u043e\u0434 \u0438\u043b\u0438 \u043f\u0440\u0438\u0433\u043b\u0430\u0448\u0435\u043d\u0438\u0435' = <online_pvp_game.OnlinePvPGame object at 0x000001C5A140DFD0>._status_msg
+
+tests\test_online_pvp_lobby_visibility_metadata.py:411: AssertionError
+__________ test_debug_lobby_click_sets_info_message_without_joining ___________
+
+    def test_debug_lobby_click_sets_info_message_without_joining():
+        game = _make_game()
+        game._lobby_buttons = [
+            {'rect': pygame.Rect(0, 0, 120, 40), 'action': 'debug_lobby'}
+        ]
+    
+        result = game._handle_mouse_click(types.SimpleNamespace(pos=(12, 12)))
+    
+        assert result is None
+>       assert 'fragman' in game._status_msg.lower()
+E       AssertionError: assert 'fragman' in '\u044d\u0442\u043e \u0434\u0435\u043c\u043e-\u043b\u043e\u0431\u0431\u0438 \u043f\u043e\u043a\u0430\u0437\u0430\u043d\u043e \u0434\u043b\u044f \u0442\u0440\u0435\u0439\u043b\u0435\u0440\u0430 steam.'
+E        +  where '\u044d\u0442\u043e \u0434\u0435\u043c\u043e-\u043b\u043e\u0431\u0431\u0438 \u043f\u043e\u043a\u0430\u0437\u0430\u043d\u043e \u0434\u043b\u044f \u0442\u0440\u0435\u0439\u043b\u0435\u0440\u0430 steam.' = <built-in method lower of str object at 0x000001C591A6F690>()
+E        +    where <built-in method lower of str object at 0x000001C591A6F690> = '\u042d\u0442\u043e \u0434\u0435\u043c\u043e-\u043b\u043e\u0431\u0431\u0438 \u043f\u043e\u043a\u0430\u0437\u0430\u043d\u043e \u0434\u043b\u044f \u0442\u0440\u0435\u0439\u043b\u0435\u0440\u0430 Steam.'.lower
+E        +      where '\u042d\u0442\u043e \u0434\u0435\u043c\u043e-\u043b\u043e\u0431\u0431\u0438 \u043f\u043e\u043a\u0430\u0437\u0430\u043d\u043e \u0434\u043b\u044f \u0442\u0440\u0435\u0439\u043b\u0435\u0440\u0430 Steam.' = <online_pvp_game.OnlinePvPGame object at 0x000001C5A0DD4A10>._status_msg
+
+tests\test_online_pvp_trailer_debug_lobbies.py:66: AssertionError
+__ test_survival_panel_and_flash_use_active_canvas_when_window_size_is_stale __
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001C5A026ED90>
+
+    def test_survival_panel_and_flash_use_active_canvas_when_window_size_is_stale(monkeypatch):
+        created_sizes = []
+        original_surface = advanced_modes_module.pygame.Surface
+    
+        mode = advanced_modes_module.SurvivalMode.__new__(advanced_modes_module.SurvivalMode)
+        mode.screen = original_surface((2560, 1440), pygame.SRCALPHA)
+        mode.window_width = 1366
+        mode.window_height = 768
+        mode.game_over = False
+        mode.survival_time = 1000
+        mode.antivirus_flash = 250
+        mode.infected_blocks = {}
+        mode.board_width = 10
+        mode.board_height = 20
+        mode.virus_level = 1
+        mode.consumed_count = 2
+        mode.MAX_CONSUMED = 20
+        mode.consume_time = 60000
+        mode.last_antivirus_score = 0
+        mode.max_infected = 15
+        mode.fog_overlay = False
+        mode.board = SimpleNamespace(score=2000, lines_cleared=4, level=2)
+        mode.get_cell_size = lambda: 24
+        mode.get_board_offset = lambda: (430, 70)
+        mode._draw_survival_panel = lambda: None
+    
+        def surface_spy(size, *args, **kwargs):
+            created_sizes.append(tuple(size))
+            return original_surface(size, *args, **kwargs)
+    
+        # P0-3/P0-4: flash tahsisi Game._get_solid_alpha_surface �zerinden
+        # game.py'nin pygame binding'ine ta��nd�; tam pakette pygame ailesi
+        # conftest taraf�ndan d���r�l�p yeniden import edildi�inde mod�l
+        # kimlikleri ayr��abiliyor. Spy'� hem bu mod�l�n hem Ger�ek Game
+        # taban�n�n pygame'ine kur (kimlik-ba��ms�z g�zlem).
+        import inspect
+        _game_mod = inspect.getmodule(
+            next(cls for cls in mode.__class__.__mro__ if cls.__name__ == 'Game'))
+        _patch_targets = [advanced_modes_module.pygame]
+        if _game_mod is not None and _game_mod.pygame not in _patch_targets:
+            _patch_targets.append(_game_mod.pygame)
+        for _pg in _patch_targets:
+            monkeypatch.setattr(_pg, 'Surface', surface_spy)
+    
+        advanced_modes_module.SurvivalMode.draw_mode_overlay(mode)
+    
+>       assert created_sizes[0] == (2560, 1440)
+E       IndexError: list index out of range
+
+tests\test_phase8_overlay_ui_scaling.py:375: IndexError
+__________________ test_daily_fog_overlay_uses_active_canvas __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001C5A001DAD0>
+
+    def test_daily_fog_overlay_uses_active_canvas(monkeypatch):
+        created_sizes = []
+        original_surface = advanced_modes_module.pygame.Surface
+    
+        mode = advanced_modes_module.DailyChallengeMode.__new__(advanced_modes_module.DailyChallengeMode)
+        mode.screen = original_surface((2560, 1440), pygame.SRCALPHA)
+        mode.window_width = 1366
+        mode.window_height = 768
+        mode.fog_overlay = True
+        mode.game_over = False
+        mode._daily_failed = False
+        mode.draw_mode_info = lambda *args, **kwargs: None
+    
+        def surface_spy(size, *args, **kwargs):
+            created_sizes.append(tuple(size))
+            return original_surface(size, *args, **kwargs)
+    
+        # P0-3/P0-4: fog tahsisi Game._get_solid_alpha_surface �zerinden
+        # game.py'nin pygame binding'ine ta��nd�; tam pakette mod�l kimlikleri
+        # ayr\u0131\u015fabiliyor \u2192 spy'\u0131 hem bu mod\xfcl\xfcn hem Game taban\u0131n\u0131n pygame'ine kur.
+        import inspect
+        _game_mod = inspect.getmodule(
+            next(cls for cls in mode.__class__.__mro__ if cls.__name__ == 'Game'))
+        _patch_targets = [advanced_modes_module.pygame]
+        if _game_mod is not None and _game_mod.pygame not in _patch_targets:
+            _patch_targets.append(_game_mod.pygame)
+        for _pg in _patch_targets:
+            monkeypatch.setattr(_pg, 'Surface', surface_spy)
+    
+        original_super = advanced_modes_module.SurvivalMode.draw_mode_overlay
+        monkeypatch.setattr(advanced_modes_module.SurvivalMode, 'draw_mode_overlay', lambda self: None)
+        try:
+            advanced_modes_module.DailyChallengeMode.draw_mode_overlay(mode)
+        finally:
+            monkeypatch.setattr(advanced_modes_module.SurvivalMode, 'draw_mode_overlay', original_super)
+    
+>       assert created_sizes[0] == (2560, 1440)
+E       IndexError: list index out of range
+
+tests\test_phase8_overlay_ui_scaling.py:482: IndexError
+_ test_mystery_card_workshop_popup_uses_active_canvas_when_window_size_is_stale _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001C59FFDE710>
+
+    def test_mystery_card_workshop_popup_uses_active_canvas_when_window_size_is_stale(monkeypatch):
+        _install_extra_mode_ui_test_stubs(monkeypatch)
+    
+        created_sizes = []
+        original_surface = extra_modes_module.pygame.Surface
+    
+        mode = _build_mystery_mode((2560, 1440), window_size=(1366, 768))
+        mode._card_workshop_active = True
+        mode._card_workshop_peek_active = False
+        mode.mystery_font_large = _make_fake_font(40)
+        mode.mystery_font_small = _make_fake_font(26)
+        mode._get_cached_peek_icon = lambda size: None
+        mode._card_workshop_grid = [[None for _ in range(7)] for _ in range(7)]
+        mode._card_workshop_cursor_x = 0
+        mode._card_workshop_cursor_y = 0
+        mode._card_workshop_count_blocks = lambda: 0
+    
+        def surface_spy(size, *args, **kwargs):
+            created_sizes.append(tuple(size))
+            return original_surface(size, *args, **kwargs)
+    
+        monkeypatch.setattr(extra_modes_module.pygame, 'Surface', surface_spy)
+    
+        extra_modes_module.MysteryMode._draw_card_workshop_popup(mode)
+    
+>       assert created_sizes[0] == (2560, 1440)
+E       assert (594, 616) == (2560, 1440)
+E         
+E         At index 0 diff: 594 != 2560
+E         Use -v to get more diff
+
+tests\test_phase8_overlay_ui_scaling.py:774: AssertionError
+_ test_mystery_piece_selection_popup_uses_active_canvas_when_window_size_is_stale _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001C5A0E08C50>
+
+    def test_mystery_piece_selection_popup_uses_active_canvas_when_window_size_is_stale(monkeypatch):
+        _install_extra_mode_ui_test_stubs(monkeypatch)
+    
+        created_sizes = []
+        original_surface = extra_modes_module.pygame.Surface
+    
+        mode = _build_mystery_mode((2560, 1440), window_size=(1366, 768))
+        mode._piece_selection_active = True
+        mode._future_changer_target_index = 1
+        mode.mystery_font_large = _make_fake_font(40)
+        mode.mystery_font_small = _make_fake_font(26)
+        mode._draw_game_piece_preview = lambda rect, name, hovered=False: None
+    
+        def surface_spy(size, *args, **kwargs):
+            created_sizes.append(tuple(size))
+            return original_surface(size, *args, **kwargs)
+    
+        monkeypatch.setattr(extra_modes_module.pygame, 'Surface', surface_spy)
+    
+        extra_modes_module.MysteryMode._draw_piece_selection_popup(mode)
+    
+>       assert created_sizes[0] == (2560, 1440)
+E       assert (818, 280) == (2560, 1440)
+E         
+E         At index 0 diff: 818 != 2560
+E         Use -v to get more diff
+
+tests\test_phase8_overlay_ui_scaling.py:830: AssertionError
+_____ test_mystery_sniper_overlay_and_instruction_panel_use_active_canvas _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001C5A0038FD0>
+
+    def test_mystery_sniper_overlay_and_instruction_panel_use_active_canvas(monkeypatch):
+        _install_extra_mode_ui_test_stubs(monkeypatch)
+    
+        created_sizes = []
+        original_surface = extra_modes_module.pygame.Surface
+    
+        mode = _build_mystery_mode((2560, 1440), window_size=(1366, 768))
+        mode.board = SimpleNamespace(
+            width=10,
+            height=20,
+            occupancy=[[False for _ in range(10)] for _ in range(20)],
+        )
+        mode._hud_mode_info_area = (2200, 120, 240, 400)
+        mode.get_board_offset = lambda: (430, 70)
+        mode.get_cell_size = lambda: 24
+        mode._sniper_screen_to_cell = lambda pos: None
+    
+        def surface_spy(size, *args, **kwargs):
+            created_sizes.append(tuple(size))
+            return original_surface(size, *args, **kwargs)
+    
+        monkeypatch.setattr(extra_modes_module, 'get_mouse_pos', lambda: (450, 120))
+        monkeypatch.setattr(extra_modes_module, 'get_display_scale_factor', lambda: 1.0)
+        monkeypatch.setattr(extra_modes_module.pygame.mouse, 'set_pos', lambda *args, **kwargs: None)
+        monkeypatch.setattr(extra_modes_module.pygame.mouse, 'set_visible', lambda *args, **kwargs: None)
+        monkeypatch.setattr(extra_modes_module.pygame, 'Surface', surface_spy)
+    
+        extra_modes_module.MysteryMode._draw_sniper_board_overlay(mode)
+    
+>       assert created_sizes[0] == (2560, 1440)
+E       assert (241, 481) == (2560, 1440)
+E         
+E         At index 0 diff: 241 != 2560
+E         Use -v to get more diff
+
+tests\test_phase8_overlay_ui_scaling.py:866: AssertionError
+_____________ TestRenderGeometry.test_ui_preset_tracks_ui_scaling _____________
+
+self = <test_render_geometry_contract.TestRenderGeometry testMethod=test_ui_preset_tracks_ui_scaling>
+
+    def test_ui_preset_tracks_ui_scaling(self):
+        try:
+            ui_scaling.set_ui_scale_preset('large')
+>           self.assertEqual(self._geometry().ui_preset, 'large')
+E           AssertionError: 'normal' != 'large'
+E           - normal
+E           + large
+
+tests\test_render_geometry_contract.py:236: AssertionError
+________________ test_game_modes_inherit_base_right_hud_panel _________________
+
+    def test_game_modes_inherit_base_right_hud_panel():
+        """Kart�n mod yollar�: override etmeyen modlar Game metodunu miras
+        al\u0131r \u2192 birinci test bu yollar\u0131n hepsini kapsar. Override edenler
+        yaln�zca HardcoreMode (game_modes.py) ve CampaignMode
+        (campaign/campaign_mode.py) � kendi testleri a�a��dad�r."""
+        from game import Game
+        from game_modes import SprintMode, UltraMode, ZenMode
+        from game_modes_advanced import SurvivalMode, CascadeMode, DailyChallengeMode
+        from game_modes_extra import Tetris2Mode, MysteryMode, WideMode
+        from tutorial import TutorialMode
+    
+        base_method = Game.__dict__['_draw_right_hud_panel']
+        for cls in (
+            SprintMode, UltraMode, ZenMode,
+            SurvivalMode, CascadeMode, DailyChallengeMode,
+            Tetris2Mode, MysteryMode, WideMode,
+            TutorialMode,
+        ):
+            own = cls.__dict__.get('_draw_right_hud_panel')
+            assert own is None, (
+                f"{cls.__name__} beklenmedik �ekilde _draw_right_hud_panel'i "
+                f"override ediyor � bu test g�ncellenmeli (DUZ-001 kapsam�)."
+            )
+            resolved = cls._draw_right_hud_panel
+>           assert resolved is base_method, (
+                f"{cls.__name__}._draw_right_hud_panel Game temel metodunu "
+                f"��z�mlemeli; farkl� bir metoda i�aret ediyor."
+            )
+E           AssertionError: SprintMode._draw_right_hud_panel Game temel metodunu ��z�mlemeli; farkl� bir metoda i�aret ediyor.
+E           assert <function Game._draw_right_hud_panel at 0x000001C58A4FACA0> is <function Game._draw_right_hud_panel at 0x000001C591101580>
+
+tests\test_right_hud_panel_regression.py:189: AssertionError
+___________ test_save_current_as_defaults_writes_override_snapshot ____________
+
+tmp_path = WindowsPath('C:/Users/arda demirkan/AppData/Local/Temp/pytest-of-arda demirkan/pytest-698/test_save_current_as_defaults_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001C59E4C2610>
+
+    def test_save_current_as_defaults_writes_override_snapshot(tmp_path, monkeypatch):
+        settings_module = _import_real_module('settings_manager')
+        SettingsManager = settings_module.SettingsManager
+    
+        data_dir = tmp_path / 'userdata'
+        monkeypatch.setenv('QUADRIX_DATA_DIR', str(data_dir))
+    
+        sm = SettingsManager()
+        sm.set('ui_scale_preset', 'large')
+        sm.set('das_repeat', 88)
+    
+        path = sm.save_current_as_defaults()
+    
+        assert path is not None
+        override_path = Path(path)
+        assert override_path.exists()
+    
+        payload = json.loads(override_path.read_text(encoding='utf-8'))
+>       assert payload['ui_scale_preset'] == 'compact'
+E       AssertionError: assert 'large' == 'compact'
+E         
+E         - compact
+E         + large
+
+tests\test_settings_user_default_override.py:65: AssertionError
+_____________ test_store_can_purchase_and_equip_legacy_block_skin _____________
+
+    def test_store_can_purchase_and_equip_legacy_block_skin():
+        pygame.init()
+        try:
+            _reset_retro_style_cache()
+            from background_effects import get_shared_falling_blocks_layer
+            from block_skin_assets import LEGACY_BLOCK_APPEARANCE
+            from store_screen import StoreScreen
+    
+            manager = _DummyUserManager()
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            legacy_index = next(index for index, product in enumerate(screen.products) if product.product_id == 'block_skin_legacy_jelly')
+            screen.selected_index = legacy_index
+            screen.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+>           assert screen.is_confirm_open
+E           assert False
+E            +  where False = <src.store_screen.StoreScreen object at 0x000001C5A089F650>.is_confirm_open
+
+tests\test_store_block_products.py:78: AssertionError
+__________________ test_store_screen_purchase_and_equip_flow __________________
+
+    def test_store_screen_purchase_and_equip_flow():
+        pygame.init()
+        try:
+            _reset_retro_style_cache()
+            from store_screen import StoreScreen
+    
+            manager = _DummyUserManager()
+            manager.profile['neural_fragments'] = 700
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            screen.draw()
+            legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+            screen.selected_index = legacy_idx
+            screen.draw()
+    
+            # ENTER on an affordable, unowned product opens confirmation
+            screen.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+>           assert screen.is_confirm_open
+E           assert False
+E            +  where False = <src.store_screen.StoreScreen object at 0x000001C5A6F97510>.is_confirm_open
+
+tests\test_store_screen.py:79: AssertionError
+_____________ test_store_confirm_modal_cancel_keeps_wallet_intact _____________
+
+    def test_store_confirm_modal_cancel_keeps_wallet_intact():
+        pygame.init()
+        try:
+            _reset_retro_style_cache()
+            from store_screen import StoreScreen
+    
+            manager = _DummyUserManager()
+            manager.profile['neural_fragments'] = 700
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            screen.draw()
+            legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+            screen.selected_index = legacy_idx
+            screen.draw()
+            screen.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+>           assert screen.is_confirm_open
+E           assert False
+E            +  where False = <src.store_screen.StoreScreen object at 0x000001C5A1B89410>.is_confirm_open
+
+tests\test_store_screen.py:114: AssertionError
+___________ test_store_confirm_modal_buy_button_completes_purchase ____________
+
+    def test_store_confirm_modal_buy_button_completes_purchase():
+        pygame.init()
+        try:
+            _reset_retro_style_cache()
+            from store_screen import StoreScreen
+    
+            manager = _DummyUserManager()
+            manager.profile['neural_fragments'] = 700
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+            _select_and_render(screen, legacy_idx)
+            _click(screen, screen._cta_rect.center)
+>           assert screen.is_confirm_open
+E           assert False
+E            +  where False = <src.store_screen.StoreScreen object at 0x000001C59A4913D0>.is_confirm_open
+
+tests\test_store_screen.py:138: AssertionError
+__________________ test_store_cta_click_buys_when_affordable __________________
+
+    def test_store_cta_click_buys_when_affordable():
+        pygame.init()
+        try:
+            _reset_retro_style_cache()
+            from store_screen import StoreScreen
+    
+            manager = _DummyUserManager()
+            manager.profile['neural_fragments'] = 700
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+            _select_and_render(screen, legacy_idx)
+            assert screen._cta_rect is not None
+            _click(screen, screen._cta_rect.center)
+>           assert screen.is_confirm_open
+E           assert False
+E            +  where False = <src.store_screen.StoreScreen object at 0x000001C59E4C2910>.is_confirm_open
+
+tests\test_store_screen.py:227: AssertionError
+____ test_store_locked_message_formats_without_raw_placeholders_in_english ____
+
+    def test_store_locked_message_formats_without_raw_placeholders_in_english():
+        pygame.init()
+        previous_lang = 'tr'
+        try:
+            _reset_retro_style_cache()
+            import localization
+            from store_screen import StoreScreen
+    
+            previous_lang = localization.get_language()
+            localization.set_language('en')
+    
+            manager = _DummyUserManager()
+            manager.profile['neural_fragments'] = 50
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+            _select_and_render(screen, legacy_idx)
+            assert screen._cta_rect is not None
+            _click(screen, screen._cta_rect.center)
+    
+            product = screen.products[legacy_idx]
+            assert screen._product_title(product) in screen.status_message
+>           assert '450 Lunar' in screen.status_message
+E           AssertionError: assert '450 Lunar' in 'Klassicheskii vid blokov \u0441\u0442\u043e\u0438\u0442 5400 \u041b\u0443\u043d\u0430\u0440. \u0422\u0435\u043a\u0443\u0449\u0438\u0439 \u0431\u0430\u043b\u0430\u043d\u0441: 50 \u041b\u0443\u043d\u0430\u0440.'
+E            +  where 'Klassicheskii vid blokov \u0441\u0442\u043e\u0438\u0442 5400 \u041b\u0443\u043d\u0430\u0440. \u0422\u0435\u043a\u0443\u0449\u0438\u0439 \u0431\u0430\u043b\u0430\u043d\u0441: 50 \u041b\u0443\u043d\u0430\u0440.' = <src.store_screen.StoreScreen object at 0x000001C5A2923090>.status_message
+
+tests\test_store_screen.py:312: AssertionError
+___________ test_store_cta_click_when_equipped_says_already_in_use ____________
+
+    def test_store_cta_click_when_equipped_says_already_in_use():
+        pygame.init()
+        try:
+            _reset_retro_style_cache()
+            from store_screen import StoreScreen
+    
+            manager = _DummyUserManager()
+            manager.profile['owned_cosmetics'] = ['block_legacy_jelly']
+            manager.profile['equipped_cosmetics'] = {'block_skin': 'block_legacy_jelly'}
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+            _select_and_render(screen, legacy_idx)
+            assert screen._cta_rect is not None
+            _click(screen, screen._cta_rect.center)
+    
+            assert manager.profile['equipped_cosmetics']['block_skin'] == 'block_legacy_jelly'
+            product = screen.products[legacy_idx]
+            assert screen._product_title(product) in screen.status_message
+>           assert 'kullan' in screen.status_message.lower() or 'equip' in screen.status_message.lower()
+E           AssertionError: assert ('kullan' in 'klassicheskii vid blokov \u0443\u0436\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u043e.' or 'equip' in 'klassicheskii vid blokov \u0443\u0436\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u043e.')
+E            +  where 'klassicheskii vid blokov \u0443\u0436\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u043e.' = <built-in method lower of str object at 0x000001C5A0E4FEB0>()
+E            +    where <built-in method lower of str object at 0x000001C5A0E4FEB0> = 'Klassicheskii vid blokov \u0443\u0436\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u043e.'.lower
+E            +      where 'Klassicheskii vid blokov \u0443\u0436\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u043e.' = <src.store_screen.StoreScreen object at 0x000001C5A10181D0>.status_message
+E            +  and   'klassicheskii vid blokov \u0443\u0436\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u043e.' = <built-in method lower of str object at 0x000001C5A0E4FEB0>()
+E            +    where <built-in method lower of str object at 0x000001C5A0E4FEB0> = 'Klassicheskii vid blokov \u0443\u0436\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u043e.'.lower
+E            +      where 'Klassicheskii vid blokov \u0443\u0436\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u043e.' = <src.store_screen.StoreScreen object at 0x000001C5A10181D0>.status_message
+
+tests\test_store_screen.py:343: AssertionError
+____ TestTutorialCardHelpers.test_wrong_choice_includes_recommended_reason ____
+
+self = <test_tutorial_cards.TestTutorialCardHelpers testMethod=test_wrong_choice_includes_recommended_reason>
+
+    def test_wrong_choice_includes_recommended_reason(self):
+        # FAZ 5 � Yanl�� se�imde �nerilen kart�n NEDEN do�ru oldu�u da d�ner.
+        scenario = get_card_choice_scenario('rescue_pick')
+        outcome = evaluate_card_choice(scenario, 'speed_burst_legendary')
+        self.assertFalse(outcome['success'])
+        self.assertTrue(outcome.get('recommended_reason'))
+        # �nerilen kart�n (clear_rows) a��klamas�yla e�le�meli.
+>       self.assertIn('Alt S�p�r', outcome['recommended_reason'])
+E       AssertionError: 'Alt S\xfcp\xfcr' not found in '\u041f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e. Clear Rows \u043d\u0435\u043c\u0435\u0434\u043b\u0435\u043d\u043d\u043e \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u043f\u0440\u043e\u0441\u0442\u0440\u0430\u043d\u0441\u0442\u0432\u043e \u0438 \u0441\u043d\u0438\u0436\u0430\u0435\u0442 \u0434\u0430\u0432\u043b\u0435\u043d\u0438\u0435.'
+
+tests\test_tutorial_cards.py:119: AssertionError
+_______ TestHubLessonMetadata.test_skill_tag_label_handles_unknown_tags _______
+
+self = <test_tutorial_improvements.TestHubLessonMetadata testMethod=test_skill_tag_label_handles_unknown_tags>
+
+    def test_skill_tag_label_handles_unknown_tags(self):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        # Bilinen etiket ger�ek lokalizasyon �zerinden gelir (varsay�lan dil tr).
+>       self.assertEqual(tutorial._skill_tag_label('movement'), 'Hareket')
+E       AssertionError: '\u0414\u0432\u0438\u0436\u0435\u043d\u0438\u0435' != 'Hareket'
+E       - \u0414\u0432\u0438\u0436\u0435\u043d\u0438\u0435
+E       + Hareket
+
+tests\test_tutorial_improvements.py:76: AssertionError
+_____ TestRichResultFeedback.test_behavior_label_localizes_with_fallback ______
+
+self = <test_tutorial_improvements.TestRichResultFeedback testMethod=test_behavior_label_localizes_with_fallback>
+
+    def test_behavior_label_localizes_with_fallback(self):
+        tutorial = TutorialMode.__new__(TutorialMode)
+>       self.assertEqual(tutorial._behavior_label('no_new_holes'), 'Delik a�mad�n.')
+E       AssertionError: '\u0422\u044b \u043d\u0435 \u0441\u043e\u0437\u0434\u0430\u043b \u043d\u043e\u0432\u044b\u0445 \u0434\u044b\u0440.' != 'Delik a\xe7mad\u0131n.'
+E       - \u0422\u044b \u043d\u0435 \u0441\u043e\u0437\u0434\u0430\u043b \u043d\u043e\u0432\u044b\u0445 \u0434\u044b\u0440.
+E       + Delik a�mad�n.
+
+tests\test_tutorial_improvements.py:538: AssertionError
+============================== warnings summary ===============================
+tests/test_duz007_action_metadata_contract.py::test_dpad_up_rotate_survives_keyboard_rebind_end_to_end
+  C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\src\game.py:1833: Warning: pygame.init() has not been called. This function may return incorrect results
+    return pygame.key.key_code(binding)
+
+tests/test_duz007_action_metadata_contract.py::test_dpad_up_rotate_survives_keyboard_rebind_end_to_end
+  C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\src\game.py:503: Warning: pygame.init() has not been called. This function may return incorrect results
+    return pygame.key.key_code(binding)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_flexible_border_ingame.py:6: Manuel oyun i�i do�rulama; otomatik pytest kapsam�nda �al��t�r�lmaz.
+SKIPPED [1] tests\test_lb_write.py:18: Gercek DLL + Steam istemcisi donanim testi; QUADRIX_STEAM_HW_TEST=1 ile acilir
+SKIPPED [11] tests\test_online_pvp_result_majority.py: Skip online pvp tests in demo
+SKIPPED [1] tests\test_p0_screen_containment.py:327: retro_style stub kirlili�i (tam paket may�n�)
+SKIPPED [1] tests\test_p0_screen_containment.py:342: retro_style stub kirlili�i (tam paket may�n�)
+SKIPPED [1] tests\test_p0_screen_containment.py:360: retro_style stub kirlili�i (tam paket may�n�)
+SKIPPED [1] tests\test_p0_screen_containment.py:412: retro_style stub kirlili�i (tam paket may�n�)
+SKIPPED [1] tests\test_p0_screen_containment.py:427: retro_style stub kirlili�i (tam paket may�n�)
+SKIPPED [1] tests\test_p0_screen_containment.py:441: retro_style stub kirlili�i (tam paket may�n�)
+SKIPPED [1] tests\test_steam_net_bridge_session_filter_smoke.py:34: steam_net_bridge C++ mod�l� bulunamad� � Steam SDK olmadan skip edilir
+SKIPPED [1] tests\test_steam_net_bridge_session_filter_smoke.py:41: steam_net_bridge C++ mod�l� bulunamad� � Steam SDK olmadan skip edilir
+SKIPPED [1] tests\test_steam_net_bridge_session_filter_smoke.py:51: steam_net_bridge C++ mod�l� bulunamad� � Steam SDK olmadan skip edilir
+SKIPPED [1] tests\test_steam_net_bridge_session_filter_smoke.py:62: steam_net_bridge C++ mod�l� bulunamad� � Steam SDK olmadan skip edilir
+FAILED tests/test_localization_flat_table_parity.py::test_full_matrix_parity_with_legacy_chain
+FAILED tests/test_localization_flat_table_parity.py::test_fallback_path_semantics_split
+FAILED tests/test_localization_flat_table_parity.py::test_hot_reload_rebind_invalidates_flat_tables
+FAILED tests/test_mode_entry_shared_sound_manager.py::test_main_mode_entries_reuse_shared_menu_sound
+FAILED tests/test_mode_entry_shared_sound_manager.py::test_gameplay_mode_constructors_reset_pause_duck_before_starting_music
+FAILED tests/test_online_pvp_code_search_validation.py::test_on_lobby_list_complete_does_not_join_ambiguous_code_collision
+FAILED tests/test_online_pvp_lobby_visibility_metadata.py::test_validate_joined_lobby_access_rejects_unauthorized_private_join
+FAILED tests/test_online_pvp_trailer_debug_lobbies.py::test_debug_lobby_click_sets_info_message_without_joining
+FAILED tests/test_phase8_overlay_ui_scaling.py::test_survival_panel_and_flash_use_active_canvas_when_window_size_is_stale
+FAILED tests/test_phase8_overlay_ui_scaling.py::test_daily_fog_overlay_uses_active_canvas
+FAILED tests/test_phase8_overlay_ui_scaling.py::test_mystery_card_workshop_popup_uses_active_canvas_when_window_size_is_stale
+FAILED tests/test_phase8_overlay_ui_scaling.py::test_mystery_piece_selection_popup_uses_active_canvas_when_window_size_is_stale
+FAILED tests/test_phase8_overlay_ui_scaling.py::test_mystery_sniper_overlay_and_instruction_panel_use_active_canvas
+FAILED tests/test_render_geometry_contract.py::TestRenderGeometry::test_ui_preset_tracks_ui_scaling
+FAILED tests/test_right_hud_panel_regression.py::test_game_modes_inherit_base_right_hud_panel
+FAILED tests/test_settings_user_default_override.py::test_save_current_as_defaults_writes_override_snapshot
+FAILED tests/test_store_block_products.py::test_store_can_purchase_and_equip_legacy_block_skin
+FAILED tests/test_store_screen.py::test_store_screen_purchase_and_equip_flow
+FAILED tests/test_store_screen.py::test_store_confirm_modal_cancel_keeps_wallet_intact
+FAILED tests/test_store_screen.py::test_store_confirm_modal_buy_button_completes_purchase
+FAILED tests/test_store_screen.py::test_store_cta_click_buys_when_affordable
+FAILED tests/test_store_screen.py::test_store_locked_message_formats_without_raw_placeholders_in_english
+FAILED tests/test_store_screen.py::test_store_cta_click_when_equipped_says_already_in_use
+FAILED tests/test_tutorial_cards.py::TestTutorialCardHelpers::test_wrong_choice_includes_recommended_reason
+FAILED tests/test_tutorial_improvements.py::TestHubLessonMetadata::test_skill_tag_label_handles_unknown_tags
+FAILED tests/test_tutorial_improvements.py::TestRichResultFeedback::test_behavior_label_localizes_with_fallback
+26 failed, 3804 passed, 23 skipped, 2 warnings in 61.32s (0:01:01)
+[OnlinePvP][WARN] event=native_cleanup_failed detail=eski-bridge leave_lobby: AttributeError
