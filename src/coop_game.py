@@ -81,6 +81,7 @@ from gameplay_layout import (
 )
 from ui_scaling import apply_ui_scale_preset, calculate_overlay_metrics, get_scale, resolve_ui_scale_size
 from ui_text_layout import ellipsize_text
+from controller_lobby import compute_controller_lobby_layout
 
 try:
     from gamepad_manager import normalize_gamepad_event_button
@@ -273,6 +274,7 @@ class CoopGame:
         piece_rng_seed: int | None = None,
         is_online_coop: bool = False,
         local_player_role: str | None = None,
+        enable_controller_lobby: bool = False,
     ):
         if not pygame.get_init():
             pygame.init()
@@ -347,6 +349,14 @@ class CoopGame:
 
         # --- Kontroller ---
         self.pvp_controls = self._resolve_controls()
+        self.name_input_active = bool(enable_controller_lobby) and not self._is_online_coop
+        self.current_input = 0 if self.name_input_active else 1
+        self.controller_lobby_complete = not self.name_input_active
+        self.gamepad_assignments = {}
+        self.keyboard_assignment = 'neutral'
+        self.keyboard2_assignment = 'neutral'
+        self.p1_gamepad_idx = self.p2_gamepad_idx = None
+        self.p1_gamepad_instance_id = self.p2_gamepad_instance_id = None
         self._coop_spawner_debug_enabled = False
         self._p1_spawn_halted = False
         self._p2_spawn_halted = False
@@ -2938,6 +2948,38 @@ class CoopGame:
                 self._layout_key = None
                 continue
 
+            if getattr(self, 'name_input_active', False) and not getattr(self, 'controller_lobby_complete', True):
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        return 'menu'
+                    if not getattr(event, 'from_gamepad', False):
+                        if event.key == pygame.K_a:
+                            self.keyboard_assignment = 'neutral' if self.keyboard_assignment == 'P2' else 'P1' if self.keyboard_assignment == 'neutral' else self.keyboard_assignment
+                        elif event.key == pygame.K_d:
+                            self.keyboard_assignment = 'neutral' if self.keyboard_assignment == 'P1' else 'P2' if self.keyboard_assignment == 'neutral' else self.keyboard_assignment
+                        elif event.key == pygame.K_LEFT:
+                            self.keyboard2_assignment = 'neutral' if self.keyboard2_assignment == 'P2' else 'P1' if self.keyboard2_assignment == 'neutral' else self.keyboard2_assignment
+                        elif event.key == pygame.K_RIGHT:
+                            self.keyboard2_assignment = 'neutral' if self.keyboard2_assignment == 'P1' else 'P2' if self.keyboard2_assignment == 'neutral' else self.keyboard2_assignment
+                        elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                            p1 = self.keyboard_assignment == 'P1' or self.keyboard2_assignment == 'P1' or any(v == 'P1' for v in self.gamepad_assignments.values())
+                            p2 = self.keyboard_assignment == 'P2' or self.keyboard2_assignment == 'P2' or any(v == 'P2' for v in self.gamepad_assignments.values())
+                            if p1 and p2:
+                                self._finalize_controller_assignments(); self.controller_lobby_complete = True; self.name_input_active = False
+                    continue
+                if getattr(event, 'from_gamepad', False):
+                    device = getattr(event, 'device_index', None); current = self.gamepad_assignments.get(device, 'neutral')
+                    if getattr(event, 'action', None) in ('move_left', 'menu_left'):
+                        self.gamepad_assignments[device] = 'neutral' if current == 'P2' else 'P1' if current == 'neutral' else current
+                    elif getattr(event, 'action', None) in ('move_right', 'menu_right'):
+                        self.gamepad_assignments[device] = 'neutral' if current == 'P1' else 'P2' if current == 'neutral' else current
+                    elif getattr(event, 'action', None) in ('menu_confirm', 'pause'):
+                        p1 = any(v == 'P1' for v in self.gamepad_assignments.values()) or self.keyboard_assignment == 'P1' or self.keyboard2_assignment == 'P1'
+                        p2 = any(v == 'P2' for v in self.gamepad_assignments.values()) or self.keyboard_assignment == 'P2' or self.keyboard2_assignment == 'P2'
+                        if p1 and p2:
+                            self._finalize_controller_assignments(); self.controller_lobby_complete = True; self.name_input_active = False
+                    continue
+
             if self.paused and not self.game_over and getattr(self, '_pause_settings_active', False):
                 pause_settings_action = self._handle_pause_settings_input(event)
                 if pause_settings_action is not None:
@@ -3123,6 +3165,58 @@ class CoopGame:
 
         return True
 
+    def _finalize_controller_assignments(self):
+        self.p1_gamepad_idx = self.p2_gamepad_idx = None
+        self.p1_gamepad_instance_id = self.p2_gamepad_instance_id = None
+        try:
+            pads = getattr(get_gamepad_manager(), 'gamepads', {}) or {}
+        except Exception:
+            pads = {}
+        for device_index, assignment in self.gamepad_assignments.items():
+            if assignment == 'P1':
+                self.p1_gamepad_idx = device_index
+                self.p1_gamepad_instance_id = getattr(pads.get(device_index), 'instance_id', None)
+            elif assignment == 'P2':
+                self.p2_gamepad_idx = device_index
+                self.p2_gamepad_instance_id = getattr(pads.get(device_index), 'instance_id', None)
+
+    def _draw_controller_lobby(self):
+        width, height = self.window_width, self.window_height
+        scale = self._ui_scale(0.72, 1.14)
+        s = lambda value: max(1, int(round(float(value) * scale)))
+        retro_style.draw_background(self.screen)
+        title = retro_style.draw_title(self.screen, t('coop_controller_select_title'), (width // 2, s(110)))
+        layout = compute_controller_lobby_layout(width, height, title_bottom=title.bottom, scale=scale)
+        panel, columns = layout['panel'], layout['columns']
+        retro_style.draw_glass_panel(self.screen, panel, alpha=195, border_color=UIColors.NEON_CYAN)
+        colors = (UIColors.NEON_CYAN, (150, 150, 150), UIColors.NEON_MAGENTA)
+        items = [[], [], []]
+        for label, assignment in ((t('pvp_keyboard_1'), self.keyboard_assignment), (t('pvp_keyboard_2'), self.keyboard2_assignment)):
+            items[{'P1': 0, 'P2': 2}.get(assignment, 1)].append(label)
+        try:
+            for index, pad in (get_gamepad_manager().gamepads or {}).items():
+                items[{'P1': 0, 'P2': 2}.get(self.gamepad_assignments.get(index, 'neutral'), 1)].append(str(getattr(pad, 'name', 'Gamepad'))[:20])
+        except Exception:
+            pass
+        title_font = UIFonts.get(s(28))
+        item_font = UIFonts.get(s(22))
+        for rect, heading, color, values in zip(columns, (t('pvp_player_1'), t('pvp_unassigned'), t('pvp_player_2')), colors, items):
+            pygame.draw.rect(self.screen, (*color, 80), rect, 2, border_radius=s(12))
+            heading_surface = title_font.render(heading, True, color)
+            self.screen.blit(heading_surface, heading_surface.get_rect(center=(rect.centerx, rect.y - s(25))))
+            y = rect.y + s(20)
+            for value in values:
+                box = pygame.Rect(rect.x + s(10), y, max(1, rect.width - s(20)), s(45))
+                pygame.draw.rect(self.screen, (20, 20, 30, 200), box, border_radius=s(6))
+                pygame.draw.rect(self.screen, (*color, 120), box, 1, border_radius=s(6))
+                surface = item_font.render(value, True, (255, 255, 255))
+                self.screen.blit(surface, surface.get_rect(midleft=(box.x + s(15), box.centery)))
+                y += s(55)
+        ready = bool(items[0]) and bool(items[2])
+        hint = t('lobby_start_hint') if ready else t('lobby_waiting_hint')
+        surface = UIFonts.get(s(26)).render(hint, True, UIColors.NEON_GOLD if ready else (180, 180, 180))
+        self.screen.blit(surface, surface.get_rect(center=(width // 2, min(height - s(24), panel.bottom + s(30)))))
+
     # ==================================================================
     # inject_remote_input — Online Co-op: Host injects guest actions
     # ==================================================================
@@ -3226,6 +3320,8 @@ class CoopGame:
     # ==================================================================
 
     def update(self, delta_time: float) -> None:
+        if getattr(self, 'name_input_active', False) and not getattr(self, 'controller_lobby_complete', True):
+            return
         # Müzik güncelle
         try:
             if self.sound_enabled and not getattr(self, '_suppress_internal_music_tick', False):
@@ -3914,7 +4010,10 @@ class CoopGame:
             pass
 
     def draw(self) -> None:
-        self._render_game()
+        if getattr(self, 'name_input_active', False) and not getattr(self, 'controller_lobby_complete', True):
+            self._draw_controller_lobby()
+        else:
+            self._render_game()
         self._draw_opening_curtain()
         pygame.display.flip()
 

@@ -40,6 +40,7 @@ except Exception:
 
 from ui_scaling import calculate_overlay_metrics, get_projected_effective_scale
 from ui_theme import UIColors, UIFonts
+from controller_lobby import compute_controller_lobby_layout
 from text_cache import render_text
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
@@ -427,7 +428,21 @@ class PvPGame:
         self.player1_name = ""
         self.player2_name = ""
         self.name_input_active = True  # İsim girişi ekranı
-        self.current_input = 1  # Hangi oyuncunun ismini giriyoruz (1 veya 2, 3=mod seçimi, 4=süre ayarı)
+        self.current_input = 0  # 0=kontrolcü seçimi, 1/2=isim, 3=mod, 4=süre
+
+        # Yerel kontrolcü atama lobisi. Atama etiketleri isim alanına
+        # yazılmaz; yalnızca placeholder olarak gösterilir.
+        self.gamepad_assignments = {}
+        self.keyboard_assignment = 'neutral'
+        self.keyboard2_assignment = 'neutral'
+        self.p1_gamepad_idx = None
+        self.p2_gamepad_idx = None
+        self.p1_gamepad_instance_id = None
+        self.p2_gamepad_instance_id = None
+        self.p1_kbd_row = 0
+        self.p1_kbd_col = 0
+        self.p2_kbd_row = 0
+        self.p2_kbd_col = 0
         
         # Zamanlama - Her oyuncu için ayrı hız
         self.fall_time1 = 0
@@ -760,6 +775,27 @@ class PvPGame:
                 self.player2_name = self._default_setup_name(2)
             self.current_input = 3
         self._vs_panel_dirty = True
+
+    def _complete_controller_selection(self) -> bool:
+        p1_has_input = self.keyboard_assignment == 'P1' or self.keyboard2_assignment == 'P1' or any(v == 'P1' for v in self.gamepad_assignments.values())
+        p2_has_input = self.keyboard_assignment == 'P2' or self.keyboard2_assignment == 'P2' or any(v == 'P2' for v in self.gamepad_assignments.values())
+        if not (p1_has_input and p2_has_input):
+            return False
+        self._finalize_controller_assignments()
+        self.player1_name = ''
+        self.player2_name = ''
+        self.current_input = 1
+        self._vs_panel_dirty = True
+        try:
+            self.sound.play('confirm')
+        except Exception:
+            pass
+        return True
+
+    @staticmethod
+    def _name_field_display(value: str, controller_label: str) -> tuple[str, bool]:
+        value = str(value or '').strip()
+        return (value, True) if value else (str(controller_label or ''), False)
 
     def _ensure_pause_settings_screen(self):
         pause_settings = getattr(self, '_pause_settings_screen', None)
@@ -2207,8 +2243,34 @@ class PvPGame:
                 controls1 = self.pvp_controls['player1']
                 controls2 = self.pvp_controls['player2']
                 demobot_active = self._is_player1_demobot_active()
+                is_gamepad_event = bool(getattr(event, 'from_gamepad', False))
+                gp_dev_idx = getattr(event, 'device_index', None)
+                gp_action = getattr(event, 'action', None)
                 # İsim girişi ekranındayken
                 if self.name_input_active:
+                    if self.current_input == 0:
+                        if event.key == pygame.K_ESCAPE:
+                            return 'menu'
+                        if not is_gamepad_event:
+                            if event.key == pygame.K_a:
+                                self.keyboard_assignment = 'neutral' if self.keyboard_assignment == 'P2' else 'P1' if self.keyboard_assignment == 'neutral' else self.keyboard_assignment
+                            elif event.key == pygame.K_d:
+                                self.keyboard_assignment = 'neutral' if self.keyboard_assignment == 'P1' else 'P2' if self.keyboard_assignment == 'neutral' else self.keyboard_assignment
+                            elif event.key == pygame.K_LEFT:
+                                self.keyboard2_assignment = 'neutral' if self.keyboard2_assignment == 'P2' else 'P1' if self.keyboard2_assignment == 'neutral' else self.keyboard2_assignment
+                            elif event.key == pygame.K_RIGHT:
+                                self.keyboard2_assignment = 'neutral' if self.keyboard2_assignment == 'P1' else 'P2' if self.keyboard2_assignment == 'neutral' else self.keyboard2_assignment
+                            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                                self._complete_controller_selection()
+                        else:
+                            current = self.gamepad_assignments.get(gp_dev_idx, 'neutral')
+                            if gp_action in ('move_left', 'menu_left'):
+                                self.gamepad_assignments[gp_dev_idx] = 'neutral' if current == 'P2' else 'P1' if current == 'neutral' else current
+                            elif gp_action in ('move_right', 'menu_right'):
+                                self.gamepad_assignments[gp_dev_idx] = 'neutral' if current == 'P1' else 'P2' if current == 'neutral' else current
+                            elif gp_action in ('menu_confirm', 'pause'):
+                                self._complete_controller_selection()
+                        continue
                     if event.key == pygame.K_ESCAPE:
                         return 'menu'  # Ana menüye dön
                     
@@ -5354,6 +5416,23 @@ class PvPGame:
         
         print("PvP oyunu tamamen sıfırlandı!")
     
+    def _finalize_controller_assignments(self):
+        """Persist selected gamepad device/index and stable SDL identity."""
+        self.p1_gamepad_idx = self.p2_gamepad_idx = None
+        self.p1_gamepad_instance_id = self.p2_gamepad_instance_id = None
+        try:
+            from gamepad_manager import get_gamepad_manager
+            pads = getattr(get_gamepad_manager(), 'gamepads', {}) or {}
+        except Exception:
+            pads = {}
+        for device_index, assignment in self.gamepad_assignments.items():
+            if assignment == 'P1':
+                self.p1_gamepad_idx = device_index
+                self.p1_gamepad_instance_id = getattr(pads.get(device_index), 'instance_id', None)
+            elif assignment == 'P2':
+                self.p2_gamepad_idx = device_index
+                self.p2_gamepad_instance_id = getattr(pads.get(device_index), 'instance_id', None)
+
     def draw_name_input(self):
         """Retro stile uygun PvP isim giriş ekranı."""
         width, height = self.window_width, self.window_height
@@ -5365,6 +5444,43 @@ class PvPGame:
         if self.effects_enabled and self.name_background_fx:
             self.name_background_fx.update(self.screen)
             self.name_background_fx.draw(self.screen)
+
+        if self.current_input == 0:
+            title_rect = retro_style.draw_title(self.screen, t('pvp_title_controller_select'), (width // 2, s(110)))
+            layout = compute_controller_lobby_layout(width, height, title_bottom=title_rect.bottom, scale=ui_scale)
+            panel_rect = layout['panel']
+            retro_style.draw_glass_panel(self.screen, panel_rect, alpha=195, border_color=UIColors.NEON_CYAN)
+            columns = layout['columns']
+            colors = (UIColors.NEON_CYAN, (150, 150, 150), UIColors.NEON_MAGENTA)
+            headings = (t('pvp_player_1'), t('pvp_unassigned'), t('pvp_player_2'))
+            items = [[], [], []]
+            for label, assignment in ((t('pvp_keyboard_1'), self.keyboard_assignment), (t('pvp_keyboard_2'), self.keyboard2_assignment)):
+                items[{'P1': 0, 'P2': 2}.get(assignment, 1)].append(label)
+            try:
+                from gamepad_manager import get_gamepad_manager
+                for dev_idx, pad in (get_gamepad_manager().gamepads or {}).items():
+                    items[{'P1': 0, 'P2': 2}.get(self.gamepad_assignments.get(dev_idx, 'neutral'), 1)].append(str(getattr(pad, 'name', 'Gamepad'))[:20])
+            except Exception:
+                pass
+            title_font = UIFonts.get(s(28, minimum=14))
+            item_font = UIFonts.get(s(22, minimum=12))
+            for rect, heading, color, values in zip(columns, headings, colors, items):
+                pygame.draw.rect(self.screen, (*color, 80), rect, 2, border_radius=s(12))
+                heading_surf = title_font.render(heading, True, color)
+                self.screen.blit(heading_surf, heading_surf.get_rect(center=(rect.centerx, rect.y - s(25))))
+                y = rect.y + s(20)
+                for value in values:
+                    box = pygame.Rect(rect.x + s(10), y, max(1, rect.width - s(20)), s(45))
+                    pygame.draw.rect(self.screen, (20, 20, 30, 200), box, border_radius=s(6))
+                    pygame.draw.rect(self.screen, (*color, 120), box, 1, border_radius=s(6))
+                    text_surf = item_font.render(value, True, (255, 255, 255))
+                    self.screen.blit(text_surf, text_surf.get_rect(midleft=(box.x + s(15), box.centery)))
+                    y += s(55)
+            ready = bool(items[0]) and bool(items[2])
+            hint = t('lobby_start_hint') if ready else t('lobby_waiting_hint')
+            hint_surf = UIFonts.get(s(26, minimum=14)).render(hint, True, UIColors.NEON_GOLD if ready else (180, 180, 180))
+            self.screen.blit(hint_surf, hint_surf.get_rect(center=(width // 2, min(height - s(24), panel_rect.bottom + s(30)))))
+            return
 
         # Adım 3 ve 4 için farklı başlık
         if self.current_input >= 3:
@@ -5411,22 +5527,35 @@ class PvPGame:
             self._name_field1_rect = field1.copy()
             self._name_field2_rect = field2.copy()
 
+            p1_label = t('pvp_player1_wasd')
+            p1_keys = ['W', 'A', 'S', 'D']
+            if self.p1_gamepad_idx is not None:
+                p1_label, p1_keys = 'Gamepad P1', ['DPAD', 'A', 'B']
+            elif self.keyboard2_assignment == 'P1':
+                p1_label, p1_keys = 'Klavye 2 (Yön)', ['UP', 'DN', 'LT', 'RT']
+            p2_label = t('pvp_player2_arrows')
+            p2_keys = ['UP', 'DN', 'LT', 'RT']
+            if self.p2_gamepad_idx is not None:
+                p2_label, p2_keys = 'Gamepad P2', ['DPAD', 'A', 'B']
+            elif self.keyboard_assignment == 'P2':
+                p2_label, p2_keys = 'Klavye 1 (WASD)', ['W', 'A', 'S', 'D']
+
             self._draw_name_field(
                 field1,
-                t('pvp_player1_wasd'),
+                p1_label,
                 self.player1_name,
                 UIColors.NEON_CYAN,
                 self.current_input == 1,
-                ['W', 'A', 'S', 'D'],
+                p1_keys,
                 label1_y,
             )
             self._draw_name_field(
                 field2,
-                t('pvp_player2_arrows'),
+                p2_label,
                 self.player2_name,
                 UIColors.NEON_MAGENTA,
                 self.current_input == 2,
-                ['UP', 'DN', 'LT', 'RT'],
+                p2_keys,
                 label2_y,
             )
 
@@ -5498,15 +5627,17 @@ class PvPGame:
             pygame.draw.line(field_surface, highlight_color, (s(12), 1), (rect.width - s(12), 1))
 
         # İsim metni
-        display = value if value else t('pvp_enter_name')
-        text_color = UIColors.TEXT_PRIMARY if value else (100, 110, 130)
+        display, has_value = self._name_field_display(value, label)
+        if not has_value:
+            display = display or t('pvp_enter_name')
+        text_color = UIColors.TEXT_PRIMARY if has_value else (100, 110, 130)
 
         if is_active:
             # Yanıp sönen cursor
             cursor_visible = int(time.time() * 2) % 2 == 0
             if cursor_visible:
                 display += '|'
-            text_color = (255, 255, 255)
+            text_color = (255, 255, 255) if has_value else (150, 160, 180)
 
         name_font = retro_style.get_font(s(36, minimum=16), bold=True)
         clipped = display[:18]

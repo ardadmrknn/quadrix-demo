@@ -3482,6 +3482,7 @@ def main():
                     user_manager,
                     settings_manager,
                     sound_manager=menu_sound,
+                    enable_controller_lobby=True,
                 )
                 perf_telemetry.record_slow_phase(state, 'launch_coop_ms', (time.perf_counter() - _t_launch) * 1000.0)
                 state = 'coop'
