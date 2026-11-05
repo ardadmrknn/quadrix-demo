@@ -18,6 +18,17 @@ from dataclasses import dataclass
 
 GAMEPLAY_OCCUPANCY_REFERENCE_SIZE = (1366.0, 768.0)
 
+# I-46 (S-21): Tahtanın üstünde gizli satır gölge şeridi için ayrılan bant
+# yüksekliği, bir hücrenin bu oranı kadardır. Şerit "ince" kalmalı; tahtanın
+# üstünde iki gizli satırı tek bantta gösterir. Yerleşim bu kadar payı üstte
+# rezerve eder, tahta ve yan HUD birlikte aşağı kayar.
+HIDDEN_STRIP_CELL_RATIO = 0.5
+
+
+def hidden_strip_height_for_cell_size(cell_size: int) -> int:
+    """Gizli satır şeridinin piksel yüksekliği (en az 1 px)."""
+    return max(1, int(round(max(1, int(cell_size)) * HIDDEN_STRIP_CELL_RATIO)))
+
 
 def _coerce_size(size: tuple[int, int] | list[int]) -> tuple[int, int]:
     width = max(1, int(size[0]))
@@ -71,6 +82,8 @@ class SinglePlayerLayoutMetrics:
     logical_panel_width: int
     pixel_ratio: float
     occupancy_scale: float
+    hidden_strip_height: int = 0
+    hidden_strip_gap: int = 0
 
 
 @dataclass(frozen=True)
@@ -250,6 +263,20 @@ def compute_single_player_layout(
     hud_scale = _clamp_float(logical_panel_width / 220.0, 0.72, 1.18)
     hud_px_scale = float(hud_scale) * float(pixel_ratio)
 
+    # I-46 (S-21): Görünür alanın üstüne taşan gizli satırlar için tahta ve yan
+    # HUD birlikte aşağı kaydırılır. Kaydırma miktarı hücre boyuna orantılıdır
+    # (sabit piksel yok) ve yalnız ÜSTTE yer açar — tahtanın büyümesini
+    # engellemez, çünkü cell_size bu hesaptan ÖNCE sabitlenmiştir. Alt boşluk
+    # her çözünürlükte üst boşluktan büyük olduğu için kayma tahtayı ekrandan
+    # çıkarmaz; yine de taşma olursa şerit güvenliği için kaydırma kırpılır.
+    hidden_strip_height_px = hidden_strip_height_for_cell_size(cell_size)
+    hidden_strip_gap_px = max(1, int(round(float(panel_gap_logical) * 0.4 * scale_x)))
+    strip_headroom_px = hidden_strip_height_px + hidden_strip_gap_px
+    max_shift_px = max(0, int(active_h) - (board_y + board_height_px) - outer_margin_px)
+    strip_shift_px = min(strip_headroom_px, max_shift_px)
+    board_y += strip_shift_px
+    panel_y += strip_shift_px
+
     return SinglePlayerLayoutMetrics(
         cell_size=cell_size,
         board_x=board_x,
@@ -269,6 +296,8 @@ def compute_single_player_layout(
         logical_panel_width=logical_panel_width,
         pixel_ratio=pixel_ratio,
         occupancy_scale=occupancy_scale,
+        hidden_strip_height=hidden_strip_height_px,
+        hidden_strip_gap=hidden_strip_gap_px,
     )
 
 
@@ -343,8 +372,10 @@ def compute_coop_layout(
 __all__ = [
     'CoopLayoutMetrics',
     'GAMEPLAY_OCCUPANCY_REFERENCE_SIZE',
+    'HIDDEN_STRIP_CELL_RATIO',
     'SinglePlayerLayoutMetrics',
     'compute_coop_layout',
     'compute_single_player_layout',
     'get_display_pixel_ratio',
+    'hidden_strip_height_for_cell_size',
 ]

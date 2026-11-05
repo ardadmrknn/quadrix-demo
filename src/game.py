@@ -105,6 +105,12 @@ from screen_shake import (
 
 GAMEPLAY_UI_REFERENCE_SIZE = (1366.0, 768.0)
 
+# I-46 (S-21): Gizli satır şeridi görünürlüğü. Alfa 0.55 sabit (kılavuz onayı:
+# "blok renginde %55 alfalı ince şerit"); kuantize edilir çünkü blit öncesi
+# alpha kanalı 8 bit — 0.55 * 255 = 140.25 → 140. Kuantizasyon cache anahtarını
+# da sabitler, aksi halde aynı görsel alfa her karede yeni Surface üretirdi.
+HIDDEN_STRIP_ALPHA = 140
+
 
 def _gp_binding_button_value(raw, default):
     """Gamepad ayarlarındaki buton değerini güvenli int'e çöz (kare-başı
@@ -973,6 +979,58 @@ class Game:
             old_key = self._solid_alpha_surface_cache_order.pop(0)
             self._solid_alpha_surface_cache.pop(old_key, None)
         return surface
+
+    def _draw_hidden_row_strip(self, offset_x: int, offset_y: int, cell_size: int) -> None:
+        """I-46: Görünür tepenin üstüne taşan gizli satırları ince şerit olarak çiz.
+
+        S-21 yerleşim kararı gereği tahta `hidden_strip_height + hidden_strip_gap`
+        kadar aşağı kaydırıldı; bant tam buraya oturur. Dolu sütun şerit çizer,
+        boş sütun hiçbir şey çizmez. `show_ghost` ayarından bağımsızdır (bu
+        kilitli blok bilgisidir, hayalet parça değil).
+
+        Kare başına tahsis yok: tek hücrelik yüzey `_get_solid_alpha_surface`
+        LRU cache'inden gelir (anahtar = boyut + kuantize alfa). Renk gizli
+        satırın görünür tahtaya en yakın dolu hücresinden alınır; iki gizli
+        satır tek bantta birleştiği için üstteki satırın rengi baskın olurdu.
+        """
+        board = getattr(self, 'board', None)
+        hidden_occupancy = getattr(board, 'hidden_occupancy', None)
+        hidden_grid = getattr(board, 'hidden_grid', None)
+        if not hidden_occupancy or not hidden_grid:
+            return
+
+        layout = self._get_gameplay_layout_metrics()
+        strip_h = int(getattr(layout, 'hidden_strip_height', 0) or 0)
+        strip_gap = int(getattr(layout, 'hidden_strip_gap', 0) or 0)
+        if strip_h <= 0:
+            return
+
+        strip_y = int(offset_y) - strip_gap - strip_h
+        # Yerleşim kaydırması alt taşma için kırpılmışsa şerit ekran dışına
+        # çıkabilir; üst kenara yapıştırıp bandı görünür tut (kaydırma zaten
+        # strip_headroom kadar ancak yer açabildi).
+        strip_y = max(0, strip_y)
+        block_w = max(1, int(cell_size) - 2)
+        columns = min(len(hidden_occupancy[0]) if hidden_occupancy else 0, self.board_width)
+
+        for col in range(columns):
+            color = None
+            # Alttan (görünür tahtaya en yakın gizli satırdan) yukarı tara.
+            for row in range(len(hidden_occupancy) - 1, -1, -1):
+                try:
+                    if hidden_occupancy[row][col]:
+                        color = hidden_grid[row][col]
+                        break
+                except (IndexError, TypeError):
+                    continue
+            if color is None or color == BLACK:
+                continue
+            surface = self._get_solid_alpha_surface(
+                (block_w, strip_h), (*tuple(color)[:3], HIDDEN_STRIP_ALPHA)
+            )
+            self.screen.blit(
+                surface, (int(offset_x) + col * int(cell_size) + 1, strip_y)
+            )
 
     def _get_rounded_rect_surface(self, size: tuple[int, int], color, border_radius: int = 0, width: int = 0) -> pygame.Surface:
         if not hasattr(self, '_rounded_rect_surface_cache') or self._rounded_rect_surface_cache is None:
@@ -5415,7 +5473,12 @@ class Game:
         
         board_width = self.board_width * cell_size  # Dinamik genişlik
         board_height = self.board_height * cell_size  # Dinamik yükseklik
-        
+
+        # I-46 (S-21): Gizli satır gölge şeridi. Tahtanın arka planından ÖNCE
+        # çizilir; bant tahta gövdesinin dışında (üstünde) kaldığı için
+        # birbirlerini örtmezler.
+        self._draw_hidden_row_strip(offset_x, offset_y, cell_size)
+
         # Oyun tahtası arka planı (siyah) - esnek sınır GÖRSEL DEĞİŞİKLİK YAPMAZ
         board_rect = pygame.Rect(offset_x, offset_y, board_width, board_height)
         if getattr(self.draw_board_background, "__func__", None) is Game.draw_board_background:

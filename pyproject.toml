@@ -47,6 +47,7 @@ markers = [
     "quadrix_phase4: phase 4 randomizer tests",
     "quadrix_phase5: phase 5 HUD and navigation tests",
     "quadrix_phase6: phase 6 mode and localization tests",
+    "quadrix_phase6b: phase 6b balance and hardening tests",
     "quadrix_phase7: phase 7 campaign scan tests",
 ]
 
