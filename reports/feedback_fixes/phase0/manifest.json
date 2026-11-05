@@ -35,9 +35,9 @@
     "test(faz0): demo baseline ve test kapılarını kur"
   ],
   "latest_verification": {
-    "commit_sha": "6033ead",
+    "commit_sha": "e889448e8463b06412d83e00f84024e5e359a9cd",
     "remote_ref_verified": true,
-    "marker_command": "python -m pytest tests/feedback_fixes --strict-markers -q -m phase-marker-cumulative",
+    "marker_command": "python -m pytest tests/feedback_fixes --strict-markers -q -m \"quadrix_phase0 or quadrix_phase1 or quadrix_phase2 or quadrix_phase3 or quadrix_phase4 or quadrix_phase5 or quadrix_phase6 or quadrix_phase7\"",
     "marker_exit_code": 0,
     "marker_result": "82 passed",
     "compileall_command": "python -m compileall -q src tests",
