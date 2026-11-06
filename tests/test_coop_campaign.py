@@ -237,6 +237,7 @@ _bs.TextureRenderCache = lambda: {}
 import renderers.jelly_renderer as _jr
 _jr.draw_jelly_block = lambda *a, **kw: None
 _jr.draw_jelly_border = lambda *a, **kw: None
+_jr.draw_dark_block_outline = lambda *a, **kw: False
 
 # sweep_effects stub
 import sweep_effects as _se
