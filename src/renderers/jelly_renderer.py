@@ -221,6 +221,8 @@ def draw_jelly_block(
     if cached is not None:
         _JELLY_BLOCK_CACHE.move_to_end(key)
         screen.blit(cached, (x, y))
+        # Koyu renk: gölgeyle AYNI beyaz dış kontur (opaklığa dokunulmaz).
+        draw_dark_block_outline(screen, x, y, size, color)
         return
     surf = _render_block_surface(size, color, appearance_key)
     _JELLY_BLOCK_CACHE[key] = surf
@@ -228,6 +230,8 @@ def draw_jelly_block(
     while len(_JELLY_BLOCK_CACHE) > _JELLY_BLOCK_CACHE_MAX:
         _JELLY_BLOCK_CACHE.popitem(last=False)
     screen.blit(surf, (x, y))
+    # Koyu renk: gölgeyle AYNI beyaz dış kontur (opaklığa dokunulmaz).
+    draw_dark_block_outline(screen, x, y, size, color)
 
 
 def _clamp_color(r: float, g: float, b: float) -> Color:
@@ -436,6 +440,9 @@ def draw_jelly_border(
         _draw_legacy_jelly_border(screen, x, y, size, color)
     else:
         _draw_modern_jelly_border(screen, x, y, size, color)
+    # Koyu renk: doku üzerine çizilen kenar da beyaz dış kontur alır
+    # (opaklığa dokunulmaz — yalnız renk koyuluğuna göre).
+    draw_dark_block_outline(screen, x, y, size, color)
 
 
 def _draw_modern_jelly_border(screen: pygame.Surface, x: int, y: int, size: int, color: Color) -> None:

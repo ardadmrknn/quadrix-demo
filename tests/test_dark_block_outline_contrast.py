@@ -108,23 +108,37 @@ def test_dark_block_gets_white_outline_pixels():
     assert max(edge) > 120, f'kenar beyaz kontur beklenir, gelen {edge}'
 
 
-def test_blocks_themselves_keep_their_neon_edge():
-    """Blok GÖVDESİ kontur almaz — yalnız gölge alır (kullanıcı kararı).
+def test_dark_block_BODY_also_gets_outline():
+    """KULLANICI KARARI (2026-11-06): koyu renkli YERLEŞMİŞ BLOK da kontur alır.
 
-    Regresyon kilidi: ilk uygulamada `draw_jelly_block` de kontur çiziyordu;
-    kullanıcı bunu reddetti ("beyaz outline gölge odaklı olmalıydı").
+    Gölgeyle aynı davranış — opaklığa dokunulmaz, yalnız renk koyuluğuna göre
+    beyaz dış kontur eklenir. Açık renkler mevcut neon kenarını korur.
     """
     surf = _surface()
     surf.fill((0, 0, 0))
-    orig = jr.draw_dark_block_outline
-    calls = []
-    jr.draw_dark_block_outline = lambda *a, **k: calls.append(a) or True
-    try:
-        jr.draw_jelly_block(surf, 4, 4, 32, (0, 0, 40))
-        jr.draw_jelly_border(surf, 4, 4, 32, (0, 0, 40))
-    finally:
-        jr.draw_dark_block_outline = orig
-    assert calls == [], f'blok/doku yolu kontur ÇİZMEMELİ, çağrılar: {calls}'
+    jr.draw_jelly_block(surf, 4, 4, 32, (60, 10, 60))       # koyu mor
+    dark_edge = surf.get_at((4, 4))[:3]
+    assert max(dark_edge) > 120, f'koyu blok beyaz kontur almalı, gelen {dark_edge}'
+
+    light = _surface()
+    light.fill((0, 0, 0))
+    jr.draw_jelly_block(light, 4, 4, 32, (255, 193, 7))     # parlak sarı
+    light_edge = light.get_at((4, 4))[:3]
+    # Açık renkte kontur BEYAZ olmamalı (mevcut neon kenar korunur).
+    assert not (light_edge[0] > 240 and light_edge[1] > 240 and light_edge[2] > 240), \
+        f'parlak sarı bloğa beyaz kontur eklenmemeli, gelen {light_edge}'
+
+
+def test_block_outline_does_not_change_opacity():
+    """Kontur yalnız dış hat; gövde opaklığı/pikseli DEĞİŞMEZ."""
+    surf = _surface()
+    surf.fill((0, 0, 0))
+    jr._JELLY_BLOCK_CACHE.clear()
+    jr.draw_jelly_block(surf, 4, 4, 32, (60, 10, 60))
+    # Merkez piksel: neon kenar rengi (beyaz kontur değil)
+    center = surf.get_at((4 + 16, 4 + 16))[:3]
+    edge = surf.get_at((4, 4))[:3]
+    assert center != edge, 'kontur yalnız dış hatta olmalı, gövdeye taşmamalı'
 
 
 def test_draw_dark_block_outline_returns_false_for_light_color():
@@ -134,18 +148,13 @@ def test_draw_dark_block_outline_returns_false_for_light_color():
     assert surf.get_at((0, 0))[:3] == (0, 0, 0)
 
 
-def test_border_path_does_not_add_outline():
-    """Doku üzerine çizilen kenar yolu da BLOK gövdesidir → kontur almaz."""
+def test_border_path_also_outlines_dark_textured_cells():
+    """Doku üzerine çizilen kenar yolu da koyu renkte beyaz kontur alır."""
     surf = _surface()
     surf.fill((0, 0, 0))
-    calls = []
-    orig = jr.draw_dark_block_outline
-    jr.draw_dark_block_outline = lambda *a, **k: calls.append(a) or True
-    try:
-        jr.draw_jelly_border(surf, 4, 4, 32, (0, 0, 40))
-    finally:
-        jr.draw_dark_block_outline = orig
-    assert calls == [], 'doku kenarı blok gövdesidir; gölge konturu çizmemeli'
+    jr.draw_jelly_border(surf, 4, 4, 32, (10, 50, 30))       # koyu yeşil
+    edge = surf.get_at((4, 4))[:3]
+    assert max(edge) > 120, f'doku kenarı beyaz kontur beklenir, gelen {edge}'
 
 
 # ── 5) Gölge: ÖLÇÜM GERÇEK EKRAN RENGİ ÜZERİNDEN ────────────────────────────
