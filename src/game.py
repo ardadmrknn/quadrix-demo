@@ -4280,7 +4280,7 @@ class Game:
                     segments = max(1, h // 4)
                     segment_height = h / segments
                     for i in range(segments):
-                        seg_alpha = int(255 * (1 - i / segments))
+                        seg_alpha = int(alpha * (1 - i / segments))
                         y_pos = int(i * segment_height)
                         seg_h = int(segment_height) + 1
                         trail_surface.fill((*bright_color, seg_alpha), (0, y_pos, w, seg_h))
