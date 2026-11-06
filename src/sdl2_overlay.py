@@ -1172,6 +1172,26 @@ def _restore_window_state(prev_state):
         _diag_log(f"_restore_window_state: rollback kısmi başarısız ({exc})")
 
 
+def _unzoom_visible_window() -> bool:
+    """Görünür SDL2 penceresindeki maximize/minimize durumunu kaldır.
+
+    Kare başına DEĞİL — yalnız tam ekrana geçiş intent'inde çalışır.
+    NEDEN Win32 ile durum okunmuyor: overlay mimarisinde `pygame.display.
+    get_wm_info()` GİZLİ set_mode penceresinin HWND'sini döndürür; görünür
+    pencere ayrı bir `_sdl2.Window`dur. Bunun yerine SDL üzerinden normalize
+    edilir: `Window.restore()` normal durumdaki pencerede NO-OP'tur (ölçüldü)
+    ve minimize/maximize'de kayıtlı dikdörtgene döndürür.
+    """
+    if _window is None:
+        return False
+    try:
+        _window.restore()
+        return True
+    except Exception as exc:
+        _diag_log(f"apply_window_intent: restore başarısız ({exc})")
+        return False
+
+
 def apply_window_intent(
     width: int,
     height: int,
@@ -1254,6 +1274,12 @@ def apply_window_intent(
         return False
 
     prev_state = (cur_size, cur_borderless, cur_resizable, cur_pos)
+    # Elle maximize edilmiş pencereden borderless tam ekrana geçerken maximize'i
+    # ÖNCE kaldır (yalnız borderless/size/position yazmak maximize'i kaldırmaz;
+    # IsZoomed=True kalır ve içerik kayar — canlı HWND ölçümü).
+    _was_unzoomed = False
+    if want_borderless and not cur_borderless:
+        _was_unzoomed = _unzoom_visible_window()
     try:
         # Uygulama sırası: kenar → resizable → boyut → konum.
         # (window.pyi notu: SDL fullscreen durumundaki pencerenin kenarı
@@ -1271,6 +1297,14 @@ def apply_window_intent(
         _diag_log(f"apply_window_intent: pencere güncellenemedi ({exc}) → rollback")
         _restore_window_state(prev_state)
         return False
+
+    # Konum çivisi: SDL, maximize kaldırıldıktan sonra kayıtlı konumu yeniden
+    # uygulayabiliyor; tam ekranda yerleşim (0,0) olmak ZORUNDA.
+    if want_borderless and _was_unzoomed and want_pos is not None:
+        try:
+            _window.position = want_pos
+        except Exception:
+            pass
 
     # Gerçek boyutu geri oku: SDL kısıtları (min/max boyut, work-area)
     # istenen boyutu değiştirmiş olabilir.

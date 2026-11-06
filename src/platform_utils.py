@@ -850,6 +850,93 @@ def _get_windows_active_hwnd() -> int | None:
     return None
 
 
+def _windows_setmode_window_zoomed() -> bool | None:
+    """`set_mode` penceresi maximize/minimize mi? (True/False; ölçülemezse None).
+
+    Yalnız `set_mode` (set_mode penceresinin GÖRÜNÜR olduğu) yolundan çağrılır;
+    orada `pygame.display.get_wm_info()['window']` doğru HWND'yi verir.
+    Overlay mimarisinde bu çağrı YANLIŞ pencereyi verir — orada
+    `sdl2_overlay` kendi `_sdl2.Window` nesnesini kullanır.
+    """
+    if not IS_WINDOWS:
+        return None
+    try:
+        import ctypes
+
+        user32 = getattr(getattr(ctypes, 'windll', None), 'user32', None)
+        target = int(_get_windows_active_hwnd() or 0)
+        if user32 is None or target <= 0:
+            return None
+        return bool(user32.IsZoomed(target) or user32.IsIconic(target))
+    except Exception:
+        return None
+
+
+def _restore_windows_window_layout() -> bool:
+    """Maximize/minimize durumunu SDL çapraz-platform yoluyla kaldır (konumu KORU).
+
+    Neden yalnız `restore()` YETMİYOR: SDL restore pencerenin kayıtlı (maximize
+    öncesi) dikdörtgenine döner — örn. (320,156). Ardından `set_mode(NOFRAME)`
+    yüzeyi native yapar ama pencereyi O KAYITLI KONUMDA bırakır; sonuç
+    (320,156,1920,1080) ölçüldü. Konumu burada DEĞİŞTİRMEK işe yaramaz
+    (set_mode sonrası SDL kayıtlı konumu yeniden uygular); doğru sıra:
+    maximize'i kaldır → set_mode → konumu (0,0) sabitle.
+
+    Durum ölçülebiliyorsa YALNIZCA gerçekten maximize/minimize iken çağrılır:
+    `Window.from_display_module()` deprecation uyarısı üretir ve normalize bir
+    pencerede restore() zaten no-op'tur (ölçüldü) — gereksiz çağrı yapılmaz.
+    Ölçüm başarısızsa (None) güvenli taraf: restore denenir.
+    """
+    if _windows_setmode_window_zoomed() is False:
+        return False
+    try:
+        from pygame._sdl2.video import Window
+
+        Window.from_display_module().restore()
+        return True
+    except Exception:
+        pass
+    # SDL yolu yoksa (veya başarısızsa) Win32'ye düş: SW_RESTORE aynı işi yapar.
+    try:
+        import ctypes
+
+        user32 = getattr(getattr(ctypes, 'windll', None), 'user32', None)
+        target = int(_get_windows_active_hwnd() or 0)
+        if user32 is not None and target > 0:
+            SW_RESTORE = 9
+            user32.ShowWindow(target, SW_RESTORE)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _anchor_borderless_fullscreen_position(hwnd: int | None = None) -> bool:
+    """Borderless tam ekran penceresini (0,0)'a çivile (yalnız mod geçişinde).
+
+    `SDL_VIDEO_WINDOW_POS` hint'i MEVCUT pencereyi taşımaz — yalnız yeni
+    pencere yaratımını etkiler. SDL'in kayıtlı pencere konumu da set_mode'dan
+    sonra yeniden uygulanır. Bu yüzden gerçek çapa, set_mode SONRASI tek bir
+    konum çağrısıdır: `pygame.display.set_window_position` (pygame-ce 2.5.0+,
+    deprecated değil; win32 videodriver'da destekli).
+
+    Kare başına DEĞİL, yalnız pencere modu geçişinde çalışır.
+    """
+    try:
+        pygame.display.set_window_position((0, 0))
+        return True
+    except Exception:
+        pass
+    # set_window_position bazı sürücülerde yok/reddediyor: _sdl2 penceresine düş.
+    try:
+        from pygame._sdl2.video import Window
+
+        Window.from_display_module().position = (0, 0)
+        return True
+    except Exception:
+        return False
+
+
 def _get_windows_system_scale_factor() -> float:
     """Return the best-effort Windows desktop UI scale factor.
 
@@ -1905,13 +1992,19 @@ def create_display(
             elif 'SDL_VIDEO_WINDOW_POS' in os.environ:
                 del os.environ['SDL_VIDEO_WINDOW_POS']
     
-    # set_mode adaptörü (v2 paritesi): SDL_RENDER_VSYNC=1 isteğine göre vsync
-    # parametresini taşır; pygame-ce'nin vsync parametresini tanımadığı eski
-    # sürümlerde TypeError düz çağrıya düşer. Demo'da yalnız Linux fullscreen
-    # dalı bu adaptörü kullanır — Windows/macOS yollarındaki mevcut düz
-    # set_mode çağrıları bilinçli olarak değişmedi.
+    # set_mode adaptörü: SDL 2.32.10'un Windows yazılım ve dummy sürücülerinde
+    # vsync=1 ile ardışık set_mode erişim ihlali üretmesini önler.
     def _set_mode_with_vsync(size, flags_val):
-        vsync_val = 1 if os.environ.get('SDL_RENDER_VSYNC') == '1' else 0
+        try:
+            driver = str(pygame.display.get_driver() or '').lower()
+        except Exception:
+            driver = ''
+        unsafe_driver = driver == 'dummy' or (IS_WINDOWS and driver == 'windows')
+        vsync_val = (
+            0
+            if unsafe_driver or os.environ.get('SDL_RENDER_VSYNC') != '1'
+            else 1
+        )
         try:
             return pygame.display.set_mode(size, flags_val, vsync=vsync_val)
         except TypeError:
@@ -1945,6 +2038,14 @@ def create_display(
     # Windows için standart borderless handling — Linux fullscreen yolu yukarıda
     # ayrıldı (plan §3.3), macOS yukarıda döndü; bu yol artık Windows'a özgür.
     if IS_WINDOWS and fullscreen and borderless:
+        # ── Elle büyütülmüş/maximize edilmiş pencereden borderless tam ekran ──
+        # KÖK NEDEN (canlı HWND ölçümü, 1920x1080): elle maximize edilmiş
+        # pencerede `set_mode(NOFRAME)` HWND'yi maximize durumunda bırakır
+        # (rect (0,23,1920,1009), IsZoomed=True) → içerik kayar, çerçeve
+        # görünür kalır. Yalnız `restore()` da yetmez: SDL kayıtlı konumu
+        # set_mode'dan SONRA yeniden uygular → rect (320,156,1920,1080).
+        # DOĞRU SIRA: maximize'i KALDIR → set_mode → konumu (0,0)'a ÇİVİLE.
+        _was_restored = _restore_windows_window_layout()
         # Windows: ctypes ile DPI-bağımsız fiziksel çözünürlük al
         native_w, native_h = (
             _get_windows_physical_resolution() if IS_WINDOWS else get_native_resolution()
@@ -1982,6 +2083,7 @@ def create_display(
                     raise
             # Boyut doğrulama: beklenen boyuta ulaşılamadıysa exclusive fullscreen fallback
             actual_w, actual_h = surface.get_size()
+            _exclusive_fallback = False
             if abs(actual_w - native_w) > 4 or abs(actual_h - native_h) > 4:
                 # Borderless başarısız; exclusive fullscreen'e düş
                 excl_flags = pygame.FULLSCREEN | pygame.DOUBLEBUF
@@ -1989,10 +2091,22 @@ def create_display(
                     # GL context kurulduysa exclusive geçişte de koru.
                     excl_flags |= pygame.OPENGL
                 surface = pygame.display.set_mode((0, 0), excl_flags)
+                _exclusive_fallback = True
                 _pending_gl_diag += f' | boyut uyumsuz → exclusive set_mode flags=0x{excl_flags:X}'
+            # Konum çivisi: yalnız GERÇEKTEN borderless kaldıysak. Exclusive
+            # fullscreen'de pencere yerleşimini SDL/monitör yönetir — oraya
+            # dokunmak davranışı bozar.
+            _position_anchored = False
+            if not _exclusive_fallback:
+                _position_anchored = _anchor_borderless_fullscreen_position()
             invalidate_refresh_rate_cache()
             try:
-                _gl_diag(_pending_gl_diag + f' | SONUÇ flags=0x{surface.get_flags():X}')
+                _gl_diag(
+                    _pending_gl_diag
+                    + f' | restore_uygulandi={_was_restored}'
+                    + f' konum_civisi={_position_anchored}'
+                    + f' | SONUÇ flags=0x{surface.get_flags():X}'
+                )
             except Exception:
                 pass
             return surface
