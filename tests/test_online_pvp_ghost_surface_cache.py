@@ -127,15 +127,17 @@ def test_second_call_allocates_no_new_surface(monkeypatch):
     )
 
 
-def test_cached_surface_matches_legacy_fill_pixel():
+def test_cached_surface_matches_ghost_alpha_constant():
     screen = pygame.Surface((480, 640), pygame.SRCALPHA)
     game = _make_game(screen)
     game._draw_ghost_piece(40, 40, 24, ghost_y=15)
 
+    from renderers.jelly_renderer import GHOST_ALPHA
     filled = next(iter(game._effect_surface_cache._cache.values()))
-    # Eski davranışın birebir karşılığı: (*color[:3], 60) dolgusu.
+    # Gölge dolgusu GHOST_ALPHA'dan gelir (tek kaynak; canlı renklerin
+    # gölgesi gereksiz koyulaşmasın diye yükseltildi).
     assert filled.get_size() == (24 - 2, 24 - 2)
-    assert tuple(filled.get_at((1, 1))) == (255, 120, 40, 60)
+    assert tuple(filled.get_at((1, 1))) == (255, 120, 40, GHOST_ALPHA)
 
 
 def test_out_of_bounds_cells_do_not_blit_but_cache_still_serves(monkeypatch):

@@ -46,6 +46,16 @@ OUTLINE_BRIGHTNESS_FULL = 35.0   # bu ve altı → tam beyaz kontur
 OUTLINE_BRIGHTNESS_NONE = 95.0   # bu ve üstü → kontur yok
 OUTLINE_MAX_ALPHA = 255
 
+# ── Gölge (ghost) opaklığı ──────────────────────────────────────────────────
+# Gölge hem görünür olmalı hem de canlı renkler canlı kalmalı. %20 (50/255)
+# çok soluktu: parlak sarı bile ekranda (64,54,30) kahverengiye düşüyordu
+# (%72 parlaklık kaybı) — kullanıcı bulgusu 2026-11-06. %47 (120/255) gölgeyi
+# ayırt edilebilir tutarken canlı tonları korur; beyaz kontur yalnız gerçekten
+# koyu olan gölgelerde devreye girer.
+GHOST_ALPHA = 120
+# Ghost çiziminde kullanılan eski değerlerin en büyüğü; ölçüm uyumu için.
+_LEGACY_GHOST_ALPHA = 50
+
 # Kontur yüzeyi LRU'su: kare başına yeni Surface YASAĞI (CLAUDE.md §6).
 # Key: (size, width, alpha, radius) → SRCALPHA beyaz çerçeve yüzeyi.
 _OUTLINE_CACHE: OrderedDict[tuple, pygame.Surface] = OrderedDict()

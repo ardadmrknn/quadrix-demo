@@ -41,7 +41,9 @@ from background_effects import get_shared_falling_blocks_layer
 from themes import ThemeManager
 from mode_skins import apply_board_tint, draw_board_overlay, get_mode_skin
 from retro_style import retro_style as _rs
-from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border, draw_dark_block_outline
+from renderers.jelly_renderer import (
+    draw_jelly_block, draw_jelly_border, draw_dark_block_outline, GHOST_ALPHA,
+)
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from line_clear_feedback import (
@@ -6781,7 +6783,7 @@ class OnlinePvPGame:
         if not self.my_piece:
             return
         shape = self.my_piece.get_shape()
-        ghost_color = (*self.my_piece.color[:3], 60)
+        ghost_color = (*self.my_piece.color[:3], GHOST_ALPHA)
         ghost_surf = self._effect_surface_cache.get_filled_surface(
             (cell_size - 2, cell_size - 2), ghost_color)
         for row_i, row in enumerate(shape):
@@ -6800,7 +6802,7 @@ class OnlinePvPGame:
                         draw_dark_block_outline(
                             self.screen, px, py, cell_size - 2,
                             self.my_piece.color[:3], radius=3,
-                            overlay_alpha=60,
+                            overlay_alpha=GHOST_ALPHA,
                             background=getattr(self, '_ghost_measure_bg', (18, 20, 36)),
                         )
 

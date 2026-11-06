@@ -28,7 +28,9 @@ from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
 from mode_skins import apply_board_tint, apply_outer_tint, draw_board_overlay, get_mode_skin
 from retro_style import retro_style
-from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border, draw_dark_block_outline
+from renderers.jelly_renderer import (
+    draw_jelly_block, draw_jelly_border, draw_dark_block_outline, GHOST_ALPHA,
+)
 from themes import ThemeManager
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from block_skin_assets import get_equipped_block_appearance
@@ -4199,7 +4201,7 @@ class CoopGame:
         gcache = self._ghost_surf_cache
         if gcache.get('key') != block_size:
             s = pygame.Surface((block_size, block_size))
-            s.set_alpha(50)
+            s.set_alpha(GHOST_ALPHA)
             gcache['key'] = block_size
             gcache['surface'] = s
         ghost_base_surf = gcache['surface']
@@ -4240,7 +4242,7 @@ class CoopGame:
                 # Koyu renk: gölgenin dış hattı da beyaz kontur alır.
                 draw_dark_block_outline(
                     self.screen, block_x, block_y, block_size, ghost_color,
-                    overlay_alpha=60, background=getattr(self, '_ghost_measure_bg', (18, 20, 36)),
+                    overlay_alpha=GHOST_ALPHA, background=getattr(self, '_ghost_measure_bg', (18, 20, 36)),
                 )
 
     def _draw_hud(self, ox, oy, cs, bw, bh) -> None:

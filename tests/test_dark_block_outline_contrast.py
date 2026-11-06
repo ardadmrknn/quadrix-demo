@@ -229,10 +229,40 @@ def test_small_and_invisible_blocks_are_safe():
 
 
 def test_gameplay_and_overlay_modules_use_the_outline_helper():
-    """Oyun içi ghost çizim yolları kontur yardımcısını kullanır."""
+    """Oyun içi ghost çizim yolları kontur yardımcısını ve GHOST_ALPHA'yı kullanır."""
     import re
     for name in ('game.py', 'coop_game.py', 'online_pvp_game.py'):
         source = (SRC_DIR / name).read_text(encoding='utf-8')
         assert 'draw_dark_block_outline' in source, f'{name} kontur yardımcısını kullanmalı'
-        assert re.search(r'from renderers\.jelly_renderer import[^\n]*draw_dark_block_outline',
-                         source), f'{name} import satırı eksik'
+        assert re.search(
+            r'from renderers\.jelly_renderer import[\s\S]{0,200}?draw_dark_block_outline',
+            source), f'{name} import satırı eksik'
+        # Tek kaynak: gölge opaklığı GHOST_ALPHA sabitinden gelmeli, gömülü
+        # sayı kalmamalı (canlı renklerin gölgesi gereksiz koyulaşmasın).
+        assert 'GHOST_ALPHA' in source, f'{name} GHOST_ALPHA sabitini kullanmalı'
+
+
+def test_ghost_alpha_keeps_live_colors_alive():
+    """KULLANICI BULGUSU: canlı renklerin gölgesi gereksiz koyu OLMAMALI.
+
+    %20 opaklıkta parlak sarı bile kahverengiye düşüyordu (%72 kayıp).
+    GHOST_ALPHA bu kaybı makul sınırda tutmalı.
+    """
+    bg = (18, 20, 36)
+    live_colors = [(255, 193, 7), (76, 175, 80), (0, 188, 212),
+                   (244, 67, 54), (33, 150, 243)]
+    for c in live_colors:
+        original = jr.color_brightness(c)
+        ghost = jr.color_brightness(jr.composite_over(c, jr.GHOST_ALPHA, bg))
+        loss = (original - ghost) / original
+        assert loss < 0.60, (
+            f'{c}: gölge parlaklığı %{loss*100:.0f} kaybediyor; '
+            f'canlı renkler cansız görünür'
+        )
+
+
+def test_ghost_alpha_matches_renderer_constant():
+    """Gölge çiziminde kullanılan alfa tek kaynaktan gelir."""
+    assert isinstance(jr.GHOST_ALPHA, int)
+    assert 80 <= jr.GHOST_ALPHA <= 160, (
+        f'GHOST_ALPHA {jr.GHOST_ALPHA} makul aralıkta olmalı (canlı ama görünür)')

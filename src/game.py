@@ -35,7 +35,9 @@ import static_composite  # PERF FAZ 1: statik arka plan/tahta tabanı kompozitle
 from background_effects import get_shared_falling_blocks_layer
 from workshop_blocks import WorkshopBlockDefinition, load_workshop_blocks
 from retro_style import retro_style
-from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border, draw_dark_block_outline
+from renderers.jelly_renderer import (
+    draw_jelly_block, draw_jelly_border, draw_dark_block_outline, GHOST_ALPHA,
+)
 from localization import t, get_language
 from platform_utils import get_display_flags, create_display, set_app_icon, normalize_mouse_pos, get_mouse_pos, get_render_geometry, get_geometry_generation, is_key_held
 from ui_text_layout import clamp_rect_in_parent
@@ -5917,7 +5919,7 @@ class Game:
                                 self._draw_texture_border(block_x, block_y, block_size, ghost_color, textured=True)
                                 continue
                         # Yarı saydam renkli gölge (RGBA ve RGB güvenliği için dilimleme kullanılır)
-                        s = self._get_solid_alpha_surface((block_size, block_size), (*ghost_color[:3], 50))
+                        s = self._get_solid_alpha_surface((block_size, block_size), (*ghost_color[:3], GHOST_ALPHA))
                         self.screen.blit(s, (block_x, block_y))
                         pygame.draw.rect(
                             self.screen,
@@ -5929,7 +5931,7 @@ class Game:
                         # Ölçüm GERÇEK ekran rengiyle (gölge yarı saydam).
                         draw_dark_block_outline(
                             self.screen, block_x, block_y, block_size, ghost_color,
-                            overlay_alpha=50, background=self._ghost_measure_bg,
+                            overlay_alpha=GHOST_ALPHA, background=self._ghost_measure_bg,
                         )
         
         # Mevcut parçayı çiz
