@@ -32,6 +32,141 @@ Color = Tuple[int, int, int]
 _JELLY_BLOCK_CACHE: OrderedDict[tuple, pygame.Surface] = OrderedDict()
 _JELLY_BLOCK_CACHE_MAX = 128
 
+# ── Koyu renk okunabilirliği: beyaz dış kontur ──────────────────────────────
+# Sorun: renk seçicide renk koyulaştıkça (SV karesinin alt/sağ tarafı) blok
+# rengi arka plana yaklaşır; parçanın yanı sıra YARI SAYDAM gölge (ghost) de
+# neredeyse görünmez olur. Çözüm (kullanıcı kararı 2026-11-06): renk koyu
+# olduğu ölçüde bloğun/parçanın dış hattına BEYAZ kontur eklenir; gölgenin
+# kenarı da beyaz çizilir. Açık renklerde hiçbir şey değişmez (neon kenar).
+#
+# Ölçüt: algısal parlaklık. Yalnız Rec.709 luma yetmez — doygun kırmızı gibi
+# renklerin luması düşük ama ekranda parlak okunur (Helmholtz-Kohlrausch).
+# Bu yüzden en yüksek kanalın ağırlıklı bir payı da hesaba katılır.
+OUTLINE_BRIGHTNESS_FULL = 35.0   # bu ve altı → tam beyaz kontur
+OUTLINE_BRIGHTNESS_NONE = 95.0   # bu ve üstü → kontur yok
+OUTLINE_MAX_ALPHA = 255
+
+# Kontur yüzeyi LRU'su: kare başına yeni Surface YASAĞI (CLAUDE.md §6).
+# Key: (size, width, alpha, radius) → SRCALPHA beyaz çerçeve yüzeyi.
+_OUTLINE_CACHE: OrderedDict[tuple, pygame.Surface] = OrderedDict()
+_OUTLINE_CACHE_MAX = 64
+
+
+def color_luminance(color: Color) -> float:
+    """Rec.709 algısal parlaklık (0-255 aralığında, 0=siyah)."""
+    r, g, b = int(color[0]), int(color[1]), int(color[2])
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def color_brightness(color: Color) -> float:
+    """Luma + en yüksek kanal payı: doygun renklerde de gerçekçi okunurluk.
+
+    Saf kırmızı (255,0,0) luma'sı 54'tür ama ekranda koyu sayılmaz; en yüksek
+    kanalın %55'i bu sapmayı dengeler. Saf mavi (0,0,200) ise 110 ile hâlâ
+    eşiğin altında kalır — koyu arka planda gerçekten zor görünür.
+    """
+    max_channel = max(int(color[0]), int(color[1]), int(color[2]))
+    return max(color_luminance(color), 0.55 * max_channel)
+
+
+def dark_outline_alpha(color: Color) -> int:
+    """Koyu renk için beyaz kontur alfası (0 = kontur yok).
+
+    Eşikler arasında doğrusal geçiş: renk koyulaştıkça kontur güçlenir.
+    """
+    brightness = color_brightness(color)
+    if brightness >= OUTLINE_BRIGHTNESS_NONE:
+        return 0
+    if brightness <= OUTLINE_BRIGHTNESS_FULL:
+        return OUTLINE_MAX_ALPHA
+    span = OUTLINE_BRIGHTNESS_NONE - OUTLINE_BRIGHTNESS_FULL
+    ratio = (OUTLINE_BRIGHTNESS_NONE - brightness) / span
+    return int(round(OUTLINE_MAX_ALPHA * ratio))
+
+
+def composite_over(color: Color, alpha: int, background: Color) -> tuple[int, int, int]:
+    """Yarı saydam rengi arka plan üzerine bindirip GERÇEK ekran rengini ver.
+
+    Gölge (ghost) ~%20 opaklıkta çizilir: ekranda görünen renk, ham parça
+    renginden çok daha koyudur. Parlaklık ölçümü ham renk üzerinden yapılırsa
+    orta tonlu bir renk "açık" sanılır ve gölgeye hiç kontur çizilmez — oysa
+    ekranda zifiri karanlık görünür. Bu yardımcı ölçümü doğru zemine taşır.
+    """
+    a = max(0.0, min(1.0, float(alpha) / 255.0))
+    return (
+        int(round(color[0] * a + background[0] * (1.0 - a))),
+        int(round(color[1] * a + background[1] * (1.0 - a))),
+        int(round(color[2] * a + background[2] * (1.0 - a))),
+    )
+
+
+def _outline_surface(size: int, width: int, alpha: int,
+                     radius: int = 0) -> pygame.Surface:
+    """Beyaz kontur yüzeyini LRU'dan al (yoksa bir kez üret)."""
+    size = max(1, int(size))
+    width = max(1, int(width))
+    alpha = max(0, min(255, int(alpha)))
+    radius = max(0, int(radius))
+    key = (size, width, alpha, radius)
+    cached = _OUTLINE_CACHE.get(key)
+    if cached is not None:
+        _OUTLINE_CACHE.move_to_end(key)
+        return cached
+    surf = pygame.Surface((size, size), pygame.SRCALPHA)
+    pygame.draw.rect(surf, (255, 255, 255, alpha), (0, 0, size, size), width,
+                     border_radius=radius)
+    _OUTLINE_CACHE[key] = surf
+    _OUTLINE_CACHE.move_to_end(key)
+    while len(_OUTLINE_CACHE) > _OUTLINE_CACHE_MAX:
+        _OUTLINE_CACHE.popitem(last=False)
+    return surf
+
+
+def draw_dark_block_outline(
+    screen: pygame.Surface,
+    x: int,
+    y: int,
+    size: int,
+    color: Color,
+    *,
+    width: int | None = None,
+    radius: int = 0,
+    alpha_scale: float = 1.0,
+    overlay_alpha: int | None = None,
+    background: Color | None = None,
+) -> bool:
+    """Koyu renkli blok/gölge için dış hatta beyaz kontur çiz.
+
+    Açık renklerde hiçbir şey çizmez ve False döner (mevcut görünüm korunur).
+    Hedef yüzey opak da olabilir (pygame.draw alfa karıştırmaz); bu yüzden
+    kontur önbellekli SRCALPHA yüzeyle blit edilir — kare başına tahsis yok.
+
+    `alpha_scale`: yarı saydam gölge gibi ikincil çizimlerde konturu yumuşatır.
+
+    `overlay_alpha` + `background`: YARI SAYDAM çizimler için. Gölge ekranda
+    `color`'ın `overlay_alpha` opaklıkta `background` üzerine binmiş hâli
+    olarak görünür; parlaklık ölçümü bu GERÇEK renk üzerinden yapılmalıdır
+    (ham renk üzerinden yapılırsa orta tonlu gölgeler "açık" sanılıp kontursuz
+    kalıyordu — kullanıcı bulgusu 2026-11-06).
+    """
+    measured = color
+    if overlay_alpha is not None and background is not None:
+        measured = composite_over(color, overlay_alpha, background)
+    alpha = dark_outline_alpha(measured)
+    if alpha <= 0:
+        return False
+    if alpha_scale and alpha_scale != 1.0:
+        alpha = int(round(alpha * float(alpha_scale)))
+        if alpha <= 0:
+            return False
+    if width is None:
+        width = max(1, int(round(int(size) * 0.06)))
+    if int(size) < 4:
+        return False
+    surf = _outline_surface(int(size), int(width), alpha, radius)
+    screen.blit(surf, (int(x), int(y)))
+    return True
+
 
 def _render_jelly_block_surface(size: int, color: Color) -> pygame.Surface:
     """Render a jelly block onto a new surface (internal, used by cache)."""
@@ -289,9 +424,8 @@ def draw_jelly_border(
     appearance_key = _normalize_appearance(appearance)
     if appearance_key == LEGACY_BLOCK_APPEARANCE:
         _draw_legacy_jelly_border(screen, x, y, size, color)
-        return
-
-    _draw_modern_jelly_border(screen, x, y, size, color)
+    else:
+        _draw_modern_jelly_border(screen, x, y, size, color)
 
 
 def _draw_modern_jelly_border(screen: pygame.Surface, x: int, y: int, size: int, color: Color) -> None:

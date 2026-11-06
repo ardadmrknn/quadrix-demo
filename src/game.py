@@ -35,7 +35,7 @@ import static_composite  # PERF FAZ 1: statik arka plan/tahta tabanı kompozitle
 from background_effects import get_shared_falling_blocks_layer
 from workshop_blocks import WorkshopBlockDefinition, load_workshop_blocks
 from retro_style import retro_style
-from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
+from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border, draw_dark_block_outline
 from localization import t, get_language
 from platform_utils import get_display_flags, create_display, set_app_icon, normalize_mouse_pos, get_mouse_pos, get_render_geometry, get_geometry_generation, is_key_held
 from ui_text_layout import clamp_rect_in_parent
@@ -959,6 +959,27 @@ class Game:
             cached = hold_label_text
             cache[('hold', lang)] = cached
         return cached
+
+    def _sample_board_background(self, offset_x: int, offset_y: int) -> tuple[int, int, int]:
+        """Tahta arka planının o anki rengini örnekle (gölge kontrastı için).
+
+        Gölge yarı saydam çizildiğinden ekranda görünen renk zeminle karışır;
+        beyaz kontur kararını doğru vermek için zemin gerekir. Kare başına TEK
+        piksel okuması yapılır (Surface tahsisi yok, GC baskısı yok).
+        """
+        try:
+            surf = self.screen
+            if surf is not None:
+                cell = max(4, int(getattr(self, 'cell_size', 24) or 24))
+                sx = int(offset_x) + max(2, cell // 3)
+                sy = int(offset_y) + max(2, cell // 3)
+                w, h = surf.get_size()
+                if 0 <= sx < w and 0 <= sy < h:
+                    r, g, b = surf.get_at((sx, sy))[:3]
+                    return (int(r), int(g), int(b))
+        except Exception:
+            pass
+        return (18, 20, 36)
 
     def _get_solid_alpha_surface(self, size: tuple[int, int], color) -> pygame.Surface:
         """Belirtilen boyut ve renkte katı alfa yüzeyini önbellekten döndürür (salt-okunur blit için)."""
@@ -5856,6 +5877,9 @@ class Game:
 
         # Ghost piece (gölge) çiz
         show_ghost = bool(self.settings_manager.get('show_ghost', True) if getattr(self, 'settings_manager', None) is not None else True)
+        # Gölge kontrastı için ÖLÇÜM ZEMİNİ (kare başına tek piksel okuması).
+        if show_ghost and not self.game_over and self.current_piece is not None:
+            self._ghost_measure_bg = self._sample_board_background(offset_x, offset_y)
         if not self.game_over and self.current_piece is not None and self.effects_enabled and show_ghost:
             ghost_y = self.get_ghost_y()
             if ghost_y != self.current_piece.y:
@@ -5900,6 +5924,12 @@ class Game:
                             ghost_color,
                             (block_x, block_y, block_size, block_size),
                             2,
+                        )
+                        # Koyu renk: gölgenin dış hattı da beyaz kontur alır.
+                        # Ölçüm GERÇEK ekran rengiyle (gölge yarı saydam).
+                        draw_dark_block_outline(
+                            self.screen, block_x, block_y, block_size, ghost_color,
+                            overlay_alpha=50, background=self._ghost_measure_bg,
                         )
         
         # Mevcut parçayı çiz

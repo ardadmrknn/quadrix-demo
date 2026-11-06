@@ -28,7 +28,7 @@ from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
 from mode_skins import apply_board_tint, apply_outer_tint, draw_board_overlay, get_mode_skin
 from retro_style import retro_style
-from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
+from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border, draw_dark_block_outline
 from themes import ThemeManager
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from block_skin_assets import get_equipped_block_appearance
@@ -4175,6 +4175,19 @@ class CoopGame:
             offset += 1
         if offset == 0:
             return
+        # Gölge kontrastı için ölçüm zemini (kare başına TEK piksel okuması).
+        try:
+            _gz = max(4, int(cs) or 24)
+            _sx = int(ox) + max(2, _gz // 3)
+            _sy = int(oy) + max(2, _gz // 3)
+            _w, _h = self.screen.get_size()
+            if 0 <= _sx < _w and 0 <= _sy < _h:
+                _r, _g, _b = self.screen.get_at((_sx, _sy))[:3]
+                self._ghost_measure_bg = (int(_r), int(_g), int(_b))
+            else:
+                self._ghost_measure_bg = (18, 20, 36)
+        except Exception:
+            self._ghost_measure_bg = (18, 20, 36)
         drop_y = ghost_y + offset
         ghost_visual_offset = self._get_ghost_visual_offset(piece, drop_y)
         current_texture = getattr(piece, 'texture_surface', None)
@@ -4224,6 +4237,11 @@ class CoopGame:
                 self.screen.blit(ghost_base_surf, (block_x, block_y))
                 pygame.draw.rect(self.screen, ghost_color,
                                  (block_x, block_y, block_size, block_size), 2)
+                # Koyu renk: gölgenin dış hattı da beyaz kontur alır.
+                draw_dark_block_outline(
+                    self.screen, block_x, block_y, block_size, ghost_color,
+                    overlay_alpha=60, background=getattr(self, '_ghost_measure_bg', (18, 20, 36)),
+                )
 
     def _draw_hud(self, ox, oy, cs, bw, bh) -> None:
         ui = self._ui_scale()

@@ -41,7 +41,7 @@ from background_effects import get_shared_falling_blocks_layer
 from themes import ThemeManager
 from mode_skins import apply_board_tint, draw_board_overlay, get_mode_skin
 from retro_style import retro_style as _rs
-from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
+from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border, draw_dark_block_outline
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from line_clear_feedback import (
@@ -6796,6 +6796,13 @@ class OnlinePvPGame:
                         pygame.draw.rect(self.screen, (*self.my_piece.color[:3], 90),
                                          (px, py, cell_size - 2, cell_size - 2), 1,
                                          border_radius=3)
+                        # Koyu renk: gölgenin dış hattı beyaz kontur alır.
+                        draw_dark_block_outline(
+                            self.screen, px, py, cell_size - 2,
+                            self.my_piece.color[:3], radius=3,
+                            overlay_alpha=60,
+                            background=getattr(self, '_ghost_measure_bg', (18, 20, 36)),
+                        )
 
     def _draw_side_panel(self, panel_x, panel_y, cell_size):
         """Hold ve Next parçalarını gösteren sol yan panel."""
