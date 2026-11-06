@@ -197,6 +197,27 @@ def test_background_full_screen_cache_refreshes_after_image_swap(tmp_path):
         "resim değiştikten sonra tam ekran cache'i yeni resmi göstermeli"
 
 
+def test_background_alpha_is_baked_into_cached_pixels(tmp_path):
+    bg = _make_manager(tmp_path, transparency=0.3, base=(200, 40, 80), accent=(200, 40, 80))
+    screen = pygame.Surface((W, H))
+    cached = bg.get_full_screen_surface(screen)
+    assert cached.get_alpha() is None
+    assert cached.get_at((0, 0)).a == int(255 * 0.3)
+
+    bg.set_transparency(0.8)
+    cached = bg.get_full_screen_surface(screen)
+    assert cached.get_alpha() is None
+    assert cached.get_at((0, 0)).a == int(255 * 0.8)
+
+
+def test_background_board_alpha_is_baked_into_cached_pixels(tmp_path):
+    bg = _make_manager(tmp_path, transparency=0.8, base=(40, 200, 80), accent=(40, 200, 80))
+    screen = pygame.Surface((W, H))
+    bg.draw(screen, (0, 0, 32, 32))
+    assert bg.background_surface.get_alpha() is None
+    assert bg.background_surface.get_at((0, 0)).a == int(255 * 0.8)
+
+
 def test_background_board_surface_refreshes_after_image_swap(tmp_path):
     """Tahta boyutlu arka plan yüzeyi de resim takasında tazelenmeli."""
     bg = BackgroundManager()

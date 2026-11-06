@@ -111,7 +111,26 @@ class BackgroundManager:
         """
         self.transparency = max(0.0, min(1.0, value))
         self.background_surface = None  # Yeniden oluşturulacak
+        # Full-screen cache also contains baked pixel alpha; invalidate its
+        # source so a later slider change never multiplies the previous alpha.
+        self._cached_full_screen = None
+        self._cached_screen_size = None
+        self._cached_full_alpha = None
         self._generation = getattr(self, '_generation', 0) + 1
+
+    @staticmethod
+    def _bake_alpha(surface: pygame.Surface, alpha: int) -> pygame.Surface:
+        """Bake opacity into RGBA pixels for stable software/Cocoa blits."""
+        try:
+            result = surface.convert_alpha()
+        except Exception:
+            result = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+            result.blit(surface, (0, 0))
+        alpha = max(0, min(255, int(alpha)))
+        if alpha < 255:
+            result.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)
+        result.set_alpha(None)
+        return result
     
     def draw(self, screen, board_rect):
         """
@@ -139,13 +158,10 @@ class BackgroundManager:
             except Exception:
                 pass
             
-            # Yeni surface oluştur
-            self.background_surface = pygame.Surface((board_rect[2], board_rect[3]))
-            self.background_surface.blit(scaled_image, (0, 0))
-            
-            # Transparanlığı ayarla
+            # Opaklığı piksel kanalına bake et. Per-surface set_alpha,
+            # macOS Cocoa/software blit'inde cache kompozitlerinde tutarsızdır.
             alpha = int(255 * self.transparency)
-            self.background_surface.set_alpha(alpha)
+            self.background_surface = self._bake_alpha(scaled_image, alpha)
         
         # Arka planı çiz
         screen.blit(self.background_surface, (board_rect[0], board_rect[1]))
@@ -183,10 +199,7 @@ class BackgroundManager:
         alpha = int(255 * max(0.0, min(1.0, float(getattr(self, 'transparency', 1.0)))))
         cached_alpha = getattr(self, '_cached_full_alpha', None)
         if cached_alpha != alpha:
-            try:
-                self._cached_full_screen.set_alpha(None if alpha >= 255 else alpha)
-            except Exception:
-                self._cached_full_screen.set_alpha(alpha)
+            self._cached_full_screen = self._bake_alpha(self._cached_full_screen, alpha)
             self._cached_full_alpha = alpha
         return self._cached_full_screen
     
