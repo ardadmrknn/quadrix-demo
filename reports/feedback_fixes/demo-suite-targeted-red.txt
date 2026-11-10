@@ -1,0 +1,246 @@
+...F..F................................................................. [ 34%]
+.........................................................F.F...FFF..F..F [ 68%]
+.................................................................        [100%]
+================================== FAILURES ===================================
+_______________ test_main_mode_entries_reuse_shared_menu_sound ________________
+
+    def test_main_mode_entries_reuse_shared_menu_sound():
+        tree = _parse(MAIN_PY)
+        seen = {name: 0 for name in TARGET_MODE_CALLS}
+        missing_sound_manager = []
+    
+        for name, call in _iter_target_calls(tree):
+            seen[name] += 1
+            sound_manager_value = _keyword_value(call, "sound_manager")
+            if not isinstance(sound_manager_value, ast.Name) or sound_manager_value.id != "menu_sound":
+                missing_sound_manager.append(f"{name}@L{call.lineno}")
+    
+        unseen = sorted(name for name, count in seen.items() if count == 0)
+        assert not unseen, f"Expected mode entry call sites were not found in src/main.py: {unseen}"
+>       assert not missing_sound_manager, (
+            "Some mode entry call sites do not reuse shared menu_sound: "
+            + ", ".join(missing_sound_manager)
+        )
+E       AssertionError: Some mode entry call sites do not reuse shared menu_sound: OnlinePvPGame@L1107
+E       assert not ['OnlinePvPGame@L1107']
+
+tests\test_mode_entry_shared_sound_manager.py:158: AssertionError
+___ test_gameplay_mode_constructors_reset_pause_duck_before_starting_music ____
+
+    def test_gameplay_mode_constructors_reset_pause_duck_before_starting_music():
+        constructor_targets = [
+            (ROOT / "src/game.py", "Game", "sound", "unduck_music", "_start_music_playlist"),
+            (ROOT / "src/pvp_game.py", "PvPGame", "sound", "unduck_music", "_start_pvp_music"),
+            (ROOT / "src/coop_game.py", "CoopGame", "sound", "unduck_music", "_start_music"),
+            (ROOT / "src/online_pvp_game.py", "OnlinePvPGame", "sound", "unduck_music", "_start_pvp_music"),
+        ]
+    
+        missing_calls = []
+        misordered_calls = []
+    
+        for path, class_name, owner_attr, reset_method, start_method in constructor_targets:
+            init_node = _find_class_init(path, class_name)
+            assert init_node is not None, f"{class_name}.__init__ not found in {path.name}"
+    
+            reset_lines = _find_self_method_call_lines(init_node, owner_attr, reset_method)
+            start_lines = _find_self_method_call_lines(init_node, "", start_method)
+            if not start_lines:
+                for node in ast.walk(init_node):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    func = node.func
+                    if isinstance(func, ast.Attribute) and func.attr == start_method:
+                        owner = func.value
+                        if isinstance(owner, ast.Name) and owner.id == "self":
+                            start_lines.append(node.lineno)
+            start_lines = sorted(start_lines)
+    
+            if not reset_lines:
+                missing_calls.append(class_name)
+                continue
+            if start_lines and reset_lines[0] > start_lines[0]:
+                misordered_calls.append(class_name)
+    
+>       assert not missing_calls, "Pause duck reset missing before music start: " + ", ".join(missing_calls)
+E       AssertionError: Pause duck reset missing before music start: OnlinePvPGame
+E       assert not ['OnlinePvPGame']
+
+tests\test_mode_entry_shared_sound_manager.py:235: AssertionError
+___________ test_save_current_as_defaults_writes_override_snapshot ____________
+
+tmp_path = WindowsPath('C:/Users/arda demirkan/AppData/Local/Temp/pytest-of-arda demirkan/pytest-716/test_save_current_as_defaults_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001E6057FC910>
+
+    def test_save_current_as_defaults_writes_override_snapshot(tmp_path, monkeypatch):
+        settings_module = _import_real_module('settings_manager')
+        SettingsManager = settings_module.SettingsManager
+    
+        data_dir = tmp_path / 'userdata'
+        monkeypatch.setenv('QUADRIX_DATA_DIR', str(data_dir))
+    
+        sm = SettingsManager()
+        sm.set('ui_scale_preset', 'large')
+        sm.set('das_repeat', 88)
+    
+        path = sm.save_current_as_defaults()
+    
+        assert path is not None
+        override_path = Path(path)
+        assert override_path.exists()
+    
+        payload = json.loads(override_path.read_text(encoding='utf-8'))
+>       assert payload['ui_scale_preset'] == 'compact'
+E       AssertionError: assert 'large' == 'compact'
+E         
+E         - compact
+E         + large
+
+tests\test_settings_user_default_override.py:65: AssertionError
+_____________ test_store_can_purchase_and_equip_legacy_block_skin _____________
+
+    def test_store_can_purchase_and_equip_legacy_block_skin():
+        pygame.init()
+        try:
+            _reset_retro_style_cache()
+            from background_effects import get_shared_falling_blocks_layer
+            from block_skin_assets import LEGACY_BLOCK_APPEARANCE
+            from store_screen import StoreScreen
+    
+            manager = _DummyUserManager()
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            legacy_index = next(index for index, product in enumerate(screen.products) if product.product_id == 'block_skin_legacy_jelly')
+            screen.selected_index = legacy_index
+            screen.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+>           assert screen.is_confirm_open
+E           assert False
+E            +  where False = <store_screen.StoreScreen object at 0x000001E605A2CDD0>.is_confirm_open
+
+tests\test_store_block_products.py:78: AssertionError
+__________________ test_store_screen_purchase_and_equip_flow __________________
+
+    def test_store_screen_purchase_and_equip_flow():
+        pygame.init()
+        try:
+            _reset_retro_style_cache()
+            from store_screen import StoreScreen
+    
+            manager = _DummyUserManager()
+            manager.profile['neural_fragments'] = 700
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            screen.draw()
+            legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+            screen.selected_index = legacy_idx
+            screen.draw()
+    
+            # ENTER on an affordable, unowned product opens confirmation
+            screen.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+>           assert screen.is_confirm_open
+E           assert False
+E            +  where False = <store_screen.StoreScreen object at 0x000001E6054E2290>.is_confirm_open
+
+tests\test_store_screen.py:79: AssertionError
+_____________ test_store_confirm_modal_cancel_keeps_wallet_intact _____________
+
+    def test_store_confirm_modal_cancel_keeps_wallet_intact():
+        pygame.init()
+        try:
+            _reset_retro_style_cache()
+            from store_screen import StoreScreen
+    
+            manager = _DummyUserManager()
+            manager.profile['neural_fragments'] = 700
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            screen.draw()
+            legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+            screen.selected_index = legacy_idx
+            screen.draw()
+            screen.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+>           assert screen.is_confirm_open
+E           assert False
+E            +  where False = <store_screen.StoreScreen object at 0x000001E605A22A90>.is_confirm_open
+
+tests\test_store_screen.py:114: AssertionError
+___________ test_store_confirm_modal_buy_button_completes_purchase ____________
+
+    def test_store_confirm_modal_buy_button_completes_purchase():
+        pygame.init()
+        try:
+            _reset_retro_style_cache()
+            from store_screen import StoreScreen
+    
+            manager = _DummyUserManager()
+            manager.profile['neural_fragments'] = 700
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+            _select_and_render(screen, legacy_idx)
+            _click(screen, screen._cta_rect.center)
+>           assert screen.is_confirm_open
+E           assert False
+E            +  where False = <store_screen.StoreScreen object at 0x000001E605543850>.is_confirm_open
+
+tests\test_store_screen.py:138: AssertionError
+__________________ test_store_cta_click_buys_when_affordable __________________
+
+    def test_store_cta_click_buys_when_affordable():
+        pygame.init()
+        try:
+            _reset_retro_style_cache()
+            from store_screen import StoreScreen
+    
+            manager = _DummyUserManager()
+            manager.profile['neural_fragments'] = 700
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+            _select_and_render(screen, legacy_idx)
+            assert screen._cta_rect is not None
+            _click(screen, screen._cta_rect.center)
+>           assert screen.is_confirm_open
+E           assert False
+E            +  where False = <store_screen.StoreScreen object at 0x000001E60552DD10>.is_confirm_open
+
+tests\test_store_screen.py:227: AssertionError
+____ test_store_locked_message_formats_without_raw_placeholders_in_english ____
+
+    def test_store_locked_message_formats_without_raw_placeholders_in_english():
+        pygame.init()
+        previous_lang = 'tr'
+        try:
+            _reset_retro_style_cache()
+            import localization
+            from store_screen import StoreScreen
+    
+            previous_lang = localization.get_language()
+            localization.set_language('en')
+    
+            manager = _DummyUserManager()
+            manager.profile['neural_fragments'] = 50
+            screen = StoreScreen(pygame.Surface((1280, 720), pygame.SRCALPHA), user_manager=manager)
+    
+            legacy_idx = next(i for i, p in enumerate(screen.products) if p.product_id == 'block_skin_legacy_jelly')
+            _select_and_render(screen, legacy_idx)
+            assert screen._cta_rect is not None
+            _click(screen, screen._cta_rect.center)
+    
+            product = screen.products[legacy_idx]
+            assert screen._product_title(product) in screen.status_message
+>           assert '450 Lunar' in screen.status_message
+E           AssertionError: assert '450 Lunar' in 'Classic Block Look costs 5400 Lunar. Current balance: 50 Lunar.'
+E            +  where 'Classic Block Look costs 5400 Lunar. Current balance: 50 Lunar.' = <store_screen.StoreScreen object at 0x000001E60573BF90>.status_message
+
+tests\test_store_screen.py:312: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_mode_entry_shared_sound_manager.py::test_main_mode_entries_reuse_shared_menu_sound
+FAILED tests/test_mode_entry_shared_sound_manager.py::test_gameplay_mode_constructors_reset_pause_duck_before_starting_music
+FAILED tests/test_settings_user_default_override.py::test_save_current_as_defaults_writes_override_snapshot
+FAILED tests/test_store_block_products.py::test_store_can_purchase_and_equip_legacy_block_skin
+FAILED tests/test_store_screen.py::test_store_screen_purchase_and_equip_flow
+FAILED tests/test_store_screen.py::test_store_confirm_modal_cancel_keeps_wallet_intact
+FAILED tests/test_store_screen.py::test_store_confirm_modal_buy_button_completes_purchase
+FAILED tests/test_store_screen.py::test_store_cta_click_buys_when_affordable
+FAILED tests/test_store_screen.py::test_store_locked_message_formats_without_raw_placeholders_in_english
+9 failed, 200 passed in 9.02s

@@ -1,0 +1,142 @@
+........................................................................ [  1%]
+........................................................................ [  3%]
+........................................................................ [  5%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+........................................................................ [ 10%]
+........................................................................ [ 12%]
+........................................................................ [ 14%]
+........................................................................ [ 16%]
+........................................................................ [ 18%]
+........................................................................ [ 19%]
+........................................................................ [ 21%]
+........................................................................ [ 23%]
+........................................................................ [ 25%]
+........................................................................ [ 27%]
+......................................................................s. [ 28%]
+........................................................................ [ 30%]
+........................................................................ [ 32%]
+........................................................................ [ 34%]
+........................................................................ [ 36%]
+........................................................................ [ 37%]
+........................................................................ [ 39%]
+........................................................................ [ 41%]
+........................................................................ [ 43%]
+....................................................s................... [ 45%]
+..............................................FFF..................F.... [ 46%]
+........................................................................ [ 48%]
+........................................................................ [ 50%]
+........................................................................ [ 52%]
+........................................................................ [ 54%]
+........................................................................ [ 55%]
+........................................................................ [ 57%]
+........................................................................ [ 59%]
+........................................................................ [ 61%]
+........................................................F............... [ 63%]
+......................................................................F. [ 64%]
+..............................................................ssssssssss [ 66%]
+s........F...................ssssss..................................... [ 68%]
+........................................................................ [ 70%]
+................................................F...F...........F.FF.... [ 72%]
+........................................................................ [ 73%]
+........................................................................ [ 75%]
+..........................................F............................. [ 77%]
+...F............F....................................................... [ 79%]
+........................................................................ [ 81%]
+........................................................................ [ 82%]
+........................................................................ [ 84%]
+...........................ssss......................................... [ 86%]
+.........................FF............................................. [ 88%]
+........................................................................ [ 90%]
+........................................................................ [ 91%]
+............F.........F.....................F........................... [ 93%]
+........................................................................ [ 95%]
+........................................................................ [ 97%]
+........................................................................ [ 99%]
+...................................                                      [100%]
+================================== FAILURES ===================================
+C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\test_localization_flat_table_parity.py:60: AssertionError: assert 'tr' == 'en'
+C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\test_localization_flat_table_parity.py:101: AssertionError: assert 'TR' == 'EN'
+C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\test_localization_flat_table_parity.py:126: AssertionError: assert 'YENI_TR' == 'YENI'
+C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\test_localization_source_completeness.py:57: AssertionError: Kodda kullanýlýp localization kaynaðýnda olmayan anahtarlar var: {'coop_controller_select_title': ['src/coop_game.py'], 'pvp_keyboard_1': ['src/coop_game.py', 'src/pvp_game.py'], 'pvp_keyboard_2': ['src/coop_game.py', 'src/pvp_game.py'], 'pvp_player_1': ['src/coop_game.py', 'src/pvp_game.py'], 'pvp_unassigned': ['src/coop_game.py', 'src/pvp_game.py'], 'pvp_player_2': ['src/coop_game.py', 'src/pvp_game.py'], 'lobby_start_hint': ['src/coop_game.py', 'src/pvp_game.py'], 'lobby_waiting_hint': ['src/coop_game.py', 'src/pvp_game.py'], 'pvp_title_controller_select': ['src/pvp_game.py']}
+C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\quadrix-demo\\tests\\test_online_pvp_code_search_validation.py:184: AssertionError: assert 'birden fazla' in '\u044d\u0442\u043e\u0442 \u043a\u043e\u0434 \u0441\u043e\u043e\u0442\u0432\u0435\u0442\u0441\u0442\u0432\u0443\u0435\u0442 \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u0438\u043c \u043b\u043e\u0431\u0431\u0438'
+C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\quadrix-demo\\tests\\test_online_pvp_lobby_visibility_metadata.py:411: AssertionError: assert 'kod veya davet gerekli' in '\u0434\u043b\u044f \u044d\u0442\u043e\u0433\u043e \u043f\u0440\u0438\u0432\u0430\u0442\u043d\u043e\u0433\u043e \u043b\u043e\u0431\u0431\u0438 \u043d\u0443\u0436\u0435\u043d \u043a\u043e\u0434 \u0438\u043b\u0438 \u043f\u0440\u0438\u0433\u043b\u0430\u0448\u0435\u043d\u0438\u0435'
+C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\quadrix-demo\\tests\\test_online_pvp_trailer_debug_lobbies.py:66: AssertionError: assert 'fragman' in '\u044d\u0442\u043e \u0434\u0435\u043c\u043e-\u043b\u043e\u0431\u0431\u0438 \u043f\u043e\u043a\u0430\u0437\u0430\u043d\u043e \u0434\u043b\u044f \u0442\u0440\u0435\u0439\u043b\u0435\u0440\u0430 steam.'
+C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\test_phase8_overlay_ui_scaling.py:375: IndexError: list index out of range
+C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\test_phase8_overlay_ui_scaling.py:482: IndexError: list index out of range
+C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\test_phase8_overlay_ui_scaling.py:774: assert (594, 616) == (2560, 1440)
+C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\test_phase8_overlay_ui_scaling.py:830: assert (818, 280) == (2560, 1440)
+C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\test_phase8_overlay_ui_scaling.py:866: assert (241, 481) == (2560, 1440)
+C:\Users\arda demirkan\AppData\Local\Programs\Python\Python311\Lib\unittest\case.py:703: AssertionError: 'normal' != 'large'
+C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\test_resolution_actions.py:621: AssertionError: assert '1366x768' == '1600x900'
+C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\test_right_hud_panel_regression.py:189: AssertionError: SprintMode._draw_right_hud_panel Game temel metodunu çözümlemeli; farklý bir metoda iþaret ediyor.
+C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\quadrix-demo\\tests\\test_store_screen.py:318: AssertionError: assert '5400 Lunar' in 'Klassicheskii vid blokov \u0441\u0442\u043e\u0438\u0442 5400 \u041b\u0443\u043d\u0430\u0440. \u0422\u0435\u043a\u0443\u0449\u0438\u0439 \u0431\u0430\u043b\u0430\u043d\u0441: 50 \u041b\u0443\u043d\u0430\u0440.'
+C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\quadrix-demo\\tests\\test_store_screen.py:349: AssertionError: assert ('kullan' in 'klassicheskii vid blokov \u0443\u0436\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u043e.' or 'equip' in 'klassicheskii vid blokov \u0443\u0436\u0435 \u0432\u044b\u0431\u0440\u0430\u043d\u043e.')
+C:\\Users\\arda demirkan\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\unittest\\case.py:703: AssertionError: 'Alt S\xfcp\xfcr' not found in '\u041f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e. Clear Rows \u043d\u0435\u043c\u0435\u0434\u043b\u0435\u043d\u043d\u043e \u043e\u0442\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u043f\u0440\u043e\u0441\u0442\u0440\u0430\u043d\u0441\u0442\u0432\u043e \u0438 \u0441\u043d\u0438\u0436\u0430\u0435\u0442 \u0434\u0430\u0432\u043b\u0435\u043d\u0438\u0435.'
+C:\\Users\\arda demirkan\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\unittest\\case.py:703: AssertionError: '\u0414\u0432\u0438\u0436\u0435\u043d\u0438\u0435' != 'Hareket'
+C:\\Users\\arda demirkan\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\unittest\\case.py:703: AssertionError: '\u0422\u044b \u043d\u0435 \u0441\u043e\u0437\u0434\u0430\u043b \u043d\u043e\u0432\u044b\u0445 \u0434\u044b\u0440.' != 'Delik a\xe7mad\u0131n.'
+============================== warnings summary ===============================
+tests/feedback_fixes/test_phase3_input_modal_state.py: 5 warnings
+tests/feedback_fixes/test_phase3_soft_drop_held.py: 5 warnings
+tests/feedback_fixes/test_phase6b_sprint_milestone_gate.py: 7 warnings
+tests/test_hidden_buffer_spawn.py: 2 warnings
+tests/test_linux_fullscreen_display.py: 1 warning
+tests/test_platform_utils_display_toggle.py: 9 warnings
+tests/test_steam_overlay_single_context.py: 4 warnings
+  C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\src\platform_utils.py:895: DeprecationWarning: Please use Window.get_surface and Window.flip to use surface-rendering with Window. This method will be removed in a future version.
+    Window.from_display_module().restore()
+
+tests/test_coop_hidden_lock_rollback.py::test_failed_hidden_lock_rollback_restores_hidden_buffer
+  C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\tests\..\src\platform_utils.py:895: DeprecationWarning: Please use Window.get_surface and Window.flip to use surface-rendering with Window. This method will be removed in a future version.
+    Window.from_display_module().restore()
+
+tests/test_duz007_action_metadata_contract.py::test_dpad_up_rotate_survives_keyboard_rebind_end_to_end
+  C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\src\game.py:1911: Warning: pygame.init() has not been called. This function may return incorrect results
+    return pygame.key.key_code(binding)
+
+tests/test_duz007_action_metadata_contract.py::test_dpad_up_rotate_survives_keyboard_rebind_end_to_end
+  C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\src\game.py:519: Warning: pygame.init() has not been called. This function may return incorrect results
+    return pygame.key.key_code(binding)
+
+tests/test_platform_utils_display_toggle.py: 8 warnings
+tests/test_steam_overlay_single_context.py: 4 warnings
+  C:\Users\arda demirkan\Desktop\v2_23022026\quadrix-demo\src\platform_utils.py:934: DeprecationWarning: Please use Window.get_surface and Window.flip to use surface-rendering with Window. This method will be removed in a future version.
+    Window.from_display_module().position = (0, 0)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_flexible_border_ingame.py:6: Manuel oyun içi doðrulama; otomatik pytest kapsamýnda çalýþtýrýlmaz.
+SKIPPED [1] tests\test_lb_write.py:18: Gercek DLL + Steam istemcisi donanim testi; QUADRIX_STEAM_HW_TEST=1 ile acilir
+SKIPPED [11] tests\test_online_pvp_result_majority.py: Skip online pvp tests in demo
+SKIPPED [1] tests\test_p0_screen_containment.py:327: retro_style stub kirliliði (tam paket mayýný)
+SKIPPED [1] tests\test_p0_screen_containment.py:342: retro_style stub kirliliði (tam paket mayýný)
+SKIPPED [1] tests\test_p0_screen_containment.py:360: retro_style stub kirliliði (tam paket mayýný)
+SKIPPED [1] tests\test_p0_screen_containment.py:412: retro_style stub kirliliði (tam paket mayýný)
+SKIPPED [1] tests\test_p0_screen_containment.py:427: retro_style stub kirliliði (tam paket mayýný)
+SKIPPED [1] tests\test_p0_screen_containment.py:441: retro_style stub kirliliði (tam paket mayýný)
+SKIPPED [1] tests\test_steam_net_bridge_session_filter_smoke.py:34: steam_net_bridge C++ modülü bulunamadý — Steam SDK olmadan skip edilir
+SKIPPED [1] tests\test_steam_net_bridge_session_filter_smoke.py:41: steam_net_bridge C++ modülü bulunamadý — Steam SDK olmadan skip edilir
+SKIPPED [1] tests\test_steam_net_bridge_session_filter_smoke.py:51: steam_net_bridge C++ modülü bulunamadý — Steam SDK olmadan skip edilir
+SKIPPED [1] tests\test_steam_net_bridge_session_filter_smoke.py:62: steam_net_bridge C++ modülü bulunamadý — Steam SDK olmadan skip edilir
+FAILED tests/test_localization_flat_table_parity.py::test_full_matrix_parity_with_legacy_chain
+FAILED tests/test_localization_flat_table_parity.py::test_fallback_path_semantics_split
+FAILED tests/test_localization_flat_table_parity.py::test_hot_reload_rebind_invalidates_flat_tables
+FAILED tests/test_localization_source_completeness.py::test_literal_translation_keys_used_in_code_exist_in_source_table
+FAILED tests/test_online_pvp_code_search_validation.py::test_on_lobby_list_complete_does_not_join_ambiguous_code_collision
+FAILED tests/test_online_pvp_lobby_visibility_metadata.py::test_validate_joined_lobby_access_rejects_unauthorized_private_join
+FAILED tests/test_online_pvp_trailer_debug_lobbies.py::test_debug_lobby_click_sets_info_message_without_joining
+FAILED tests/test_phase8_overlay_ui_scaling.py::test_survival_panel_and_flash_use_active_canvas_when_window_size_is_stale
+FAILED tests/test_phase8_overlay_ui_scaling.py::test_daily_fog_overlay_uses_active_canvas
+FAILED tests/test_phase8_overlay_ui_scaling.py::test_mystery_card_workshop_popup_uses_active_canvas_when_window_size_is_stale
+FAILED tests/test_phase8_overlay_ui_scaling.py::test_mystery_piece_selection_popup_uses_active_canvas_when_window_size_is_stale
+FAILED tests/test_phase8_overlay_ui_scaling.py::test_mystery_sniper_overlay_and_instruction_panel_use_active_canvas
+FAILED tests/test_render_geometry_contract.py::TestRenderGeometry::test_ui_preset_tracks_ui_scaling
+FAILED tests/test_resolution_actions.py::test_window_resolution_producer_emits_demo_action
+FAILED tests/test_right_hud_panel_regression.py::test_game_modes_inherit_base_right_hud_panel
+FAILED tests/test_store_screen.py::test_store_locked_message_formats_without_raw_placeholders_in_english
+FAILED tests/test_store_screen.py::test_store_cta_click_when_equipped_says_already_in_use
+FAILED tests/test_tutorial_cards.py::TestTutorialCardHelpers::test_wrong_choice_includes_recommended_reason
+FAILED tests/test_tutorial_improvements.py::TestHubLessonMetadata::test_skill_tag_label_handles_unknown_tags
+FAILED tests/test_tutorial_improvements.py::TestRichResultFeedback::test_behavior_label_localizes_with_fallback
+20 failed, 3952 passed, 23 skipped, 48 warnings in 77.18s (0:01:17)
+[OnlinePvP][WARN] event=native_cleanup_failed detail=eski-bridge leave_lobby: AttributeError
