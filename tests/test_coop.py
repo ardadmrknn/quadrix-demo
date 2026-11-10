@@ -175,6 +175,8 @@ _pu.normalize_mouse_pos = lambda pos: pos
 _pu.get_mouse_pos = lambda: (0,0)
 _pu.set_app_icon = lambda: None
 _pu.IS_WINDOWS = False
+_pu.key_hint_label = lambda label: label
+_pu.is_key_held = lambda key, state=None: False
 
 # gamepad_manager
 import gamepad_manager as _gm
@@ -186,6 +188,7 @@ _gm.get_gamepad_manager = lambda: types.SimpleNamespace(rumble=lambda *a, **kw: 
 import promptfont_support as _pfs
 _pfs.render_action_prompt_surface = lambda *a, **kw: None
 _pfs.render_button_index_prompt_surface = lambda *a, **kw: None
+_pfs.resolve_nav_hint_label = lambda keyboard_label, *a, **kw: keyboard_label
 
 # sound
 import sound as _snd
@@ -902,7 +905,7 @@ def test_side_panels_draw_player_specific_hold_on_both_sides_below_next_panels()
     cg._calculate_layout()
 
     preview_calls = []
-    cg._draw_piece_preview = lambda piece, x, y, cs, label, panel_width=None: preview_calls.append((label, x, y, panel_width, piece))
+    cg._draw_piece_preview = lambda piece, x, y, cs, label, panel_width=None, **kwargs: preview_calls.append((label, x, y, panel_width, piece))
 
     cg._draw_side_panels(cg.board_offset_x, cg.board_offset_y, cg.cell_size, cg.board.width * cg.cell_size, cg.board.height * cg.cell_size)
 
@@ -947,7 +950,7 @@ def test_side_panels_hold_labels_follow_custom_bindings():
     original_name = _pg.key.name
     _pg.key.name = staticmethod(lambda k: {111: 'o', 222: 'right shift'}.get(k, original_name(k)))
     preview_calls = []
-    cg._draw_piece_preview = lambda piece, x, y, cs, label, panel_width=None: preview_calls.append((label, piece))
+    cg._draw_piece_preview = lambda piece, x, y, cs, label, panel_width=None, **kwargs: preview_calls.append((label, piece))
     try:
         cg._draw_side_panels(cg.board_offset_x, cg.board_offset_y, cg.cell_size, cg.board.width * cg.cell_size, cg.board.height * cg.cell_size)
     finally:
@@ -1157,3 +1160,26 @@ def test_coop_seeded_piece_bags_are_deterministic_across_restart():
     first.restart()
 
     assert _signature(first) == first_signature
+
+
+def test_game_over_synthetic_enter_triggers_restart():
+    """Game-over'da sentetik K_RETURN/K_KP_ENTER (gamepad A) restart tetiklemeli.
+
+    Gamepad A, game-over (menü bağlamı) ekranında sentetik K_RETURN üretir.
+    Sektör-standardı: basit retry+menü ekranında A = yeniden dene. Klavye K_r
+    yolu da aynen korunmalı.
+    """
+    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
+    cg.game_over = True
+    cg.paused = False
+
+    for key in (_pg.K_RETURN, _pg.K_KP_ENTER, _pg.K_r):
+        restart_calls = []
+        cg.restart = lambda: restart_calls.append(True)
+        original_get = _pg.event.get
+        _pg.event.get = lambda k=key: [types.SimpleNamespace(type=_pg.KEYDOWN, key=k)]
+        try:
+            cg.handle_input()
+        finally:
+            _pg.event.get = original_get
+        assert restart_calls == [True], f"key {key} game-over'da restart tetiklemeliydi"

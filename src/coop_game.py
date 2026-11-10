@@ -3044,7 +3044,7 @@ class CoopGame:
                     continue
 
                 if self.game_over:
-                    if event.key == pygame.K_r:
+                    if event.key in (pygame.K_r, pygame.K_RETURN, pygame.K_KP_ENTER):
                         self.restart()
                         continue
                     continue

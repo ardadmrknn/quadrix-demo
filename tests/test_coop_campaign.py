@@ -162,6 +162,7 @@ _pu.create_display = lambda *a, **kw: _Surf()
 _pu.normalize_mouse_pos = lambda pos: pos
 _pu.get_mouse_pos = lambda: (0, 0)
 _pu.set_app_icon = lambda: None
+_pu.key_hint_label = lambda label: label
 
 # sound stub
 import sound as _snd
@@ -738,3 +739,82 @@ def test_level_select_ui_scale_uses_projected_effective_scale(monkeypatch):
     assert captured['max_scale'] == 1.18
     assert captured['reference_size'] == (1400.0, 900.0)
     assert captured['display_surface'] is None
+
+
+# =====================================================================
+# Gamepad / klavye navigasyon (B3 fix): D-pad -> oklar, A -> Enter
+# =====================================================================
+
+def _coop_keys():
+    """coop_level_select modülünün gerçekte kullandığı pygame sabitleri.
+
+    Tam suite altında modül gerçek pygame (SDL2) ile bağlanmış olabilir;
+    bu yüzden tuş kodlarını modülün gördüğü pygame üzerinden alıyoruz ki
+    handle_input karşılaştırmaları tutsun.
+    """
+    from campaign import coop_level_select as M
+    pg = M.pygame
+    return types.SimpleNamespace(
+        KEYDOWN=pg.KEYDOWN,
+        RIGHT=pg.K_RIGHT,
+        LEFT=pg.K_LEFT,
+        UP=pg.K_UP,
+        DOWN=pg.K_DOWN,
+        RETURN=pg.K_RETURN,
+        ESCAPE=pg.K_ESCAPE,
+    )
+
+
+def _kd_mod(key, keys):
+    return types.SimpleNamespace(type=keys.KEYDOWN, key=key)
+
+
+def _coop_select_with_unlocked_prefix(highest_completed: int):
+    """1..highest_completed tamamlanmış bir CoopLevelSelect üret.
+
+    Böylece 1..highest_completed+1 arası level açık olur.
+    """
+    from campaign.coop_level_select import CoopLevelSelect
+    sm = _FakeSettingsManager()
+    um = _FakeUserManager()
+    completed = {
+        str(i): {'completed': True, 'stars': 1}
+        for i in range(1, highest_completed + 1)
+    }
+    um.save_coop_campaign_progress({'completed_levels': completed})
+    return CoopLevelSelect(screen=_Surf(), settings_manager=sm, user_manager=um)
+
+
+def test_coop_select_initial_selection_is_first_level():
+    """selected_level __init__ sırasında set edilmeli (gamepad odağı görünür)."""
+    sel = _coop_select_with_unlocked_prefix(0)
+    assert getattr(sel, 'selected_level', None) == 1
+
+
+def test_coop_select_dpad_navigates_unlocked_only():
+    """Sağ ok (D-pad sağ) açık level'lar arasında ilerler, kilitlide durur."""
+    keys = _coop_keys()
+    sel = _coop_select_with_unlocked_prefix(4)  # 1..5 açık
+    assert sel.selected_level == 1
+    for expected in (2, 3, 4, 5):
+        sel.handle_input(_kd_mod(keys.RIGHT, keys))
+        assert sel.selected_level == expected
+    # 5 son açık; sağa basınca 6 kilitli -> seçim 5'te kalır
+    sel.handle_input(_kd_mod(keys.RIGHT, keys))
+    assert sel.selected_level == 5
+
+
+def test_coop_select_enter_plays_selected_level():
+    """A butonu (sentetik K_RETURN) seçili açık level'ı başlatır."""
+    keys = _coop_keys()
+    sel = _coop_select_with_unlocked_prefix(4)  # 1..5 açık
+    sel.handle_input(_kd_mod(keys.RIGHT, keys))
+    sel.handle_input(_kd_mod(keys.RIGHT, keys))  # selected_level == 3
+    assert sel.handle_input(_kd_mod(keys.RETURN, keys)) == 'play_3'
+
+
+def test_coop_select_escape_returns_back():
+    """B butonu (sentetik K_ESCAPE) geri döner."""
+    keys = _coop_keys()
+    sel = _coop_select_with_unlocked_prefix(0)
+    assert sel.handle_input(_kd_mod(keys.ESCAPE, keys)) == 'back'
