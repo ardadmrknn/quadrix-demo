@@ -29,7 +29,7 @@ Ek: QUADRIX_LINUX_FULLSCREEN_MODE staging override (plan §10).
 import os
 import sys
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -86,12 +86,14 @@ class _SetModeRecorder:
 
     def __init__(self, raise_for=frozenset()):
         self.calls = []          # [(size, flags)]
+        self.vsync_values = []
         self.env_at_calls = []   # çağrı anındaki SDL hint görüntüsü
         self._raise_for = set(raise_for)
 
     def __call__(self, size, flags=0, **kwargs):
         idx = len(self.calls)
         self.calls.append((tuple(size), int(flags)))
+        self.vsync_values.append(kwargs.get('vsync'))
         self.env_at_calls.append({
             'centered': os.environ.get('SDL_VIDEO_CENTERED', '__MISSING__'),
             'win_pos': os.environ.get('SDL_VIDEO_WINDOW_POS', '__MISSING__'),
@@ -134,6 +136,16 @@ class _LinuxFullscreenTestBase(unittest.TestCase):
         for _env in ('SDL_VIDEO_CENTERED', 'SDL_VIDEO_WINDOW_POS',
                      'QUADRIX_LINUX_FULLSCREEN_MODE'):
             os.environ.pop(_env, None)
+
+
+class TestDummyVsyncSafety(_LinuxFullscreenTestBase):
+
+    def test_fullscreen_dummy_never_requests_vsync(self):
+        recorder = self._recorder
+        with patch.object(platform_utils.pygame.display, 'get_driver', return_value='dummy'):
+            with patch.dict(os.environ, {'SDL_RENDER_VSYNC': '1'}):
+                platform_utils.create_display(1920, 1080, fullscreen=True, borderless=True)
+        self.assertEqual(recorder.vsync_values, [0])
 
 
 # ── 1-3: birincil yol bayrakları ─────────────────────────────────────────────
