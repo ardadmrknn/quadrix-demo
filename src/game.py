@@ -22,7 +22,7 @@ except ImportError:
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from block_skin_assets import get_equipped_block_appearance
 from board import Board
-from pieces import Piece, SHAPE_NAMES, create_piece_by_index, create_piece_by_name, get_piece_spawn_y, skip_hidden_rows
+from pieces import Piece, SHAPE_NAMES, create_piece_by_index, create_piece_by_name, get_piece_spawn_y
 from constants import *
 import constants as _constants_mod  # OP-050: DEBUG_MODE runtime'da ayarlardan güncellenir; değer kopyası bayatlar
 from das_controller import DasController
@@ -961,27 +961,6 @@ class Game:
             cached = hold_label_text
             cache[('hold', lang)] = cached
         return cached
-
-    def _sample_board_background(self, offset_x: int, offset_y: int) -> tuple[int, int, int]:
-        """Tahta arka planının o anki rengini örnekle (gölge kontrastı için).
-
-        Gölge yarı saydam çizildiğinden ekranda görünen renk zeminle karışır;
-        beyaz kontur kararını doğru vermek için zemin gerekir. Kare başına TEK
-        piksel okuması yapılır (Surface tahsisi yok, GC baskısı yok).
-        """
-        try:
-            surf = self.screen
-            if surf is not None:
-                cell = max(4, int(getattr(self, 'cell_size', 24) or 24))
-                sx = int(offset_x) + max(2, cell // 3)
-                sy = int(offset_y) + max(2, cell // 3)
-                w, h = surf.get_size()
-                if 0 <= sx < w and 0 <= sy < h:
-                    r, g, b = surf.get_at((sx, sy))[:3]
-                    return (int(r), int(g), int(b))
-        except Exception:
-            pass
-        return (18, 20, 36)
 
     def _get_solid_alpha_surface(self, size: tuple[int, int], color) -> pygame.Surface:
         """Belirtilen boyut ve renkte katı alfa yüzeyini önbellekten döndürür (salt-okunur blit için)."""
@@ -2379,12 +2358,7 @@ class Game:
         return piece
 
     def _skip_hidden_rows(self, piece):
-        """Instantly drop piece through hidden spawn rows for immediate visibility.
-
-        Called when a piece becomes the active current_piece so the player
-        sees it without waiting for gravity to carry it through the hidden zone.
-        """
-        skip_hidden_rows(piece, getattr(self, 'board', None))
+        """Keep spawned pieces in the hidden buffer until gravity moves them."""
         return piece
     
     def draw_textured_block(self, x, y, size, color, texture_surface=None, texture_slice: TextureSlice | None = None):
@@ -4279,6 +4253,9 @@ class Game:
                     trail_surface = pygame.Surface((w, h), pygame.SRCALPHA)
                     segments = max(1, h // 4)
                     segment_height = h / segments
+                    # Keep NumPy and fallback trail rendering identical.  A
+                    # 255 base made the NumPy path fully opaque on its first
+                    # segment while packaged builds used the effect alpha.
                     for i in range(segments):
                         seg_alpha = int(alpha * (1 - i / segments))
                         y_pos = int(i * segment_height)
@@ -5881,7 +5858,18 @@ class Game:
         show_ghost = bool(self.settings_manager.get('show_ghost', True) if getattr(self, 'settings_manager', None) is not None else True)
         # Gölge kontrastı için ÖLÇÜM ZEMİNİ (kare başına tek piksel okuması).
         if show_ghost and not self.game_over and self.current_piece is not None:
-            self._ghost_measure_bg = self._sample_board_background(offset_x, offset_y)
+            try:
+                _gsz = max(4, int(getattr(self, 'cell_size', 24) or 24))
+                _sx = int(offset_x) + max(2, _gsz // 3)
+                _sy = int(offset_y) + max(2, _gsz // 3)
+                _w, _h = self.screen.get_size()
+                if 0 <= _sx < _w and 0 <= _sy < _h:
+                    _r, _g, _b = self.screen.get_at((_sx, _sy))[:3]
+                    self._ghost_measure_bg = (int(_r), int(_g), int(_b))
+                else:
+                    self._ghost_measure_bg = (18, 20, 36)
+            except Exception:
+                self._ghost_measure_bg = (18, 20, 36)
         if not self.game_over and self.current_piece is not None and self.effects_enabled and show_ghost:
             ghost_y = self.get_ghost_y()
             if ghost_y != self.current_piece.y:
@@ -5927,8 +5915,8 @@ class Game:
                             (block_x, block_y, block_size, block_size),
                             2,
                         )
-                        # Koyu renk: gölgenin dış hattı da beyaz kontur alır.
-                        # Ölçüm GERÇEK ekran rengiyle (gölge yarı saydam).
+                        # Koyu renk: gölgenin dış hattı da beyaz kontur alır
+                        # (aksi halde gölge koyu zeminde tamamen kayboluyor).
                         draw_dark_block_outline(
                             self.screen, block_x, block_y, block_size, ghost_color,
                             overlay_alpha=GHOST_ALPHA, background=self._ghost_measure_bg,
